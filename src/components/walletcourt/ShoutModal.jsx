@@ -146,14 +146,32 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
     : target === "shoutit" ? "SUBMIT TO COURT DESK"
     : "SUBMIT + OPEN X";
 
+  // X enforces 280 chars. Court Desk-only posts may stay at the 500-char editor max.
+  const xOverLimit = wantsX && overXLimit(text);
+  const overBy = Math.max(0, text.length - X_CHAR_LIMIT);
+
   async function publish() {
     setMessage("");
     if (!text.trim()) { setMessage("Post text cannot be empty."); return; }
+    if (wantsX && overXLimit(text)) { setMessage("This post is over X's 280-character limit. Shorten it to open X."); return; }
     if (wantsX && !approved) { setMessage("Confirm you've reviewed the post to open it in X."); return; }
     if (wantsShout && !consent) { setMessage("Consent is required to submit to the Court Desk."); return; }
     setSubmitting(true);
+
+    // For "Both", open a blank window synchronously from the click so browsers
+    // treat it as user-initiated, then navigate it after the Court Desk submit.
+    let popup = null;
+    if (wantsX && target === "both" && !doneX) {
+      popup = window.open("", "_blank");
+      if (popup) {
+        popup.document.write("<title>Wallet Court</title>");
+        popup.document.body.style.fontFamily = "monospace";
+        popup.document.body.style.padding = "2rem";
+        popup.document.body.textContent = "Preparing your Wallet Court post…";
+      }
+    }
+
     try {
-      // Both: submit to Court Desk first, then open X.
       if (wantsShout && !doneShout) {
         const res = await base44.functions.invoke("submitCourtDispatch", {
           case_slug: trial.public_slug,
@@ -162,16 +180,27 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
           optional_x_handle: xHandle,
           consent_to_publish: consent,
         });
-        if (res?.data?.error) { setMessage(res.data.error); setSubmitting(false); return; }
+        if (res?.data?.error) {
+          if (popup) popup.close();
+          setMessage(res.data.error);
+          setSubmitting(false);
+          return;
+        }
         setDoneShout(true);
         trackShare(SHARE_EVENTS.SHOUTIT_SUBMISSION_CREATED, { submission_type: style, data_mode: trial.data_mode });
       }
       if (wantsX && !doneX) {
         trackShare(SHARE_EVENTS.X_COMPOSER_OPENED);
-        window.open(xIntentUrl(text), "_blank", "noopener,noreferrer");
+        const url = xIntentUrl(text);
+        if (popup) {
+          popup.location.href = url;
+        } else {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
         setDoneX(true);
       }
     } catch (e) {
+      if (popup) popup.close();
       setMessage(e?.message || "Action failed.");
     } finally {
       setSubmitting(false);
@@ -263,6 +292,11 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
                 {text.length} / {X_CHAR_LIMIT} (X limit)
               </span>
             </div>
+            {xOverLimit && (
+              <p className="mt-1 font-mono text-sm text-court-red leading-relaxed">
+                X allows 280 characters. Shorten this post by {overBy} characters.
+              </p>
+            )}
             {editNotice && (
               <p className="mt-1 font-mono text-sm text-court-chart">{editNotice}</p>
             )}
@@ -357,7 +391,7 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
           </div>
 
           {/* Primary destination action */}
-          <button type="button" onClick={publish} disabled={submitting || completed}
+          <button type="button" onClick={publish} disabled={submitting || completed || xOverLimit}
             className="w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.1em] text-base px-4 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:brightness-105 transition-all disabled:opacity-60 disabled:shadow-none">
             <Megaphone className="h-5 w-5" /> {primaryLabel}
           </button>
