@@ -1,0 +1,102 @@
+{
+  "name": "WalletTrial",
+  "type": "object",
+  "properties": {
+    "wallet_address": {
+      "type": "string",
+      "description": "The wallet address exactly as submitted by the visitor."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) address used for lookups."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base",
+        "solana"
+      ],
+      "description": "The chain the wallet was analyzed on."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "analyzing",
+        "completed",
+        "failed"
+      ],
+      "default": "pending"
+    },
+    "data_mode": {
+      "type": "string",
+      "enum": [
+        "demo",
+        "live"
+      ],
+      "default": "demo",
+      "description": "demo = deterministic fixtures; live = real Nansen onchain evidence."
+    },
+    "verdict_code": {
+      "type": "string",
+      "description": "Machine code of the canonical verdict, e.g. one_pump_chump."
+    },
+    "verdict_name": {
+      "type": "string",
+      "description": "Display name of the verdict, e.g. One Pump Chump."
+    },
+    "severity_score": {
+      "type": "number",
+      "description": "0-100. Higher = more egregious trading behavior."
+    },
+    "confidence_score": {
+      "type": "number",
+      "description": "0-100. How confident the court is in the verdict."
+    },
+    "headline": {
+      "type": "string"
+    },
+    "roast": {
+      "type": "string",
+      "description": "The cheeky courtroom roast of the wallet's behavior."
+    },
+    "defense_statement": {
+      "type": "string",
+      "description": "The wallet's (imagined) defense, entered into the record."
+    },
+    "sentence": {
+      "type": "string"
+    },
+    "evidence_items_json": {
+      "type": "string",
+      "description": "JSON array of evidence exhibit objects."
+    },
+    "metrics_json": {
+      "type": "string",
+      "description": "JSON object of numeric trading metrics."
+    },
+    "source_endpoints_json": {
+      "type": "string",
+      "description": "JSON array of the Nansen (or demo) endpoints consulted."
+    },
+    "public_slug": {
+      "type": "string",
+      "description": "Unique slug for the permanent public case page."
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "error_message": {
+      "type": "string"
+    },
+    "analyzed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "wallet_address",
+    "network"
+  ]
+}
