@@ -38,7 +38,7 @@ export default function Case() {
   if (status !== "done" || !trial) {
     return (
       <div className="mx-auto max-w-xl px-4 pt-24 text-center">
-        <p className="font-display font-bold uppercase text-court-gold text-2xl mb-3">
+        <p className="font-display font-bold uppercase text-court-red text-2xl mb-3">
           Case file not found
         </p>
         <p className="text-sm text-muted-foreground mb-6">
@@ -46,7 +46,7 @@ export default function Case() {
         </p>
         <button
           onClick={() => navigate("/")}
-          className="inline-flex items-center justify-center bg-court-gold text-court-bg font-display font-bold uppercase tracking-[0.18em] text-sm px-6 py-3"
+          className="inline-flex items-center justify-center bg-court-ink text-court-bg font-display font-bold uppercase tracking-[0.18em] text-sm px-6 py-3 hover:bg-court-red transition-colors"
         >
           New Trial
         </button>

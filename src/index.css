@@ -6,69 +6,71 @@
 
 @layer base {
   :root {
-    /* Midnight Court palette — standard tokens kept in HSL channels for shadcn. */
-    --background: 225 16.7% 4.7%;        /* #0A0B0E */
-    --foreground: 39 31% 83.5%;          /* #E2D9C8 parchment */
-    --card: 225 18% 8.6%;                /* #12141A surface */
-    --card-foreground: 39 31% 83.5%;
-    --popover: 225 18% 8.6%;
-    --popover-foreground: 39 31% 83.5%;
-    --primary: 38 91% 50%;               /* Gavel Gold #F59E0B */
-    --primary-foreground: 225 16.7% 4.7%;
-    --secondary: 225 18% 14%;
-    --secondary-foreground: 39 31% 83.5%;
-    --muted: 225 18% 12%;
-    --muted-foreground: 39 18% 58%;
-    --accent: 225 18% 14%;
-    --accent-foreground: 39 31% 83.5%;
-    --destructive: 0 84% 60%;            /* Guilty Red #EF4444 */
-    --destructive-foreground: 0 0% 98%;
-    --border: 226 19.5% 34%;             /* Wireframe Line #232734 */
-    --input: 226 19.5% 34%;
-    --ring: 38 91% 50%;
-    --chart-1: 38 91% 50%;
-    --chart-2: 160 64% 42%;
-    --chart-3: 0 84% 60%;
-    --chart-4: 225 18% 60%;
-    --chart-5: 39 31% 70%;
-    --radius: 0.25rem;
+    /* Government case file / financial tabloid palette. Standard tokens kept in
+       HSL channels for shadcn compatibility. */
+    --background: 39 45% 90%;          /* Case-file cream #F1E9DA */
+    --foreground: 60 4% 9%;            /* Ink charcoal #181816 */
+    --card: 43 49% 96%;                /* White paper highlight #FAF7F0 */
+    --card-foreground: 60 4% 9%;
+    --popover: 43 49% 96%;
+    --popover-foreground: 60 4% 9%;
+    --primary: 60 4% 9%;               /* Charcoal for official actions */
+    --primary-foreground: 39 45% 90%;
+    --secondary: 38 42% 73%;           /* Manila #D7C29E */
+    --secondary-foreground: 60 4% 9%;
+    --muted: 38 30% 86%;
+    --muted-foreground: 41 7% 41%;      /* Aged gray #706B61 */
+    --accent: 38 42% 73%;
+    --accent-foreground: 60 4% 9%;
+    --destructive: 4 65% 48%;          /* Guilty red #C9362B */
+    --destructive-foreground: 39 45% 90%;
+    --border: 41 7% 41%;               /* Aged gray hairlines */
+    --input: 41 7% 41%;
+    --ring: 4 65% 48%;
+    --chart-1: 4 65% 48%;
+    --chart-2: 70 67% 50%;
+    --chart-3: 60 4% 9%;
+    --chart-4: 38 42% 73%;
+    --chart-5: 41 7% 41%;
+    --radius: 0.125rem;
 
     --font-heading: 'Cinzel', ui-serif, Georgia, serif;
     --font-body: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     --font-display: 'Cinzel', ui-serif, Georgia, serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-    /* Direct hex court tokens for design-contract colors. */
-    --court-bg: #0A0B0E;
-    --court-surface: #12141A;
-    --court-text: #E2D9C8;
-    --court-gold: #F59E0B;
-    --court-red: #EF4444;
-    --court-green: #10B981;
-    --court-line: #232734;
+    /* Direct hex court tokens (no opacity modifiers on these). */
+    --court-bg: #F1E9DA;
+    --court-paper: #FAF7F0;
+    --court-folder: #D7C29E;
+    --court-ink: #181816;
+    --court-red: #C9362B;
+    --court-green: #B8D52A;
+    --court-gray: #706B61;
+    --court-fade: #B7AE99;
   }
 
   .dark {
-    /* App is permanently dark — keep dark tokens identical. */
-    --background: 225 16.7% 4.7%;
-    --foreground: 39 31% 83.5%;
-    --card: 225 18% 8.6%;
-    --card-foreground: 39 31% 83.5%;
-    --popover: 225 18% 8.6%;
-    --popover-foreground: 39 31% 83.5%;
-    --primary: 38 91% 50%;
-    --primary-foreground: 225 16.7% 4.7%;
-    --secondary: 225 18% 14%;
-    --secondary-foreground: 39 31% 83.5%;
-    --muted: 225 18% 12%;
-    --muted-foreground: 39 18% 58%;
-    --accent: 225 18% 14%;
-    --accent-foreground: 39 31% 83.5%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 226 19.5% 34%;
-    --input: 226 19.5% 34%;
-    --ring: 38 91% 50%;
+    /* App stays light/paper; keep dark tokens aligned to the paper palette. */
+    --background: 39 45% 90%;
+    --foreground: 60 4% 9%;
+    --card: 43 49% 96%;
+    --card-foreground: 60 4% 9%;
+    --popover: 43 49% 96%;
+    --popover-foreground: 60 4% 9%;
+    --primary: 60 4% 9%;
+    --primary-foreground: 39 45% 90%;
+    --secondary: 38 42% 73%;
+    --secondary-foreground: 60 4% 9%;
+    --muted: 38 30% 86%;
+    --muted-foreground: 41 7% 41%;
+    --accent: 38 42% 73%;
+    --accent-foreground: 60 4% 9%;
+    --destructive: 4 65% 48%;
+    --destructive-foreground: 39 45% 90%;
+    --border: 41 7% 41%;
+    --input: 41 7% 41%;
+    --ring: 4 65% 48%;
   }
 }
 
@@ -82,27 +84,36 @@
 }
 
 @layer components {
-  /* Subtle HFT-terminal grid + scanline overlays. */
-  .court-grid-bg {
-    background-image:
-      linear-gradient(var(--court-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--court-line) 1px, transparent 1px);
-    background-size: 56px 56px;
-    background-position: -1px -1px;
-    opacity: 0.35;
+  /* Subtle aged-paper grain via SVG turbulence. */
+  .paper-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
   }
-  .court-scanlines {
+  .paper-vignette {
+    background: radial-gradient(120% 120% at 50% 0%, transparent 60%, rgba(24, 24, 22, 0.06) 100%);
+  }
+  /* Legal-pad ruled lines. */
+  .doc-lines {
     background-image: repeating-linear-gradient(
       to bottom,
-      rgba(226, 217, 200, 0.025) 0px,
-      rgba(226, 217, 200, 0.025) 1px,
-      transparent 1px,
-      transparent 3px
+      transparent 0,
+      transparent 27px,
+      rgba(112, 107, 97, 0.28) 27px,
+      rgba(112, 107, 97, 0.28) 28px
     );
   }
   /* Embossed rubber-stamp verdict badge. */
   .stamp-emboss {
-    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 -1px 0 rgba(255, 255, 255, 0.06);
-    box-shadow: inset 0 0 0 2px currentColor, inset 0 0 0 4px var(--court-bg);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+    box-shadow: inset 0 0 0 2px currentColor, inset 0 0 0 4px var(--court-paper);
   }
+  /* Registration / crop marks. */
+  .reg-mark::before,
+  .reg-mark::after {
+    content: "";
+    position: absolute;
+    background: var(--court-ink);
+  }
+  .reg-mark::before { width: 10px; height: 1px; }
+  .reg-mark::after { width: 1px; height: 10px; }
 }
