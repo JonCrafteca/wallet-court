@@ -1,0 +1,104 @@
+{
+  "name": "WalletClaim",
+  "type": "object",
+  "properties": {
+    "owner_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the verified wallet owner. Set only by the verify backend function."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base"
+      ],
+      "description": "Chain the claim was verified on. Solana is not claimable in Phase 3A."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased EVM address. Never exposed publicly; only address_short is returned to visitors."
+    },
+    "address_short": {
+      "type": "string",
+      "description": "0x1234\u2026abcd form for public display."
+    },
+    "claim_slug": {
+      "type": "string",
+      "description": "Permanent, non-address-based slug for the public Rap Sheet URL."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "revoked"
+      ],
+      "default": "active"
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "last_verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signature_scheme": {
+      "type": "string",
+      "description": "e.g. eip191_personal_sign"
+    },
+    "public_alias": {
+      "type": "string",
+      "description": "Optional owner-chosen display name (3-24 chars, sanitized)."
+    },
+    "profile_visibility": {
+      "type": "string",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ],
+      "default": "private"
+    },
+    "show_trial_history": {
+      "type": "boolean",
+      "default": false
+    },
+    "show_badges": {
+      "type": "boolean",
+      "default": true
+    },
+    "latest_trial_slug": {
+      "type": "string",
+      "description": "public_slug of the most recent case associated with the claim."
+    }
+  },
+  "required": [
+    "owner_user_id",
+    "network",
+    "normalized_wallet_address",
+    "claim_slug",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "name": "WalletClaimNonce",
+  "type": "object",
+  "properties": {
+    "owner_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the claiming user."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base"
+      ]
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased EVM address the nonce is bound to."
+    },
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the case the nonce was issued for."
+    },
+    "domain": {
+      "type": "string",
+      "description": "Application domain bound into the signed message, for domain-match verification."
+    },
+    "nonce_hash": {
+      "type": "string",
+      "description": "SHA-256 of the raw nonce. Raw nonce is never stored."
+    },
+    "message_hash": {
+      "type": "string",
+      "description": "SHA-256 of the full message the wallet must sign."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "used_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Set when the nonce is consumed (success or failure). Null while unused."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "owner_user_id",
+    "network",
+    "normalized_wallet_address",
+    "case_slug",
+    "nonce_hash",
+    "message_hash",
+    "expires_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
