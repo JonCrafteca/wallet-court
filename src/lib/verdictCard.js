@@ -12,6 +12,29 @@ const COLORS = {
   mute: "#B8C7FF",
 };
 
+// Lucide "microphone" glyph paths (viewBox 0 0 24 24) — the temporary ShoutIt
+// mark drawn on the card header beside "A SHOUTIT ORIGINAL".
+const MIC_PATHS = [
+  "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z",
+  "M19 10v2a7 7 0 0 1-14 0v-2",
+  "M12 19v3",
+];
+
+function drawMic(ctx, cx, cy, size, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(size / 24, size / 24);
+  ctx.translate(-12, -12);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const d of MIC_PATHS) {
+    ctx.stroke(new Path2D(d));
+  }
+  ctx.restore();
+}
+
 async function ensureFonts() {
   try {
     await Promise.all([
@@ -86,7 +109,8 @@ export async function drawVerdictCard(canvas, trial) {
   ctx.fillText("WALLET COURT", 40 * s, 38 * s);
   ctx.font = `600 ${16 * s}px Oswald, sans-serif`;
   ctx.fillStyle = COLORS.chart;
-  ctx.fillText("A SHOUTIT ORIGINAL", 40 * s, 70 * s);
+  drawMic(ctx, 28 * s, 70 * s, 18 * s, COLORS.chart);
+  ctx.fillText("A SHOUTIT ORIGINAL", 46 * s, 70 * s);
 
   // Live/demo badge (top right)
   const badgeText = isLive ? "LIVE · NANSEN" : "DEMO";
@@ -200,6 +224,20 @@ export async function downloadVerdictCard(trial) {
         triggerDownload(blob, `wallet-court-${trial.public_slug}.png`);
         resolve();
       },
+      "image/png"
+    );
+  });
+}
+
+// Returns the verdict card as a PNG Blob for native share-sheet file sharing.
+export async function getVerdictCardBlob(trial) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 675;
+  await drawVerdictCard(canvas, trial);
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("Could not render verdict card"))),
       "image/png"
     );
   });

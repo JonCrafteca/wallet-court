@@ -3,6 +3,7 @@ import SeverityMeter from "./SeverityMeter";
 import NansenEvidence from "./NansenEvidence";
 import ShareActions from "./ShareActions";
 import ShoutItGallery from "./ShoutItGallery";
+import SentenceRuling from "./SentenceRuling";
 
 export default function VerdictReveal({ trial, onReset }) {
   const addr = trial.normalized_wallet_address || "";
@@ -51,10 +52,9 @@ export default function VerdictReveal({ trial, onReset }) {
         <NansenEvidence trial={trial} />
       </div>
 
-      {/* 4. Sentence */}
-      <div className="mt-10 border-2 border-court-chart bg-court-navy p-5 sm:p-6 shadow-[5px_5px_0_0_#D8FF32]">
-        <p className="font-mono text-xs uppercase tracking-[0.18em] text-court-chart mb-3">The Sentence</p>
-        <p className="font-display uppercase text-court-ice leading-tight text-xl sm:text-2xl">{trial.sentence}</p>
+      {/* 4. Sentence — the court's ruling */}
+      <div className="mt-10">
+        <SentenceRuling trial={trial} />
       </div>
 
       {/* 5. Actions */}

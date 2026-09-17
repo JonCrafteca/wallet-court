@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Megaphone, RefreshCw, Copy, Check, Share2, X, ChevronDown, ChevronUp, Pencil } from "lucide-react";
+import { RefreshCw, X, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
 import { buildDraft, buildDrafts, buildCaseUrl, xIntentUrl, overXLimit } from "@/lib/courtDispatch";
 import { X_CHAR_LIMIT, MAX_POST_TEXT } from "@/lib/shareConfig";
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
 import VerdictCardPreview from "./VerdictCardPreview";
+import ShoutItMark from "./ShoutItMark";
+import DeviceShare from "./DeviceShare";
 
 const STYLES = [
   { id: "court_dispatch", label: "Court Dispatch", desc: "A straight news-style report of the court's verdict." },
@@ -31,7 +33,6 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
   const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const [copied, setCopied] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenNotice, setRegenNotice] = useState("");
   const [editNotice, setEditNotice] = useState("");
@@ -44,7 +45,6 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
   const editorWrapRef = useRef(null);
 
   const caseUrl = useMemo(() => buildCaseUrl(trial.public_slug), [trial.public_slug]);
-  const hasNativeShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   const drafts = useMemo(
     () => buildDrafts(trial, style, { xHandle, caseUrl }, variationBase),
@@ -117,25 +117,6 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
     setXHandle("");
   }
 
-  async function copyText() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      trackShare(SHARE_EVENTS.POST_TEXT_COPIED);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setMessage("Could not copy to clipboard.");
-    }
-  }
-
-  async function nativeShare() {
-    try {
-      await navigator.share({ title: "Wallet Court Verdict", text, url: caseUrl });
-      trackShare(SHARE_EVENTS.NATIVE_SHARE_INVOKED);
-    } catch {
-      // user cancelled or unsupported — no false "shared" message
-    }
-  }
 
   const wantsX = target === "x" || target === "both";
   const wantsShout = target === "shoutit" || target === "both";
@@ -214,9 +195,10 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
           <DialogTitle className="font-display uppercase tracking-[0.06em] text-court-ice text-2xl">
             Shout This Verdict
           </DialogTitle>
-          <DialogDescription className="font-mono text-sm text-court-mute">
-            Wallet Court · A ShoutIt Original —{" "}
-            {trial.data_mode === "live" ? "Evidence powered by Nansen" : "Demo case"}
+          <DialogDescription className="font-mono text-sm text-court-mute flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-display uppercase tracking-[0.06em] text-court-ice">Wallet Court</span>
+            <ShoutItMark withTagline />
+            <span className="text-court-mute">— {trial.data_mode === "live" ? "Evidence powered by Nansen" : "Demo case"}</span>
           </DialogDescription>
         </DialogHeader>
 
@@ -343,8 +325,11 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {DESTINATIONS.map((d) => (
                 <button key={d.id} type="button" onClick={() => chooseTarget(d.id)}
-                  className={cn("text-left p-3 border-2 transition-colors",
+                  className={cn("text-left p-3 border-2 transition-colors flex items-center gap-2",
                     target === d.id ? "bg-court-chart text-court-navy border-court-chart" : "bg-court-navy text-court-ice border-court-ice hover:bg-court-uv")}>
+                  {d.id === "shoutit" && (
+                    <ShoutItMark iconOnly iconTone={target === "shoutit" ? "navy" : "chart"} />
+                  )}
                   <span className="block font-display uppercase tracking-[0.06em] text-sm">{d.label}</span>
                 </button>
               ))}
@@ -393,27 +378,15 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
           {/* Primary destination action */}
           <button type="button" onClick={publish} disabled={submitting || completed || xOverLimit}
             className="w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.1em] text-base px-4 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:brightness-105 transition-all disabled:opacity-60 disabled:shadow-none">
-            <Megaphone className="h-5 w-5" /> {primaryLabel}
+            <ShoutItMark iconOnly iconTone="navy" size="md" /> {primaryLabel}
           </button>
 
           {/* Secondary utilities — visually separated */}
           <div className="pt-3 border-t border-court-mute/40">
             <p className="mb-2 font-mono text-sm text-court-mute leading-relaxed">
-              Share Via Device opens your phone or computer's native share menu. It does not submit anything to ShoutIt.
+              Share via your device's native share sheet, or open a compact set of share options. None of these submit anything to the ShoutIt Court Desk.
             </p>
-            <div className="flex flex-wrap gap-2">
-              {hasNativeShare && (
-                <button type="button" onClick={nativeShare}
-                  className="inline-flex items-center justify-center gap-2 bg-court-uv text-court-ice font-display uppercase tracking-[0.08em] text-sm px-3 py-2.5 border-2 border-court-ice hover:brightness-110 transition-all">
-                  <Share2 className="h-4 w-4" /> Share Via Device
-                </button>
-              )}
-              <button type="button" onClick={copyText}
-                className="inline-flex items-center justify-center gap-2 bg-court-navy text-court-ice font-display uppercase tracking-[0.08em] text-sm px-3 py-2.5 border-2 border-court-ice hover:bg-court-uv transition-colors">
-                {copied ? <Check className="h-4 w-4 text-court-chart" /> : <Copy className="h-4 w-4" />}
-                {copied ? "Copied" : "Copy Post Text"}
-              </button>
-            </div>
+            <DeviceShare trial={trial} text={text} caseUrl={caseUrl} />
           </div>
         </div>
       </DialogContent>
