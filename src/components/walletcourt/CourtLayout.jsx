@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet, NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import TickerTape from "./TickerTape";
+import ShoutItMark from "./ShoutItMark";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -94,10 +95,13 @@ export default function CourtLayout() {
         </main>
 
         <footer className="border-t-4 border-court-navy bg-court-navy px-4 py-4">
-          <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-between gap-2 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-court-mute">
-            <span>Wallet Court · A ShoutIt Original // Nansen Evidence Division</span>
-            <span className="text-court-chart">Evidence powered by Nansen</span>
-            <span className="w-full sm:w-auto sm:text-right">Verdicts are parody. Not financial advice. Roasts target behavior, never identity.</span>
+          <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="font-display uppercase tracking-[0.1em] text-court-ice text-sm">Wallet Court</span>
+              <ShoutItMark variant="mascot" showTagline size={30} />
+            </div>
+            <span className="font-mono text-[0.6rem] uppercase tracking-[0.15em] text-court-chart">Evidence powered by Nansen</span>
+            <span className="w-full sm:w-auto sm:text-right font-mono text-[0.6rem] uppercase tracking-[0.15em] text-court-mute">Verdicts are parody. Not financial advice. Roasts target behavior, never identity.</span>
           </div>
         </footer>
       </div>

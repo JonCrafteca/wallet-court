@@ -197,7 +197,7 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
           </DialogTitle>
           <DialogDescription className="font-mono text-sm text-court-mute flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-display uppercase tracking-[0.06em] text-court-ice">Wallet Court</span>
-            <ShoutItMark withTagline />
+            <ShoutItMark variant="mascot" showTagline size={38} />
             <span className="text-court-mute">— {trial.data_mode === "live" ? "Evidence powered by Nansen" : "Demo case"}</span>
           </DialogDescription>
         </DialogHeader>

@@ -64,8 +64,20 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   lines.slice(0, maxLines).forEach((l, i) => ctx.fillText(l, x, y + i * lineHeight));
 }
 
+// Same-origin image loader for the verdict card. Resolves null on error so the
+// canvas can fall back to the microphone without tainting the PNG export.
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
 export async function drawVerdictCard(canvas, trial) {
   await ensureFonts();
+  const mascot = await loadImage("/brand/shoutit-mascot-round.png");
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
@@ -109,8 +121,29 @@ export async function drawVerdictCard(canvas, trial) {
   ctx.fillText("WALLET COURT", 40 * s, 38 * s);
   ctx.font = `600 ${16 * s}px Oswald, sans-serif`;
   ctx.fillStyle = COLORS.chart;
-  drawMic(ctx, 28 * s, 70 * s, 18 * s, COLORS.chart);
-  ctx.fillText("A ShoutIt Original", 46 * s, 70 * s);
+  // ShoutIt round mascot beside "A ShoutIt Original"; mic fallback on load fail.
+  const ms = 42 * s;
+  const mcx = 28 * s;
+  const mcy = 70 * s;
+  if (mascot) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(mcx, mcy, ms / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(mascot, mcx - ms / 2, mcy - ms / 2, ms, ms);
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(mcx, mcy, ms / 2, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(245,247,255,0.4)";
+    ctx.lineWidth = Math.max(1, s);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    drawMic(ctx, 28 * s, 70 * s, 18 * s, COLORS.chart);
+  }
+  ctx.fillText("A ShoutIt Original", 54 * s, 70 * s);
 
   // Live/demo badge (top right)
   const badgeText = isLive ? "LIVE · NANSEN" : "DEMO";

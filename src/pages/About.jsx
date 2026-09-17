@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import ShoutItMark from "@/components/walletcourt/ShoutItMark";
 
 const SECTIONS = [
   {
@@ -47,6 +48,18 @@ export default function About() {
             <p className="font-mono text-base text-court-ice leading-relaxed">{s.body}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-10 border-2 border-court-navy bg-court-ice p-6 sm:p-10 text-center">
+        <div className="flex justify-center pb-2">
+          <ShoutItMark variant="lockup" lockupWidth={200} />
+        </div>
+        <h2 className="mt-6 font-display tracking-[0.04em] text-court-navy text-xl sm:text-2xl">
+          A ShoutIt Original
+        </h2>
+        <p className="mt-2 font-mono text-base text-court-navy leading-relaxed max-w-xl mx-auto">
+          ShoutIt powers the sharing and distribution layer for Wallet Court — the dispatch desk, the verdict cards, and the public gallery that carries each ruling out into the world.
+        </p>
       </div>
 
       <div className="mt-10 text-center">
