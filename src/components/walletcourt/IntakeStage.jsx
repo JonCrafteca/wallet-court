@@ -15,7 +15,7 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
         <div className="pointer-events-none absolute -top-8 -left-2 h-16 w-16 bg-court-uv border-2 border-court-ice hidden sm:block" aria-hidden />
         <div className="pointer-events-none absolute -bottom-6 -right-1 h-10 w-28 bg-court-uv border-2 border-court-red hidden sm:block" aria-hidden />
         <div className="court-kicker relative inline-flex items-center gap-2 border-2 px-3 py-1 mb-5">
-          <Radio className="h-3.5 w-3.5 text-court-red animate-blink" />
+          <Radio className="h-3.5 w-3.5 text-court-ice animate-blink" />
           <span className="font-mono text-[0.6rem] uppercase tracking-[0.24em]">Live · Wallet Crime Unit</span>
         </div>
         <h1
