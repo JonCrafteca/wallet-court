@@ -4,6 +4,7 @@ import NansenEvidence from "./NansenEvidence";
 import ShareActions from "./ShareActions";
 import ShoutItGallery from "./ShoutItGallery";
 import SentenceRuling from "./SentenceRuling";
+import ClaimWalletSection from "./ClaimWalletSection";
 
 export default function VerdictReveal({ trial, onReset }) {
   const addr = trial.normalized_wallet_address || "";
@@ -62,7 +63,12 @@ export default function VerdictReveal({ trial, onReset }) {
         <ShareActions trial={trial} onReset={onReset} />
       </div>
 
-      {/* 6. ShoutIt Public Gallery */}
+      {/* 6. Wallet ownership / Rap Sheet */}
+      <div className="mt-10">
+        <ClaimWalletSection trial={trial} />
+      </div>
+
+      {/* 7. ShoutIt Public Gallery */}
       <div className="mt-12">
         <ShoutItGallery />
       </div>

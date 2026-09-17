@@ -78,6 +78,10 @@
   body {
     @apply bg-background text-foreground font-body antialiased;
   }
+  *:focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
 }
 
 @layer components {

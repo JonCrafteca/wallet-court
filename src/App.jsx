@@ -5,12 +5,14 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
+import ReownMount from '@/components/walletcourt/ReownMount';
 import CourtLayout from '@/components/walletcourt/CourtLayout';
 import Home from '@/pages/Home';
 import Case from '@/pages/Case';
 import Hall from '@/pages/Hall';
 import About from '@/pages/About';
 import Challenge from '@/pages/Challenge';
+import Wallet from '@/pages/Wallet';
 import AdminCourtDispatches from '@/pages/AdminCourtDispatches';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
@@ -32,6 +34,7 @@ function App() {
               <Route path="/hall" element={<Hall />} />
               <Route path="/about" element={<About />} />
               <Route path="/challenge/:sourceCaseSlug" element={<Challenge />} />
+              <Route path="/wallet/:claimSlug" element={<Wallet />} />
               <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
                 <Route path="/admin/court-dispatches" element={<AdminCourtDispatches />} />
               </Route>
@@ -42,6 +45,7 @@ function App() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
+          <ReownMount />
           <Toaster />
         </Router>
       </QueryClientProvider>
