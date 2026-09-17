@@ -14,6 +14,7 @@ import About from '@/pages/About';
 import Challenge from '@/pages/Challenge';
 import Wallet from '@/pages/Wallet';
 import AdminCourtDispatches from '@/pages/AdminCourtDispatches';
+import AdminNansenUsage from '@/pages/AdminNansenUsage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -37,6 +38,7 @@ function App() {
               <Route path="/wallet/:claimSlug" element={<Wallet />} />
               <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
                 <Route path="/admin/court-dispatches" element={<AdminCourtDispatches />} />
+                <Route path="/admin/nansen-usage" element={<AdminNansenUsage />} />
               </Route>
             </Route>
             <Route path="/login" element={<Login />} />

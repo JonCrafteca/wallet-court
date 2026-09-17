@@ -18,7 +18,8 @@ export default function NansenEvidence({ trial }) {
   const sources = safeParse(trial.source_endpoints_json, []);
   const [open, setOpen] = useState(false);
   const isLive = trial.data_mode === "live";
-  const metricEntries = Object.entries(metrics);
+  const meta = metrics._meta || null;
+  const metricEntries = Object.entries(metrics).filter(([k]) => !k.startsWith("_"));
 
   return (
     <section>
@@ -33,7 +34,7 @@ export default function NansenEvidence({ trial }) {
             isLive ? "border-court-chart text-court-chart" : "border-court-red text-court-red"
           )}
         >
-          {isLive ? "Live · Nansen" : "Demo Mode"}
+          {meta?.partial ? "Partial · Nansen" : isLive ? "Live · Nansen" : "Demo Mode"}
         </span>
       </div>
 
@@ -68,6 +69,19 @@ export default function NansenEvidence({ trial }) {
 
       {open && (
         <div className="mt-4 border-2 border-court-mute bg-court-navy p-4 space-y-4">
+          {meta?.partial && (
+            <div className="border-2 border-court-chart bg-court-uv p-3">
+              <p className="font-display uppercase tracking-[0.06em] text-court-chart text-sm">Partial Nansen evidence</p>
+              <p className="mt-1 font-mono text-xs text-court-ice leading-relaxed">
+                Some Nansen endpoints were unavailable for this wallet. Missing data is never shown as fact. Failed sources: {meta.failed_sources?.join(", ") || "—"}.
+              </p>
+            </div>
+          )}
+          {meta && (
+            <p className="font-mono text-xs text-court-mute leading-relaxed">
+              Evidence window: {meta.evidence_date_range?.from} → {meta.evidence_date_range?.to} ({meta.window_days} days). Source freshness: {meta.freshness ? new Date(meta.freshness).toLocaleString() : "—"}.
+            </p>
+          )}
           {metricEntries.length > 0 && (
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.14em] text-court-mute mb-2">Technical Metrics</p>

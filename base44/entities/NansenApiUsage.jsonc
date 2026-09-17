@@ -1,0 +1,97 @@
+{
+  "name": "NansenApiUsage",
+  "type": "object",
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "Nansen endpoint key: pnl_summary, dex_trades, current_balance, transactions."
+    },
+    "chain": {
+      "type": "string",
+      "description": "Nansen chain value used for the request."
+    },
+    "request_status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed"
+      ],
+      "description": "success only when Nansen returned a 2xx response."
+    },
+    "http_status": {
+      "type": "number",
+      "description": "HTTP status code returned by Nansen (0 for network/timeout failures)."
+    },
+    "nansen_request_id": {
+      "type": "string",
+      "description": "Request ID returned by Nansen headers, if any."
+    },
+    "credits_cost": {
+      "type": "number",
+      "description": "Credits cost for this call, from Nansen headers, if reported."
+    },
+    "credits_used": {
+      "type": "number",
+      "description": "Cumulative credits used, from Nansen headers, if reported."
+    },
+    "credits_remaining": {
+      "type": "number",
+      "description": "Credits remaining, from Nansen headers, if reported."
+    },
+    "rate_limit_remaining": {
+      "type": "string",
+      "description": "Rate-limit remaining value from Nansen headers, if reported."
+    },
+    "called_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the WalletTrial this call was made for."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "live",
+        "partial",
+        "demo"
+      ],
+      "description": "Overall outcome of the analysis this call belonged to."
+    },
+    "error_category": {
+      "type": "string",
+      "description": "Sanitized error category for failed calls: missing_key, auth, plan_credit, rate_limit, timeout, malformed, unsupported_chain, network, unknown."
+    }
+  },
+  "required": [
+    "endpoint",
+    "chain",
+    "request_status",
+    "http_status",
+    "called_at",
+    "outcome"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
