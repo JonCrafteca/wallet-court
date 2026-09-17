@@ -1,7 +1,18 @@
-import { Outlet } from "react-router-dom";
+import { useState } from "react";
+import { Outlet, NavLink } from "react-router-dom";
+import { Menu, X } from "lucide-react";
 import TickerTape from "./TickerTape";
+import { cn } from "@/lib/utils";
+
+const NAV = [
+  { to: "/", label: "Courtroom", end: true },
+  { to: "/hall", label: "The Hall" },
+  { to: "/about", label: "About" },
+];
 
 export default function CourtLayout() {
+  const [open, setOpen] = useState(false);
+
   return (
     <div className="court-shell min-h-screen font-body relative overflow-x-hidden">
       <div className="fixed inset-0 broadcast-grid pointer-events-none" aria-hidden />
@@ -12,20 +23,69 @@ export default function CourtLayout() {
               <span className="font-display uppercase tracking-[0.04em] text-court-ice text-xl sm:text-2xl leading-none">
                 Wallet Court
               </span>
-              <span className="hidden sm:inline font-mono text-[0.58rem] uppercase tracking-[0.22em] text-court-ice border-l border-court-mute pl-3">
+              <span className="hidden md:inline font-mono text-xs uppercase tracking-[0.22em] text-court-ice border-l border-court-mute pl-3">
                 Nansen Evidence Division
               </span>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <span className="inline-flex items-center gap-1.5 border-2 border-court-chart bg-court-navy px-2 py-1 text-[0.58rem] uppercase tracking-[0.18em] text-court-chart">
+
+            <nav className="hidden sm:flex items-center gap-1">
+              {NAV.map((n) => (
+                <NavLink
+                  key={n.to}
+                  to={n.to}
+                  end={n.end}
+                  className={({ isActive }) =>
+                    cn(
+                      "px-3 py-1.5 font-display uppercase tracking-[0.08em] text-sm border-2 transition-colors",
+                      isActive
+                        ? "bg-court-chart text-court-navy border-court-chart"
+                        : "text-court-ice border-transparent hover:border-court-ice"
+                    )
+                  }
+                >
+                  {n.label}
+                </NavLink>
+              ))}
+              <span className="ml-2 inline-flex items-center gap-1.5 border-2 border-court-chart bg-court-navy px-2 py-1 text-xs uppercase tracking-[0.18em] text-court-chart">
                 <span className="h-1.5 w-1.5 rounded-full bg-court-chart animate-blink" />
-                Demo Mode
+                Demo
               </span>
-              <span className="hidden sm:inline font-mono text-[0.58rem] uppercase tracking-[0.18em] text-court-mute">
-                A ShoutIt Experiment
-              </span>
-            </div>
+            </nav>
+
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              aria-label="Toggle navigation"
+              className="sm:hidden inline-flex items-center justify-center border-2 border-court-ice text-court-ice p-2"
+            >
+              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
+
+          {open && (
+            <nav className="sm:hidden border-t-2 border-court-ice bg-court-navy px-4 py-3 space-y-2">
+              {NAV.map((n) => (
+                <NavLink
+                  key={n.to}
+                  to={n.to}
+                  end={n.end}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      "block px-3 py-2.5 font-display uppercase tracking-[0.08em] text-base border-2",
+                      isActive
+                        ? "bg-court-chart text-court-navy border-court-chart"
+                        : "text-court-ice border-court-ice"
+                    )
+                  }
+                >
+                  {n.label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
+
           <TickerTape />
         </header>
 

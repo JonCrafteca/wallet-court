@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Quote } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const REACTIONS = [
   {
@@ -26,12 +27,12 @@ export default function ShoutItGallery() {
   }, []);
 
   return (
-    <div className="mt-8">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h3 className="font-display uppercase tracking-[0.1em] text-court-ice text-base">
+    <div className="border-2 border-court-ice bg-court-navy p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 className="font-display uppercase tracking-[0.08em] text-court-ice text-xl">
           ShoutIt Public Gallery
         </h3>
-        <span className="font-mono text-[0.52rem] uppercase tracking-[0.14em] text-court-red">
+        <span className="font-mono text-xs uppercase tracking-[0.14em] text-court-red">
           Dramatized Courtroom Chatter · Live ShoutIt Reactions Coming Soon
         </span>
       </div>
@@ -40,24 +41,21 @@ export default function ShoutItGallery() {
         {REACTIONS.map((r, i) => (
           <motion.div
             key={r.handle}
-            animate={{ scale: active === i ? 1.02 : 1, rotate: i % 2 ? 0.5 : -0.5 }}
+            animate={{ scale: active === i ? 1.02 : 1 }}
             transition={{ type: "spring", stiffness: 120, damping: 18 }}
-            className={`relative bg-court-navy border-2 p-4 ${
-              active === i
-                ? "border-court-chart shadow-[5px_5px_0_0_#D8FF32]"
-                : "border-court-ice"
-            }`}
+            className={cn(
+              "relative bg-court-uv border-2 p-4",
+              active === i ? "border-court-chart" : "border-court-ice"
+            )}
           >
             <Quote className="h-4 w-4 text-court-red mb-2" />
-            <p className="font-mono text-court-ice text-sm leading-relaxed">
-              “{r.text}”
-            </p>
+            <p className="font-mono text-court-ice text-sm leading-relaxed">“{r.text}”</p>
             <p className="mt-3 font-mono text-xs text-court-chart">— {r.handle}</p>
           </motion.div>
         ))}
       </div>
 
-      <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.12em] text-court-ice">
+      <p className="mt-4 font-mono text-xs uppercase tracking-[0.12em] text-court-mute">
         Dramatized reactions. Not real posts. No like, repost, follower, or verification counts shown.
       </p>
     </div>

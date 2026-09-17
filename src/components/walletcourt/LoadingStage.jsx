@@ -37,24 +37,20 @@ export default function LoadingStage({ visible }) {
     <div className="fixed inset-0 z-40 bg-court-cobalt backdrop-blur-sm flex items-center justify-center px-4">
       <div className="w-full max-w-xl">
         <div className="border-4 border-court-ice bg-court-navy shadow-[8px_8px_0_0_#5127C7]">
-          <div className="flex items-center justify-between border-b-2 border-court-ice bg-court-red px-4 py-1.5">
-            <span className="font-display uppercase tracking-[0.12em] text-court-ice text-sm">Case File · Building</span>
-            <span className="font-mono text-[0.58rem] uppercase tracking-[0.2em] text-court-ice animate-blink">● On Air</span>
+          <div className="flex items-center justify-between border-b-2 border-court-ice bg-court-red px-4 py-2">
+            <span className="font-display uppercase tracking-[0.1em] text-court-ice text-sm">Case File · Building</span>
+            <span className="font-mono text-xs uppercase tracking-[0.18em] text-court-ice animate-blink">● On Air</span>
           </div>
 
           <div className="p-5 sm:p-6">
             <div className="flex items-center gap-3 mb-4">
               <Gavel className="h-7 w-7 text-court-chart shrink-0" />
               <div>
-                <p className="font-mono text-[0.58rem] uppercase tracking-[0.2em] text-court-red">
-                  Court in session
-                </p>
-                <p className="font-display uppercase text-court-ice text-xl leading-tight">
-                  Filing the evidence
-                </p>
+                <p className="font-mono text-xs uppercase tracking-[0.18em] text-court-red">Court in session</p>
+                <p className="font-display uppercase text-court-ice text-xl leading-tight">Filing the evidence</p>
               </div>
-              <span className="ml-auto font-mono text-[0.58rem] uppercase tracking-[0.15em] text-court-mute">
-                Exhibits filed: {String(filed.length).padStart(2, "0")}
+              <span className="ml-auto font-mono text-xs uppercase tracking-[0.14em] text-court-mute">
+                Exhibits: {String(filed.length).padStart(2, "0")}
               </span>
             </div>
 
@@ -69,10 +65,10 @@ export default function LoadingStage({ visible }) {
                     className="border-2 border-court-ice bg-court-uv px-3 py-2"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-[0.55rem] uppercase tracking-[0.15em] text-court-navy border border-court-chart bg-court-chart px-1">
+                      <span className="font-mono text-xs uppercase tracking-[0.12em] text-court-navy border border-court-chart bg-court-chart px-1.5 py-0.5">
                         Ex {EXHIBIT[idx % EXHIBIT.length]}
                       </span>
-                      <span className="font-mono text-xs text-court-ice truncate">{item.msg}</span>
+                      <span className="font-mono text-sm text-court-ice truncate">{item.msg}</span>
                     </div>
                     <div className="mt-1.5 h-2 w-2/3 bg-court-navy" />
                   </motion.div>
@@ -80,7 +76,7 @@ export default function LoadingStage({ visible }) {
               </AnimatePresence>
             </div>
 
-            <div className="mt-4 border-t border-court-mute/40 pt-2 font-mono text-[0.6rem] text-court-mute flex items-center justify-between">
+            <div className="mt-4 border-t border-court-mute pt-2 font-mono text-xs text-court-mute flex items-center justify-between">
               <span>nansen evidence stream</span>
               <span className="text-court-chart animate-blink">● recording</span>
             </div>

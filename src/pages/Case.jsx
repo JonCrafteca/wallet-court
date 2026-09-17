@@ -37,19 +37,21 @@ export default function Case() {
   if (status === "loading") return <LoadingStage visible />;
   if (status !== "done" || !trial) {
     return (
-      <div className="mx-auto max-w-xl px-4 pt-24 text-center">
-        <p className="font-display uppercase text-court-red text-3xl mb-3 tracking-[0.04em]">
-          Case file not found
-        </p>
-        <p className="font-mono text-sm text-court-mute mb-6">
-          {error || "This case never made it to the docket."}
-        </p>
-        <button
-          onClick={() => navigate("/")}
-          className="inline-flex items-center justify-center bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-sm px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#5127C7] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all"
-        >
-          New Trial
-        </button>
+      <div className="mx-auto max-w-xl px-4 pt-20 pb-24">
+        <div className="border-2 border-court-ice bg-court-navy p-6 sm:p-8 text-center">
+          <p className="font-display uppercase text-court-red text-3xl mb-3 tracking-[0.04em]">
+            Case file not found
+          </p>
+          <p className="font-mono text-base text-court-ice mb-6 leading-relaxed">
+            {error || "This case never made it to the docket."}
+          </p>
+          <button
+            onClick={() => navigate("/")}
+            className="inline-flex items-center justify-center bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-base px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all"
+          >
+            Roast Another Wallet
+          </button>
+        </div>
       </div>
     );
   }

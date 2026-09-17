@@ -8,6 +8,8 @@ import ScrollToTop from './components/ScrollToTop';
 import CourtLayout from '@/components/walletcourt/CourtLayout';
 import Home from '@/pages/Home';
 import Case from '@/pages/Case';
+import Hall from '@/pages/Hall';
+import About from '@/pages/About';
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
             <Route element={<CourtLayout />}>
               <Route path="/" element={<Home />} />
               <Route path="/case/:slug" element={<Case />} />
+              <Route path="/hall" element={<Hall />} />
+              <Route path="/about" element={<About />} />
             </Route>
             <Route path="*" element={<PageNotFound />} />
           </Routes>

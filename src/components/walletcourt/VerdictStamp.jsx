@@ -23,7 +23,7 @@ export default function VerdictStamp({ trial }) {
       >
         {trial.verdict_name}
       </h2>
-      <p className="mt-3 font-mono text-xs uppercase tracking-[0.2em] text-court-ice">
+      <p className="mt-4 font-mono text-base uppercase tracking-[0.15em] text-court-ice">
         {trial.headline}
       </p>
     </div>
