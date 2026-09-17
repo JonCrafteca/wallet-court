@@ -4,7 +4,7 @@
 // All Nansen responses are normalized defensively: missing fields are omitted,
 // never invented and never treated as zero.
 import { waitUntil } from "base44:runtime";
-import { fmtPctSigned, fmtPctPlain, fmtUsd, totalTradesEvidence, sampleEvidence } from "./format.ts";
+import { fmtPctSigned, fmtPctPlain, fmtUsd, fmtInt, totalTradesEvidence, sampleEvidence, avgTokenAge } from "./format.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
 
@@ -220,12 +220,12 @@ function mapEvidence(calls, windowDays) {
   else if (realizedUsd !== null) evidence.push({ tag: "NANSEN · PNL", label: "Realized PnL", value: fmtUsd(realizedUsd), detail: "Realized profit/loss over the evidence window." });
   if (winRate !== null) evidence.push({ tag: "NANSEN · PNL", label: "Win Rate", value: fmtPctPlain(winRate), detail: "Share of sales closed above cost basis." });
   if (tradedTimes !== null) evidence.push(totalTradesEvidence(tradedTimes));
-  if (tradedTokenCount !== null) evidence.push({ tag: "NANSEN · PNL", label: "Tokens Traded", value: String(tradedTokenCount), detail: "Distinct tokens bought or sold during the window." });
+  if (tradedTokenCount !== null) evidence.push({ tag: "NANSEN · PNL", label: "Tokens Traded", value: fmtInt(tradedTokenCount), detail: "Distinct tokens bought or sold during the window." });
   if (Array.isArray(top5) && top5.length) {
     const wins = top5.filter((t) => num(t.realized_pnl ?? t.realizedPnl) > 0).length;
     const losses = top5.filter((t) => num(t.realized_pnl ?? t.realizedPnl) < 0).length;
     metrics.top5_wins = wins; metrics.top5_losses = losses;
-    evidence.push({ tag: "NANSEN · PNL", label: "Top-5 Token PnL", value: `${wins}W / ${losses}L`, detail: "Profitable vs unprofitable among the top 5 tokens by realized profit." });
+    evidence.push({ tag: "NANSEN · PNL", label: "Top-5 Token PnL", value: `${fmtInt(wins)} wins / ${fmtInt(losses)} losses`, detail: "Profitable vs unprofitable among the top 5 tokens by realized profit." });
   }
 
   // ---- DEX trades (paginated SAMPLE — first 100 records, not complete history) ----
@@ -233,8 +233,12 @@ function mapEvidence(calls, windowDays) {
   if (Array.isArray(dexData)) {
     metrics.dex_trade_count = dexData.length;
     evidence.push(sampleEvidence("NANSEN · DEX", "Recent DEX Trades", dexData.length, "on-chain swaps"));
-    const ages = dexData.map((d) => num(d.token_bought_age_days ?? d.tokenBoughtAgeDays)).filter((x) => x !== null);
-    if (ages.length) { const avg = ages.reduce((a, b) => a + b, 0) / ages.length; metrics.avg_token_bought_age_days = avg; evidence.push({ tag: "NANSEN · DEX", label: "Avg Token Age at Buy", value: `${avg.toFixed(0)} days`, detail: "Average age of tokens when purchased (sample) — lower means buying newer tokens." }); }
+    const age = avgTokenAge(dexData);
+    if (age) {
+      metrics.avg_token_bought_age_days = age.avg;
+      metrics.avg_token_bought_age_sample = age.validCount;
+      evidence.push({ tag: "NANSEN · DEX", label: "Avg Token Age at Buy", value: `${fmtInt(age.avg)} days`, detail: `Derived average token age at purchase — Wallet Court derived from Nansen evidence. Based on ${fmtInt(age.validCount)} valid trades from the recent DEX sample.` });
+    }
     const vals = dexData.map((d) => num(d.trade_value_usd ?? d.tradeValueUsd)).filter((x) => x !== null);
     if (vals.length) { const avg = vals.reduce((a, b) => a + b, 0) / vals.length; metrics.avg_trade_value_usd = avg; evidence.push({ tag: "NANSEN · DEX", label: "Avg Trade Size", value: fmtUsd(avg), detail: "Mean swap value in USD (sample)." }); }
   }
@@ -243,7 +247,7 @@ function mapEvidence(calls, windowDays) {
   const balData = pickArr(bal, ["data", "balances", "tokenBalances"]);
   if (Array.isArray(balData)) {
     metrics.token_balance_count = balData.length;
-    evidence.push({ tag: "NANSEN · BALANCE", label: "Token Balances", value: String(balData.length), detail: "Distinct tokens currently held (Nansen point-in-time snapshot)." });
+    evidence.push({ tag: "NANSEN · BALANCE", label: "Token Balances", value: fmtInt(balData.length), detail: "Distinct tokens currently held (Nansen point-in-time snapshot)." });
     const vals = balData.map((d) => num(d.value_usd ?? d.valueUsd)).filter((x) => x !== null);
     if (vals.length) { const total = vals.reduce((a, b) => a + b, 0); metrics.portfolio_value_usd = total; evidence.push({ tag: "NANSEN · BALANCE", label: "Current Portfolio Value", value: fmtUsd(total), detail: "Sum of token USD values across returned holdings (Nansen current snapshot)." }); }
   }

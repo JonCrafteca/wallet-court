@@ -53,7 +53,7 @@ function CaseCard({ c, rank }) {
 
       {c.trial_count > 1 && (
         <p className="mt-3 font-mono text-xs uppercase tracking-[0.1em] text-court-chart">
-          Tried {c.trial_count} times
+          Tried {c.trial_count?.toLocaleString()} times
         </p>
       )}
 

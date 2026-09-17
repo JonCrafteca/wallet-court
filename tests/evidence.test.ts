@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { selectLiveVerdictIndex, computeSeverityConfidence } from "../base44/shared/verdicts_live.ts";
-import { fmtPctSigned, fmtPctPlain, fmtUsd, totalTradesEvidence, sampleEvidence } from "../base44/shared/format.ts";
+import { fmtPctSigned, fmtPctPlain, fmtUsd, fmtInt, totalTradesEvidence, sampleEvidence, avgTokenAge } from "../base44/shared/format.ts";
 
 // Nansen docs (address-pnl-and-trade-performance) define the audited fields:
 //   realized_pnl_percent — "a percentage (not multiplied by 100)" → decimal ratio (0.84 == 84%)
@@ -94,9 +94,9 @@ describe("format — currency", () => {
 });
 
 describe("format — paginated sample vs summary total", () => {
-  it("total trades evidence describes the window total", () => {
+  it("total trades evidence describes the window total (locale formatted)", () => {
     const e = totalTradesEvidence(3439);
-    expect(e.value).toBe("3439");
+    expect(e.value).toBe("3,439");
     expect(e.detail).toContain("evidence window");
   });
   it("sample evidence is never described as complete history", () => {
@@ -104,5 +104,53 @@ describe("format — paginated sample vs summary total", () => {
     expect(e.value).toBe("100");
     expect(e.detail).toContain("sample");
     expect(e.detail).toContain("not complete history");
+  });
+});
+
+describe("format — integer locale separators", () => {
+  it("fmtInt groups thousands", () => {
+    expect(fmtInt(3439)).toBe("3,439");
+    expect(fmtInt(100)).toBe("100");
+    expect(fmtInt(0)).toBe("0");
+    expect(fmtInt(4030.76)).toBe("4,031");
+  });
+});
+
+describe("avgTokenAge — Nansen token_bought_age_days (integer days)", () => {
+  it("uses the days field as-is — no seconds/ms conversion", () => {
+    // Nansen provides token_bought_age_days as an INTEGER in days. 3600 means
+    // 3600 days, NOT 3600 seconds (1 hour) or 3600 ms.
+    const r = avgTokenAge([{ token_bought_age_days: 3600 }, { token_bought_age_days: 4462 }]);
+    expect(r.avg).toBe(4031);
+    expect(r.validCount).toBe(2);
+  });
+  it("does not read block_timestamp or other timestamp fields", () => {
+    const r = avgTokenAge([{ block_timestamp: "2025-01-01T00:00:00Z", token_bought_age_days: 100 }]);
+    expect(r.avg).toBe(100);
+    expect(r.validCount).toBe(1);
+  });
+  it("excludes negative ages (pre-chain / malformed)", () => {
+    const r = avgTokenAge([{ token_bought_age_days: -5 }, { token_bought_age_days: 100 }, { token_bought_age_days: 200 }]);
+    expect(r.validCount).toBe(2);
+    expect(r.avg).toBe(150);
+  });
+  it("excludes missing, null, and non-finite values", () => {
+    const r = avgTokenAge([{ token_bought_age_days: null }, {}, { token_bought_age_days: "abc" }, { token_bought_age_days: NaN }, { token_bought_age_days: 300 }]);
+    expect(r.validCount).toBe(1);
+    expect(r.avg).toBe(300);
+  });
+  it("returns null when no valid trades", () => {
+    expect(avgTokenAge([{ token_bought_age_days: null }, { token_bought_age_days: -1 }])).toBeNull();
+    expect(avgTokenAge([])).toBeNull();
+    expect(avgTokenAge(null)).toBeNull();
+  });
+  it("discloses sample size (validCount vs total)", () => {
+    const r = avgTokenAge([{ token_bought_age_days: 100 }, { token_bought_age_days: null }, { token_bought_age_days: -1 }, { token_bought_age_days: 200 }]);
+    expect(r.total).toBe(4);
+    expect(r.validCount).toBe(2);
+  });
+  it("does not cap large valid values", () => {
+    const r = avgTokenAge([{ token_bought_age_days: 4031 }]);
+    expect(r.avg).toBe(4031);
   });
 });

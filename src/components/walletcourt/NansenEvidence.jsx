@@ -29,8 +29,13 @@ function formatMetric(k, v) {
     const n = typeof v === "number" ? v : parseFloat(v);
     return Number.isFinite(n) ? `${n >= 0 ? "$" : "-$"}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(v);
   }
-  if (k === "avg_token_bought_age_days") return `${Math.round(Number(v))} days`;
+  if (k === "avg_token_bought_age_days") {
+    const n = typeof v === "number" ? v : parseFloat(v);
+    return Number.isFinite(n) ? `${Math.round(n).toLocaleString()} days` : String(v);
+  }
   if (k === "tx_frequency_per_day") return `${Number(v).toFixed(2)}/day`;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  if (Number.isFinite(n) && Number.isInteger(n)) return n.toLocaleString();
   return String(v);
 }
 
