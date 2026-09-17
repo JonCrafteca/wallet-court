@@ -1,7 +1,7 @@
 import VerdictStamp from "./VerdictStamp";
 import SeverityMeter from "./SeverityMeter";
 import NansenEvidence from "./NansenEvidence";
-import ActionsBar from "./ActionsBar";
+import ShareActions from "./ShareActions";
 import ShoutItGallery from "./ShoutItGallery";
 
 export default function VerdictReveal({ trial, onReset }) {
@@ -59,7 +59,7 @@ export default function VerdictReveal({ trial, onReset }) {
 
       {/* 5. Actions */}
       <div className="mt-10">
-        <ActionsBar slug={trial.public_slug} onReset={onReset} />
+        <ShareActions trial={trial} onReset={onReset} />
       </div>
 
       {/* 6. ShoutIt Public Gallery */}

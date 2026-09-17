@@ -1,0 +1,115 @@
+{
+  "name": "WalletChallenge",
+  "type": "object",
+  "properties": {
+    "challenge_slug": {
+      "type": "string",
+      "description": "Unique shareable slug for the challenge/comparison result."
+    },
+    "source_case_slug": {
+      "type": "string",
+      "description": "Public slug of the challenger's original case."
+    },
+    "challenger_address_short": {
+      "type": "string",
+      "description": "Abbreviated challenger wallet address."
+    },
+    "challenger_verdict_name": {
+      "type": "string"
+    },
+    "challenger_verdict_code": {
+      "type": "string"
+    },
+    "challenger_severity": {
+      "type": "number"
+    },
+    "challenger_confidence": {
+      "type": "number"
+    },
+    "challenger_network": {
+      "type": "string"
+    },
+    "challenger_data_mode": {
+      "type": "string",
+      "enum": [
+        "demo",
+        "live"
+      ]
+    },
+    "challenged_handles_json": {
+      "type": "string",
+      "description": "JSON array of challenged X handles (no @)."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "completed"
+      ],
+      "default": "open"
+    },
+    "defendant_case_slug": {
+      "type": "string"
+    },
+    "defendant_address_short": {
+      "type": "string"
+    },
+    "defendant_verdict_name": {
+      "type": "string"
+    },
+    "defendant_verdict_code": {
+      "type": "string"
+    },
+    "defendant_severity": {
+      "type": "number"
+    },
+    "defendant_confidence": {
+      "type": "number"
+    },
+    "defendant_network": {
+      "type": "string"
+    },
+    "defendant_data_mode": {
+      "type": "string",
+      "enum": [
+        "demo",
+        "live"
+      ]
+    },
+    "result": {
+      "type": "string",
+      "description": "Plain-language comparison result."
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "challenge_slug",
+    "source_case_slug",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

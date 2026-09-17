@@ -95,8 +95,8 @@ export default function CourtLayout() {
 
         <footer className="border-t-4 border-court-navy bg-court-navy px-4 py-4">
           <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-between gap-2 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-court-mute">
-            <span>Wallet Court // Nansen Evidence Division · A ShoutIt Experiment</span>
-            <span className="text-court-chart">Powered by Nansen API</span>
+            <span>Wallet Court · A ShoutIt Original // Nansen Evidence Division</span>
+            <span className="text-court-chart">Evidence powered by Nansen</span>
             <span className="w-full sm:w-auto sm:text-right">Verdicts are parody. Not financial advice. Roasts target behavior, never identity.</span>
           </div>
         </footer>

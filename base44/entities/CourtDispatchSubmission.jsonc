@@ -1,0 +1,101 @@
+{
+  "name": "CourtDispatchSubmission",
+  "type": "object",
+  "properties": {
+    "case_slug": {
+      "type": "string",
+      "description": "Public slug of the case being shouted."
+    },
+    "submission_type": {
+      "type": "string",
+      "enum": [
+        "court_dispatch",
+        "self_roast",
+        "challenge_post"
+      ],
+      "description": "The post style the user approved."
+    },
+    "approved_post_text": {
+      "type": "string",
+      "description": "The user-approved post text submitted for editorial review."
+    },
+    "optional_x_handle": {
+      "type": "string",
+      "description": "Sanitized optional X handle (stored without @)."
+    },
+    "consent_to_publish": {
+      "type": "boolean",
+      "default": false,
+      "description": "Explicit consent authorizing ShoutIt to publish."
+    },
+    "data_mode": {
+      "type": "string",
+      "enum": [
+        "demo",
+        "live"
+      ],
+      "description": "Live/demo label copied from the case for filtering."
+    },
+    "verdict_name": {
+      "type": "string",
+      "description": "Verdict name copied from the case for filtering/display."
+    },
+    "verdict_code": {
+      "type": "string"
+    },
+    "network": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "published"
+      ],
+      "default": "pending"
+    },
+    "published_post_url": {
+      "type": "string",
+      "description": "Final X post URL once published."
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "case_slug",
+    "submission_type",
+    "approved_post_text",
+    "consent_to_publish",
+    "data_mode"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
