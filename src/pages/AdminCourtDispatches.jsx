@@ -63,6 +63,13 @@ export default function AdminCourtDispatches() {
   }, [authChecked, user]);
 
   async function act(id, action, extra) {
+    if (action === "publish") {
+      const url = (extra?.published_post_url || "").trim();
+      if (!isValidPostUrl(url)) {
+        setError("Enter a valid x.com or twitter.com post URL before marking published.");
+        return;
+      }
+    }
     setActing((a) => ({ ...a, [id]: true }));
     try {
       const res = await base44.functions.invoke("updateSubmission", {
@@ -116,6 +123,11 @@ export default function AdminCourtDispatches() {
         </h1>
         <p className="mt-2 font-mono text-base text-court-ice leading-relaxed">Editorial review of ShoutIt Court Dispatch submissions.</p>
       </header>
+
+      <div className="border-2 border-court-chart bg-court-navy p-4 mb-6">
+        <p className="font-display uppercase tracking-[0.06em] text-court-chart text-base sm:text-lg mb-1">Private Editorial Queue</p>
+        <p className="font-mono text-sm text-court-ice leading-relaxed">Nothing on this page is automatically published. Approve changes editorial status only. A post becomes Published here only after an admin posts it externally and records its public URL.</p>
+      </div>
 
       {/* Filters */}
       <div className="grid sm:grid-cols-4 gap-2 mb-6">
@@ -180,27 +192,30 @@ export default function AdminCourtDispatches() {
                   <ExternalLink className="h-3.5 w-3.5" /> Open Case
                 </Link>
                 {s.status !== "approved" && s.status !== "published" && (
-                  <button type="button" disabled={acting[s.id]} onClick={() => act(s.id, "approve")} className="inline-flex items-center gap-1.5 bg-court-chart text-court-navy font-mono text-xs uppercase tracking-[0.1em] px-3 py-2 border-2 border-court-navy hover:brightness-105 transition-all disabled:opacity-60">
+                  <button type="button" title="Approve for possible publication. Does not post." disabled={acting[s.id]} onClick={() => act(s.id, "approve")} className="inline-flex items-center gap-1.5 bg-court-chart text-court-navy font-mono text-xs uppercase tracking-[0.1em] px-3 py-2 border-2 border-court-navy hover:brightness-105 transition-all disabled:opacity-60">
                     <Check className="h-3.5 w-3.5" /> Approve
                   </button>
                 )}
                 {s.status !== "rejected" && (
-                  <button type="button" disabled={acting[s.id]} onClick={() => act(s.id, "reject")} className="inline-flex items-center gap-1.5 bg-court-red text-court-ice font-mono text-xs uppercase tracking-[0.1em] px-3 py-2 border-2 border-court-ice hover:brightness-105 transition-all disabled:opacity-60">
+                  <button type="button" title="Remove from editorial consideration." disabled={acting[s.id]} onClick={() => act(s.id, "reject")} className="inline-flex items-center gap-1.5 bg-court-red text-court-ice font-mono text-xs uppercase tracking-[0.1em] px-3 py-2 border-2 border-court-ice hover:brightness-105 transition-all disabled:opacity-60">
                     <X className="h-3.5 w-3.5" /> Reject
                   </button>
                 )}
                 {s.status === "approved" || s.status === "published" ? (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="url"
-                      value={publishUrl[s.id] || s.published_post_url || ""}
-                      onChange={(e) => setPublishUrl((p) => ({ ...p, [s.id]: e.target.value }))}
-                      placeholder="X post URL"
-                      className="border-2 border-court-ice bg-court-navy px-2 py-2 font-mono text-xs text-court-ice placeholder:text-court-mute focus:border-court-chart focus:outline-none w-56"
-                    />
-                    <button type="button" disabled={acting[s.id]} onClick={() => act(s.id, "publish", { published_post_url: publishUrl[s.id] || s.published_post_url })} className="inline-flex items-center gap-1.5 bg-court-chart text-court-navy font-mono text-xs uppercase tracking-[0.1em] px-3 py-2 border-2 border-court-navy hover:brightness-105 transition-all disabled:opacity-60">
-                      <Globe className="h-3.5 w-3.5" /> Mark Published
-                    </button>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="url"
+                        value={publishUrl[s.id] || s.published_post_url || ""}
+                        onChange={(e) => setPublishUrl((p) => ({ ...p, [s.id]: e.target.value }))}
+                        placeholder="https://x.com/…/status/…"
+                        className="border-2 border-court-ice bg-court-navy px-2 py-2 font-mono text-xs text-court-ice placeholder:text-court-mute focus:border-court-chart focus:outline-none w-56"
+                      />
+                      <button type="button" title="Use only after the post is publicly live. A valid public URL is required." disabled={acting[s.id]} onClick={() => act(s.id, "publish", { published_post_url: publishUrl[s.id] || s.published_post_url })} className="inline-flex items-center gap-1.5 bg-court-chart text-court-navy font-mono text-xs uppercase tracking-[0.1em] px-3 py-2 border-2 border-court-navy hover:brightness-105 transition-all disabled:opacity-60">
+                        <Globe className="h-3.5 w-3.5" /> Mark Published
+                      </button>
+                    </div>
+                    <p className="font-mono text-xs text-court-mute leading-relaxed">Requires a valid x.com or twitter.com post URL. Does not post externally.</p>
                   </div>
                 ) : null}
               </div>
@@ -220,6 +235,17 @@ export default function AdminCourtDispatches() {
       )}
     </section>
   );
+}
+
+function isValidPostUrl(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    return ["x.com", "twitter.com"].includes(host);
+  } catch {
+    return false;
+  }
 }
 
 function FilterSelect({ label, value, options, onChange }) {

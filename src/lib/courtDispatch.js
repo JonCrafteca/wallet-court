@@ -30,9 +30,12 @@ function evidenceLine(isLive) {
   return isLive ? "Evidence powered by @nansen_ai" : "Demo case";
 }
 
-// Build a single draft for a given style and variation index (0-2). Variations
-// rotate through phrasing pools so regeneration yields distinct, deterministic
-// options drawn from the actual case data.
+// Build a single draft for a given style and variation index. Each style has
+// 12 distinct, deterministic templates built ONLY from real case data — no
+// invented evidence, scores, transactions, or claims. Regenerate advances the
+// variation base by 3, so consecutive batches draw from disjoint template
+// indices (12 templates, step 3 → 4 batches/cycle) and never repeat the
+// immediately previous batch.
 export function buildDraft(trial, style, opts = {}, v = 0) {
   const caseUrl = opts.caseUrl || buildCaseUrl(trial.public_slug);
   const xHandle = opts.xHandle ? `@${opts.xHandle} ` : "";
@@ -44,25 +47,43 @@ export function buildDraft(trial, style, opts = {}, v = 0) {
   const roast = trial.roast || "";
   const defense = trial.defense_statement || "";
   const evLine = evidenceLine(isLive);
-  const i = ((v % 3) + 3) % 3;
+  const i = ((v % 12) + 12) % 12;
 
   if (style === "court_dispatch") {
-    const intros = [
+    const openers = [
       `${xHandle}put their wallet on trial.`,
       `${xHandle}stood before Wallet Court.`,
       `${xHandle}took the stand.`,
+      `${xHandle}faced the onchain evidence.`,
+      `${xHandle}went before the bench.`,
+      `${xHandle}let the court decide.`,
+      `${xHandle}answered the summons.`,
+      `${xHandle}let Nansen do the talking.`,
+      `${xHandle}had their wallet subpoenaed.`,
+      `${xHandle}stood trial for crimes against capital.`,
+      `${xHandle}let the verdict speak.`,
+      `${xHandle}went on the record.`,
     ];
-    const bodies = [
+    const rulings = [
       `VERDICT: ${vname}\n${headline}`,
       `The court ruled: ${vname}.\n${headline}`,
       `GUILTY of being a ${vname}.\n${headline}`,
+      `Charged: ${vname}.\n${headline}`,
+      `The jury returned: ${vname}.\n${headline}`,
+      `Onchain verdict: ${vname}.\n${headline}`,
+      `Case closed: ${vname}.\n${headline}`,
+      `The bench found: ${vname}.\n${headline}`,
+      `Verdict entered: ${vname}.\n${headline}`,
+      `Ruled ${vname}.\n${headline}`,
+      `The court's finding: ${vname}.\n${headline}`,
+      `Judgment: ${vname}.\n${headline}`,
     ];
     return [
       "🚨 COURT DISPATCH",
       "",
-      intros[i],
+      openers[i],
       "",
-      bodies[i],
+      rulings[i],
       "",
       `Severity: ${sev}/100`,
       `Confidence: ${conf}%`,
@@ -77,16 +98,43 @@ export function buildDraft(trial, style, opts = {}, v = 0) {
       "I voluntarily put my wallet on trial.",
       "I turned myself in to Wallet Court.",
       "I handed my wallet to the court.",
+      "I pleaded guilty to crimes against capital.",
+      "I let Wallet Court audit my onchain shame.",
+      "I took the stand against myself.",
+      "I submitted my wallet to judgment.",
+      "I called the court on myself.",
+      "I let Nansen testify against me.",
+      "I stood accused by my own wallet.",
+      "I waived my right to a defense.",
+      "I put my own bag on trial.",
     ];
     const middles = [
       `The court found me guilty of being a ${vname}.`,
       `Verdict: ${vname}.`,
       `The court ruled I'm a ${vname}.`,
+      `I was convicted of being a ${vname}.`,
+      `The bench declared me a ${vname}.`,
+      `Onchain verdict: ${vname}.`,
+      `The jury found me a ${vname}.`,
+      `Case closed: I'm a ${vname}.`,
+      `Judgment: ${vname}.`,
+      `The court entered ${vname}.`,
+      `Ruled: ${vname}.`,
+      `The finding: ${vname}.`,
     ];
     const closes = [
       defense ? `In my defense, ${lowerFirst(defense)}` : roastFirst(roast),
       defense ? `My defense: ${lowerFirst(defense)}` : roastFirst(roast),
-      roast ? roastFirst(roast) : `In my defense, ${lowerFirst(defense)}`,
+      roast ? roastFirst(roast) : (defense ? `In my defense, ${lowerFirst(defense)}` : ""),
+      defense ? `My excuse: ${lowerFirst(defense)}` : roastFirst(roast),
+      roast ? roastFirst(roast) : (defense ? `My defense: ${lowerFirst(defense)}` : ""),
+      defense ? `For the record: ${lowerFirst(defense)}` : roastFirst(roast),
+      roast ? roastFirst(roast) : (defense ? `In my defense, ${lowerFirst(defense)}` : ""),
+      defense ? `I argued: ${lowerFirst(defense)}` : roastFirst(roast),
+      defense ? `My defense: ${lowerFirst(defense)}` : roastFirst(roast),
+      roast ? roastFirst(roast) : (defense ? `For the record: ${lowerFirst(defense)}` : ""),
+      defense ? `In my defense, ${lowerFirst(defense)}` : roastFirst(roast),
+      defense ? `My defense: ${lowerFirst(defense)}` : roastFirst(roast),
     ];
     return [
       openings[i],
@@ -107,11 +155,29 @@ export function buildDraft(trial, style, opts = {}, v = 0) {
     `I survived Wallet Court with a severity score of ${sev}.`,
     `Wallet Court gave me a severity of ${sev}. I lived.`,
     `The court rated my wallet ${sev}/100. I'm still standing.`,
+    `I walked out of Wallet Court with severity ${sev}.`,
+    `Severity ${sev}/100. I'm still free.`,
+    `The bench handed me ${sev}/100 and I survived.`,
+    `I took a ${sev}/100 verdict and kept my composure.`,
+    `Wallet Court scored me ${sev}. Still here.`,
+    `I faced the court and earned severity ${sev}.`,
+    `The court gave me ${sev}/100. I'm not done.`,
+    `Severity ${sev}. The court has spoken. I have not.`,
+    `I left Wallet Court with a ${sev}/100 and my dignity.`,
   ];
   const calls = [
     `${handles || "@friends"} — put your wallets where your mouths are.`,
     `${handles || "@friends"}, your turn. Put your wallets on trial.`,
     `I nominate ${handles || "friends"} to face the court.`,
+    `${handles || "@friends"}: think you did better? Prove it.`,
+    `Your move, ${handles || "@friends"}. Face the court.`,
+    `I dare ${handles || "friends"} to take the stand.`,
+    `${handles || "@friends"} — subpoena your own wallet.`,
+    `Who's braver, ${handles || "@friends"}? Take the stand.`,
+    `${handles || "@friends"}, the court is waiting.`,
+    `I'm calling out ${handles || "friends"}. Answer the summons.`,
+    `${handles || "@friends"} — let the court rate your crimes.`,
+    `Step up, ${handles || "@friends"}. The bench is open.`,
   ];
   return [
     intros[i],
@@ -124,8 +190,8 @@ export function buildDraft(trial, style, opts = {}, v = 0) {
   ].join("\n");
 }
 
-export function buildDrafts(trial, style, opts = {}) {
-  return [0, 1, 2].map((v) => buildDraft(trial, style, opts, v));
+export function buildDrafts(trial, style, opts = {}, base = 0) {
+  return [0, 1, 2].map((off) => buildDraft(trial, style, opts, base + off));
 }
 
 // Response post shown after a challenge is completed.

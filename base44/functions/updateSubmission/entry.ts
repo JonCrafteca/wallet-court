@@ -22,8 +22,19 @@ export default async function (req) {
     if (action === "approve") update.status = "approved";
     if (action === "reject") update.status = "rejected";
     if (action === "publish") {
+      const url = (body?.published_post_url || "").trim();
+      if (!url) return Response.json({ error: "A public post URL is required to mark published." }, { status: 400 });
+      let host;
+      try {
+        host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+      } catch {
+        return Response.json({ error: "Invalid URL." }, { status: 400 });
+      }
+      if (!["x.com", "twitter.com"].includes(host)) {
+        return Response.json({ error: "URL must be an x.com or twitter.com post." }, { status: 400 });
+      }
       update.status = "published";
-      if (body?.published_post_url) update.published_post_url = String(body.published_post_url).trim();
+      update.published_post_url = url;
     }
 
     const updated = await base44.asServiceRole.entities.CourtDispatchSubmission.update(id, update);

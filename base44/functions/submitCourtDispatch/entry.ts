@@ -50,6 +50,20 @@ export default async function (req) {
       return Response.json({ error: "An identical submission is already pending review." }, { status: 409 });
     }
 
+    // dry_run: run every validation (shape, consent, case lookup, duplicate
+    // throttle) without persisting. Used by verification so tests never leave
+    // production-visible Court Desk records behind.
+    if (body?.dry_run === true) {
+      return Response.json({ dry_run: true, submission: {
+        case_slug, submission_type, approved_post_text,
+        optional_x_handle: optional_x_handle || "",
+        consent_to_publish: true, data_mode: trial.data_mode,
+        verdict_name: trial.verdict_name, verdict_code: trial.verdict_code,
+        network: trial.network, status: "pending",
+        submitted_at: new Date().toISOString()
+      }});
+    }
+
     const record = await base44.asServiceRole.entities.CourtDispatchSubmission.create({
       case_slug,
       submission_type,
