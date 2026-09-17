@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,71 +6,68 @@
 
 @layer base {
   :root {
-    /* Government case file / financial tabloid palette. Standard tokens kept in
-       HSL channels for shadcn compatibility. */
-    --background: 39 45% 90%;          /* Case-file cream #F1E9DA */
-    --foreground: 60 4% 9%;            /* Ink charcoal #181816 */
-    --card: 43 49% 96%;                /* White paper highlight #FAF7F0 */
-    --card-foreground: 60 4% 9%;
-    --popover: 43 49% 96%;
-    --popover-foreground: 60 4% 9%;
-    --primary: 60 4% 9%;               /* Charcoal for official actions */
-    --primary-foreground: 39 45% 90%;
-    --secondary: 38 42% 73%;           /* Manila #D7C29E */
-    --secondary-foreground: 60 4% 9%;
-    --muted: 38 30% 86%;
-    --muted-foreground: 41 7% 41%;      /* Aged gray #706B61 */
-    --accent: 38 42% 73%;
-    --accent-foreground: 60 4% 9%;
-    --destructive: 4 65% 48%;          /* Guilty red #C9362B */
-    --destructive-foreground: 39 45% 90%;
-    --border: 41 7% 41%;               /* Aged gray hairlines */
-    --input: 41 7% 41%;
-    --ring: 4 65% 48%;
-    --chart-1: 4 65% 48%;
-    --chart-2: 70 67% 50%;
-    --chart-3: 60 4% 9%;
-    --chart-4: 38 42% 73%;
-    --chart-5: 41 7% 41%;
-    --radius: 0.125rem;
+    /* ELECTRIC COURT TV palette. Standard tokens in HSL channels for shadcn. */
+    --background: 226 100% 57%;          /* Electric cobalt #2457FF */
+    --foreground: 228 100% 98%;          /* Ice white #F5F7FF */
+    --card: 231 45% 11%;                 /* Midnight navy #10142A */
+    --card-foreground: 228 100% 98%;
+    --popover: 231 45% 11%;
+    --popover-foreground: 228 100% 98%;
+    --primary: 72 100% 60%;             /* Evidence chartreuse #D8FF32 */
+    --primary-foreground: 231 45% 11%;
+    --secondary: 256 67% 47%;           /* Deep ultraviolet #5127C7 */
+    --secondary-foreground: 228 100% 98%;
+    --muted: 256 67% 47%;
+    --muted-foreground: 228 60% 86%;
+    --accent: 256 67% 47%;
+    --accent-foreground: 228 100% 98%;
+    --destructive: 3 100% 59%;          /* Siren red #FF3B30 */
+    --destructive-foreground: 228 100% 98%;
+    --border: 228 100% 98%;             /* Ice borders */
+    --input: 228 100% 98%;
+    --ring: 72 100% 60%;
+    --chart-1: 3 100% 59%;
+    --chart-2: 72 100% 60%;
+    --chart-3: 226 100% 57%;
+    --chart-4: 256 67% 47%;
+    --chart-5: 228 100% 98%;
+    --radius: 0rem;
 
-    --font-heading: 'Cinzel', ui-serif, Georgia, serif;
+    --font-heading: 'Oswald', ui-sans-serif, system-ui, sans-serif;
     --font-body: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-    --font-display: 'Cinzel', ui-serif, Georgia, serif;
+    --font-display: 'Anton', 'Oswald', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
     /* Direct hex court tokens (no opacity modifiers on these). */
-    --court-bg: #F1E9DA;
-    --court-paper: #FAF7F0;
-    --court-folder: #D7C29E;
-    --court-ink: #181816;
-    --court-red: #C9362B;
-    --court-green: #B8D52A;
-    --court-gray: #706B61;
-    --court-fade: #B7AE99;
+    --court-cobalt: #2457FF;
+    --court-uv: #5127C7;
+    --court-red: #FF3B30;
+    --court-chart: #D8FF32;
+    --court-ice: #F5F7FF;
+    --court-navy: #10142A;
+    --court-mute: #8FA6FF;
   }
 
   .dark {
-    /* App stays light/paper; keep dark tokens aligned to the paper palette. */
-    --background: 39 45% 90%;
-    --foreground: 60 4% 9%;
-    --card: 43 49% 96%;
-    --card-foreground: 60 4% 9%;
-    --popover: 43 49% 96%;
-    --popover-foreground: 60 4% 9%;
-    --primary: 60 4% 9%;
-    --primary-foreground: 39 45% 90%;
-    --secondary: 38 42% 73%;
-    --secondary-foreground: 60 4% 9%;
-    --muted: 38 30% 86%;
-    --muted-foreground: 41 7% 41%;
-    --accent: 38 42% 73%;
-    --accent-foreground: 60 4% 9%;
-    --destructive: 4 65% 48%;
-    --destructive-foreground: 39 45% 90%;
-    --border: 41 7% 41%;
-    --input: 41 7% 41%;
-    --ring: 4 65% 48%;
+    --background: 226 100% 57%;
+    --foreground: 228 100% 98%;
+    --card: 231 45% 11%;
+    --card-foreground: 228 100% 98%;
+    --popover: 231 45% 11%;
+    --popover-foreground: 228 100% 98%;
+    --primary: 72 100% 60%;
+    --primary-foreground: 231 45% 11%;
+    --secondary: 256 67% 47%;
+    --secondary-foreground: 228 100% 98%;
+    --muted: 256 67% 47%;
+    --muted-foreground: 228 60% 86%;
+    --accent: 256 67% 47%;
+    --accent-foreground: 228 100% 98%;
+    --destructive: 3 100% 59%;
+    --destructive-foreground: 228 100% 98%;
+    --border: 228 100% 98%;
+    --input: 228 100% 98%;
+    --ring: 72 100% 60%;
   }
 }
 
@@ -84,36 +81,10 @@
 }
 
 @layer components {
-  /* Subtle aged-paper grain via SVG turbulence. */
-  .paper-grain {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
-    background-size: 180px 180px;
+  /* Faint broadcast graphics grid over the cobalt environment. */
+  .broadcast-grid {
+    background-image:
+      repeating-linear-gradient(to right, rgba(245, 247, 255, 0.05) 0 1px, transparent 1px 64px),
+      repeating-linear-gradient(to bottom, rgba(245, 247, 255, 0.05) 0 1px, transparent 1px 64px);
   }
-  .paper-vignette {
-    background: radial-gradient(120% 120% at 50% 0%, transparent 60%, rgba(24, 24, 22, 0.06) 100%);
-  }
-  /* Legal-pad ruled lines. */
-  .doc-lines {
-    background-image: repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 27px,
-      rgba(112, 107, 97, 0.28) 27px,
-      rgba(112, 107, 97, 0.28) 28px
-    );
-  }
-  /* Embossed rubber-stamp verdict badge. */
-  .stamp-emboss {
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
-    box-shadow: inset 0 0 0 2px currentColor, inset 0 0 0 4px var(--court-paper);
-  }
-  /* Registration / crop marks. */
-  .reg-mark::before,
-  .reg-mark::after {
-    content: "";
-    position: absolute;
-    background: var(--court-ink);
-  }
-  .reg-mark::before { width: 10px; height: 1px; }
-  .reg-mark::after { width: 1px; height: 10px; }
 }

@@ -52,14 +52,13 @@ module.exports = {
   				'5': 'hsl(var(--chart-5))'
   			},
   			court: {
-  				bg: 'var(--court-bg)',
-  				paper: 'var(--court-paper)',
-  				folder: 'var(--court-folder)',
-  				ink: 'var(--court-ink)',
+  				cobalt: 'var(--court-cobalt)',
+  				uv: 'var(--court-uv)',
   				red: 'var(--court-red)',
-  				green: 'var(--court-green)',
-  				gray: 'var(--court-gray)',
-  				fade: 'var(--court-fade)'
+  				chart: 'var(--court-chart)',
+  				ice: 'var(--court-ice)',
+  				navy: 'var(--court-navy)',
+  				mute: 'var(--court-mute)'
   			},
   			sidebar: {
   				DEFAULT: 'hsl(var(--sidebar-background))',
@@ -96,19 +95,19 @@ module.exports = {
   			},
   			'blink': {
   				'0%, 100%': { opacity: '1' },
-  				'50%': { opacity: '0.3' }
+  				'50%': { opacity: '0.25' }
   			},
-  			'redact': {
-  				'0%': { transform: 'translateX(-100%)' },
-  				'100%': { transform: 'translateX(0%)' }
+  			'marquee': {
+  				from: { transform: 'translateX(0%)' },
+  				to: { transform: 'translateX(-50%)' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out',
   			'gavel-strike': 'gavel-strike 1.4s ease-in-out infinite',
-  			'blink': 'blink 1.4s steps(2, start) infinite',
-  			'redact': 'redact 0.6s ease-out'
+  			'blink': 'blink 1.2s steps(2, start) infinite',
+  			'marquee': 'marquee 28s linear infinite'
   		}
   	}
   },

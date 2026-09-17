@@ -28,7 +28,7 @@ export default function ShoutItGallery() {
   return (
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h3 className="font-display font-bold uppercase tracking-[0.14em] text-court-ink text-sm">
+        <h3 className="font-display uppercase tracking-[0.1em] text-court-ice text-base">
           ShoutIt Public Gallery
         </h3>
         <span className="font-mono text-[0.52rem] uppercase tracking-[0.14em] text-court-red">
@@ -40,24 +40,24 @@ export default function ShoutItGallery() {
         {REACTIONS.map((r, i) => (
           <motion.div
             key={r.handle}
-            animate={{ scale: active === i ? 1.015 : 1, rotate: i % 2 ? 0.6 : -0.6 }}
+            animate={{ scale: active === i ? 1.02 : 1, rotate: i % 2 ? 0.5 : -0.5 }}
             transition={{ type: "spring", stiffness: 120, damping: 18 }}
-            className={`relative bg-court-paper border-2 p-4 ${
+            className={`relative bg-court-navy border-2 p-4 ${
               active === i
-                ? "border-court-ink shadow-[4px_4px_0_0_rgba(24,24,22,0.16)]"
-                : "border-court-gray/60"
+                ? "border-court-chart shadow-[5px_5px_0_0_#D8FF32]"
+                : "border-court-ice"
             }`}
           >
             <Quote className="h-4 w-4 text-court-red mb-2" />
-            <p className="font-body text-court-ink text-sm leading-relaxed">
+            <p className="font-mono text-court-ice text-sm leading-relaxed">
               “{r.text}”
             </p>
-            <p className="mt-3 font-mono text-xs text-court-gray">— {r.handle}</p>
+            <p className="mt-3 font-mono text-xs text-court-chart">— {r.handle}</p>
           </motion.div>
         ))}
       </div>
 
-      <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.12em] text-court-gray">
+      <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.12em] text-court-mute">
         Dramatized reactions. Not real posts. No like, repost, follower, or verification counts shown.
       </p>
     </div>
