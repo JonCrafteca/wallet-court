@@ -3,10 +3,10 @@ import TickerTape from "./TickerTape";
 
 export default function CourtLayout() {
   return (
-    <div className="min-h-screen bg-court-cobalt text-court-ice font-body relative overflow-x-hidden">
+    <div className="court-shell min-h-screen font-body relative overflow-x-hidden">
       <div className="fixed inset-0 broadcast-grid pointer-events-none" aria-hidden />
       <div className="relative z-10 flex min-h-screen flex-col">
-        <header className="sticky top-0 z-30 bg-court-cobalt border-b-4 border-court-navy">
+        <header className="court-header sticky top-0 z-30 border-b-4">
           <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between gap-3">
             <div className="flex items-baseline gap-3 min-w-0">
               <span className="font-display uppercase tracking-[0.04em] text-court-ice text-xl sm:text-2xl leading-none">
