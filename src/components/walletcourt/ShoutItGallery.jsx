@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Quote } from "lucide-react";
-import ShoutItMark from "./ShoutItMark";
+import { Quote, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const REACTIONS = [
@@ -31,7 +30,7 @@ export default function ShoutItGallery() {
     <div className="border-2 border-court-ice bg-court-navy p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h3 className="font-display uppercase tracking-[0.08em] text-court-ice text-xl flex items-center gap-2">
-          <ShoutItMark iconOnly size="md" /> ShoutIt Public Gallery
+          <Mic className="h-5 w-5 text-court-chart" aria-hidden /> ShoutIt Public Gallery
         </h3>
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-court-red">
           Dramatized Courtroom Chatter · Live ShoutIt Reactions Coming Soon

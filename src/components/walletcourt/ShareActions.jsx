@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Swords, Download, Copy, Check, Gavel } from "lucide-react";
-import ShoutItMark from "./ShoutItMark";
+import { Swords, Download, Copy, Check, Gavel, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
 import { buildCaseUrl } from "@/lib/courtDispatch";
@@ -47,7 +46,7 @@ export default function ShareActions({ trial, onReset }) {
         onClick={() => setShoutOpen(true)}
         className="w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.1em] text-lg px-4 py-4 border-2 border-court-navy shadow-[5px_5px_0_0_#FF3B30] hover:shadow-none hover:translate-x-[5px] hover:translate-y-[5px] transition-all"
       >
-        <ShoutItMark iconOnly iconTone="navy" size="md" /> Shout This Verdict
+        <Mic className="h-5 w-5 text-court-navy" /> Shout This Verdict
       </button>
 
       <div className="grid grid-cols-2 gap-3">

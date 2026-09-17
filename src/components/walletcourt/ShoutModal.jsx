@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { RefreshCw, X, ChevronDown, ChevronUp, Pencil } from "lucide-react";
+import { Mic, RefreshCw, X, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
 import { buildDraft, buildDrafts, buildCaseUrl, xIntentUrl, overXLimit } from "@/lib/courtDispatch";
@@ -328,7 +328,7 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
                   className={cn("text-left p-3 border-2 transition-colors flex items-center gap-2",
                     target === d.id ? "bg-court-chart text-court-navy border-court-chart" : "bg-court-navy text-court-ice border-court-ice hover:bg-court-uv")}>
                   {d.id === "shoutit" && (
-                    <ShoutItMark iconOnly iconTone={target === "shoutit" ? "navy" : "chart"} />
+                    <Mic className={cn("h-4 w-4 shrink-0", target === "shoutit" ? "text-court-navy" : "text-court-chart")} />
                   )}
                   <span className="block font-display uppercase tracking-[0.06em] text-sm">{d.label}</span>
                 </button>
@@ -378,7 +378,7 @@ export default function ShoutModal({ trial, open, onOpenChange }) {
           {/* Primary destination action */}
           <button type="button" onClick={publish} disabled={submitting || completed || xOverLimit}
             className="w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.1em] text-base px-4 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:brightness-105 transition-all disabled:opacity-60 disabled:shadow-none">
-            <ShoutItMark iconOnly iconTone="navy" size="md" /> {primaryLabel}
+            <Mic className="h-5 w-5 text-court-navy" /> {primaryLabel}
           </button>
 
           {/* Secondary utilities — visually separated */}

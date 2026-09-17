@@ -13,7 +13,7 @@ const COLORS = {
 };
 
 // Lucide "microphone" glyph paths (viewBox 0 0 24 24) — the temporary ShoutIt
-// mark drawn on the card header beside "A SHOUTIT ORIGINAL".
+// mark drawn on the card header beside "A ShoutIt Original".
 const MIC_PATHS = [
   "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z",
   "M19 10v2a7 7 0 0 1-14 0v-2",
@@ -110,7 +110,7 @@ export async function drawVerdictCard(canvas, trial) {
   ctx.font = `600 ${16 * s}px Oswald, sans-serif`;
   ctx.fillStyle = COLORS.chart;
   drawMic(ctx, 28 * s, 70 * s, 18 * s, COLORS.chart);
-  ctx.fillText("A SHOUTIT ORIGINAL", 46 * s, 70 * s);
+  ctx.fillText("A ShoutIt Original", 46 * s, 70 * s);
 
   // Live/demo badge (top right)
   const badgeText = isLive ? "LIVE · NANSEN" : "DEMO";
