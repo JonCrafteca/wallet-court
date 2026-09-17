@@ -38,6 +38,10 @@
       "default": "demo",
       "description": "demo = deterministic fixtures; live = real Nansen onchain evidence."
     },
+    "wallet_class": {
+      "type": "string",
+      "description": "Machine wallet class code from Nansen address labels (cex_exchange, market_maker, mev_bot, protocol_treasury, fund_institution, trader_individual, unknown). Public-safe; never stores raw labels or personal names. Absent on pre-N2 cases."
+    },
     "verdict_code": {
       "type": "string",
       "description": "Machine code of the canonical verdict, e.g. one_pump_chump."

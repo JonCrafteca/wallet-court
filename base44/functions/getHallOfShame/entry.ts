@@ -90,6 +90,7 @@ function sanitize(t, countMap) {
     data_mode: t.data_mode,
     analyzed_at: t.analyzed_at || t.created_date,
     address_short: short,
+    wallet_class: t.wallet_class || "unknown",
     trial_count: countMap[keyOf(t)] || 1
   };
 }

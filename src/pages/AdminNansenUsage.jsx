@@ -4,13 +4,15 @@ import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Play, Pause, Square, Loader2, Check, X, KeyRound, Activity } from "lucide-react";
 import { NETWORKS, validateAddress, normalizeAddress } from "@/lib/wallet";
+import AdminPilotPanel from "@/components/walletcourt/AdminPilotPanel";
 
 const STOP_CATEGORIES = new Set(["missing_key", "auth", "plan_credit"]);
 const ENDPOINT_LABELS = {
   pnl_summary: "PnL Summary",
   dex_trades: "DEX Trades",
   current_balance: "Current Balance",
-  transactions: "Transactions"
+  transactions: "Transactions",
+  address_labels: "Address Labels"
 };
 const ENDPOINT_KEYS = Object.keys(ENDPOINT_LABELS);
 
@@ -141,7 +143,7 @@ export default function AdminNansenUsage() {
   const goal = stats?.goal || 1000;
   const successful = stats?.successful_calls || 0;
   const pct = Math.min(100, (successful / goal) * 100);
-  const expectedCalls = Math.min(parsed.wallets.length, Math.max(1, maxWallets || 1)) * 4;
+  const expectedCalls = Math.min(parsed.wallets.length, Math.max(1, maxWallets || 1)) * 5;
 
   return (
     <section className="mx-auto max-w-5xl px-4 pt-8 sm:pt-12 pb-20">
@@ -199,7 +201,7 @@ export default function AdminNansenUsage() {
           <h2 className="font-display uppercase tracking-[0.06em] text-court-chart text-lg">Build Evidence Corpus</h2>
         </div>
         <p className="font-mono text-sm text-court-ice leading-relaxed mb-4">
-          Paste public wallet addresses, one per line. Optionally prefix a network: <code className="text-court-chart">ethereum:0x…</code>, <code className="text-court-chart">base:0x…</code>, <code className="text-court-chart">solana:…</code>. Default is Ethereum. Addresses are validated and deduplicated. Each wallet is analyzed one at a time using the real four-endpoint pipeline.
+          Paste public wallet addresses, one per line. Optionally prefix a network: <code className="text-court-chart">ethereum:0x…</code>, <code className="text-court-chart">base:0x…</code>, <code className="text-court-chart">solana:…</code>. Default is Ethereum. Addresses are validated and deduplicated. Each wallet is analyzed one at a time using the real five-endpoint pipeline (4 performance + 1 address labels).
         </p>
 
         <textarea
@@ -290,6 +292,9 @@ export default function AdminNansenUsage() {
           </div>
         )}
       </div>
+
+      {/* Pilot review + label-only backfill (items N2.6 + N2.7) */}
+      <AdminPilotPanel />
 
       {/* Recent log */}
       <h2 className="font-display uppercase tracking-[0.06em] text-court-ice text-xl mb-3">Recent Request Log</h2>

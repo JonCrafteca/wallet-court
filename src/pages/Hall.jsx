@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, ArrowRight } from "lucide-react";
+import { HALL_CLASS_FILTERS, shortClassLabel } from "@/lib/walletClass";
 
 const SHAME_SECTIONS = [
   { key: "most_severe", title: "Most Severe" },
@@ -41,7 +42,8 @@ function CaseCard({ c, rank }) {
         </span>
       </div>
 
-      <p className="font-mono text-sm text-court-ice mb-3">{c.address_short}</p>
+      <p className="font-mono text-sm text-court-ice mb-2">{c.address_short}</p>
+      <span className="inline-block self-start font-mono text-xs uppercase tracking-[0.1em] text-court-chart border border-court-chart/60 px-2 py-0.5 mb-3">{shortClassLabel(c.wallet_class)}</span>
       <p className="font-display uppercase text-court-ice text-xl leading-tight mb-4">{c.verdict_name}</p>
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-sm text-court-mute">
@@ -70,6 +72,7 @@ export default function Hall() {
   const [sections, setSections] = useState(null);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
+  const [classFilter, setClassFilter] = useState("all");
 
   useEffect(() => {
     let alive = true;
@@ -130,7 +133,7 @@ export default function Hall() {
       </div>
 
       {tab === "shame" ? (
-        <HallOfShame sections={sections} status={status} error={error} />
+        <HallOfShame sections={sections} status={status} error={error} classFilter={classFilter} setClassFilter={setClassFilter} />
       ) : (
         <HallOfHonor />
       )}
@@ -138,7 +141,7 @@ export default function Hall() {
   );
 }
 
-function HallOfShame({ sections, status, error }) {
+function HallOfShame({ sections, status, error, classFilter, setClassFilter }) {
   if (status === "loading") {
     return <p className="text-center font-mono text-base text-court-ice animate-blink">Convening the docket…</p>;
   }
@@ -157,8 +160,27 @@ function HallOfShame({ sections, status, error }) {
       <p className="text-center font-mono text-base text-court-ice leading-relaxed max-w-2xl mx-auto">
         Rankings are built from public case records. Demo cases are clearly labeled and never presented as live Nansen results.
       </p>
+      <div className="flex flex-wrap gap-2 mb-10 justify-center">
+        {HALL_CLASS_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setClassFilter(f.id)}
+            className={cn(
+              "font-mono text-xs uppercase tracking-[0.1em] px-3 py-1.5 border-2 transition-colors",
+              classFilter === f.id
+                ? "bg-court-chart text-court-navy border-court-chart"
+                : "bg-court-navy text-court-ice border-court-ice/60 hover:border-court-chart"
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {SHAME_SECTIONS.map((s) => {
-        const items = sections[s.key] || [];
+        const raw = sections[s.key] || [];
+        const items = classFilter === "all" ? raw : raw.filter((c) => (c.wallet_class || "unknown") === classFilter);
         return (
           <div key={s.key}>
             <h2 className="font-display uppercase tracking-[0.08em] text-court-ice text-xl mb-4 border-b-2 border-court-chart pb-2">

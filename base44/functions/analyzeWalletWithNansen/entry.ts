@@ -4,7 +4,7 @@
 // Live mode requires the two required Nansen endpoints to succeed; otherwise
 // the case falls back to an honestly-labeled demo verdict.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { secrets } from "base44:runtime";
+import { secrets, waitUntil } from "base44:runtime";
 import {
   validateAddress,
   normalizeAddress,
@@ -15,10 +15,10 @@ import {
   MANDATORY_DEMO_ADDRESS
 } from "../../shared/verdicts.ts";
 import {
-  selectLiveVerdictIndex,
   computeSeverityConfidence,
   buildLiveVerdictPayload
 } from "../../shared/verdicts_live.ts";
+import { selectEntityVerdict } from "../../shared/verdicts_entity.ts";
 import { fetchNansenEvidence } from "../../shared/nansen.ts";
 
 function newSlug() {
@@ -74,8 +74,7 @@ export default async function (req) {
       };
 
       if (nansen.outcome === "live" || nansen.outcome === "partial") {
-        const verdictIndex = selectLiveVerdictIndex(nansen.metrics);
-        const verdict = VERDICTS[verdictIndex];
+        const verdict = selectEntityVerdict(nansen.walletClass, nansen.metrics);
         const { severity, confidence } = computeSeverityConfidence(nansen.metrics, nansen.partial);
         const payload = buildLiveVerdictPayload(verdict, nansen.evidence, nansen.metrics, nansen.meta, nansen.sources, severity, confidence);
         const record = await base44.asServiceRole.entities.WalletTrial.create({
@@ -84,10 +83,23 @@ export default async function (req) {
           network,
           status: "completed",
           data_mode: "live",
+          wallet_class: nansen.walletClass,
           ...payload,
           public_slug,
           analyzed_at: new Date().toISOString()
         });
+        // Persist raw labels (admin-only) for the admin evidence view. Never
+        // exposed publicly — WalletLabelSet is admin RLS, and the public case
+        // page only shows the safe wallet_class code + evidence card.
+        if (nansen.rawLabels && nansen.rawLabels.length) {
+          waitUntil(base44.asServiceRole.entities.WalletLabelSet.create({
+            case_slug: public_slug,
+            wallet_class: nansen.walletClass,
+            labels_json: JSON.stringify(nansen.rawLabels),
+            label_count: nansen.rawLabels.length,
+            labeled_at: new Date().toISOString()
+          }).catch(() => {}));
+        }
         return Response.json({ trial: record, analysis });
       }
 

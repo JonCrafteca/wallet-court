@@ -5,6 +5,7 @@
 // never invented and never treated as zero.
 import { waitUntil } from "base44:runtime";
 import { fmtPctSigned, fmtPctPlain, fmtUsd, fmtInt, totalTradesEvidence, sampleEvidence, avgTokenAge } from "./format.ts";
+import { normalizeWalletClass, walletClassEvidence } from "./walletClass.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
 
@@ -15,7 +16,10 @@ export const NANSEN_ENDPOINTS = [
   { key: "pnl_summary", path: "/api/v1/profiler/address/pnl-summary", required: true, needsDateRange: true, dateFmt: "datetime", paginated: false },
   { key: "dex_trades", path: "/api/v1/profiler/dex-trades", required: true, needsDateRange: true, dateFmt: "date", paginated: true },
   { key: "current_balance", path: "/api/v1/profiler/address/current-balance", required: false, needsDateRange: false, dateFmt: null, paginated: true },
-  { key: "transactions", path: "/api/v1/profiler/address/transactions", required: false, needsDateRange: true, dateFmt: "datetime", paginated: true }
+  { key: "transactions", path: "/api/v1/profiler/address/transactions", required: false, needsDateRange: true, dateFmt: "datetime", paginated: true },
+  // Address Labels (item N2.1): optional 5th call. A labels failure must never
+  // block an otherwise valid live case — handled separately from required/perf.
+  { key: "address_labels", path: "/api/v1/profiler/address/labels", required: false, needsDateRange: false, dateFmt: null, paginated: true }
 ];
 
 export const CHAIN_BY_NETWORK = { ethereum: "ethereum", base: "base", solana: "solana" };
@@ -80,7 +84,7 @@ function categorize(status, err) {
 }
 
 // Call one endpoint with up to 2 attempts, honoring Retry-After on 429.
-async function callEndpoint(apiKey, ep, body, timeoutMs) {
+export async function callEndpoint(apiKey, ep, body, timeoutMs) {
   const url = NANSEN_BASE + ep.path;
   const headers = { apikey: apiKey, "Content-Type": "application/json", Accept: "application/json" };
   const calledAt = new Date().toISOString();
@@ -148,7 +152,7 @@ async function runPool(tasks, limit) {
   return results;
 }
 
-function logUsage(base44, caseSlug, outcome, calls) {
+export function logUsage(base44, caseSlug, outcome, calls) {
   for (const c of calls) {
     const rec = {
       endpoint: c.key,
@@ -293,7 +297,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
         ? { from: dateFromDay, to: dateToDay }
         : { from: dateFromIso, to: dateToIso };
     }
-    if (ep.paginated) body.pagination = { page: 1, per_page: ep.key === "current_balance" ? 1000 : 100 };
+    if (ep.paginated) body.pagination = { page: 1, per_page: (ep.key === "current_balance" || ep.key === "address_labels") ? 1000 : 100 };
     if (ep.key === "current_balance" || ep.key === "transactions") body.hide_spam_token = true;
     const r = await callEndpoint(apiKey, ep, body, timeoutMs);
     r.chain = chain;
@@ -305,7 +309,11 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   for (const r of results) calls[r.key] = r;
 
   const requiredOk = !!calls.pnl_summary?.ok && !!calls.dex_trades?.ok;
-  const failedSources = NANSEN_ENDPOINTS.filter((e) => !calls[e.key]?.ok).map((e) => e.key);
+  // Labels are optional evidence: a labels failure must never block an
+  // otherwise valid live case or mark it partial. failedSources tracks only
+  // performance endpoints; labels are handled separately.
+  const PERF_KEYS = ["pnl_summary", "dex_trades", "current_balance", "transactions"];
+  const failedSources = PERF_KEYS.filter((k) => !calls[k]?.ok);
   const optionalFailed = ["current_balance", "transactions"].some((k) => !calls[k]?.ok);
 
   let outcome;
@@ -315,12 +323,19 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
 
   const sources = NANSEN_ENDPOINTS.map((e) => `nansen:${e.key}:${calls[e.key]?.ok ? "live" : "unavailable"}`);
 
+  // Wallet classification from Nansen Address Labels (optional 5th call).
+  const labelsOk = !!calls.address_labels?.ok;
+  const rawLabels = labelsOk ? (pickArr(calls.address_labels.json, ["data", "labels"]) || []) : [];
+  const walletClass = normalizeWalletClass(rawLabels);
+
   let evidence = [];
   let metrics = {};
   if (requiredOk) {
     const mapped = mapEvidence(calls, windowDays);
     evidence = mapped.evidence;
     metrics = mapped.metrics;
+    // Prepend the Wallet Class exhibit (item N2.4) — safe public label only.
+    evidence.unshift(walletClassEvidence(walletClass));
   }
 
   const meta = {
@@ -329,7 +344,9 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     window_days: windowDays,
     evidence_date_range: { from: dateFromIso, to: dateToIso },
     freshness: to.toISOString(),
-    snapshot_note: "Current balance is a point-in-time snapshot with no date range."
+    snapshot_note: "Current balance is a point-in-time snapshot with no date range.",
+    labels_ok: labelsOk,
+    wallet_class: walletClass
   };
 
   logUsage(base44, caseSlug, outcome, Object.values(calls));
@@ -343,6 +360,8 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     metrics,
     sources,
     meta,
-    nansenCalls: 4
+    walletClass,
+    rawLabels,
+    nansenCalls: NANSEN_ENDPOINTS.length
   };
 }

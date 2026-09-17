@@ -1,0 +1,53 @@
+{
+  "name": "WalletLabelSet",
+  "type": "object",
+  "properties": {
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the WalletTrial these labels belong to."
+    },
+    "wallet_class": {
+      "type": "string",
+      "description": "Machine wallet class code from normalizeWalletClass (cex_exchange, market_maker, mev_bot, protocol_treasury, fund_institution, trader_individual, unknown)."
+    },
+    "labels_json": {
+      "type": "string",
+      "description": "Raw Nansen address labels array, JSON-encoded. Admin-only; never exposed publicly. May contain ENS/personal names, which are never surfaced to public visitors."
+    },
+    "label_count": {
+      "type": "number",
+      "description": "Number of raw labels returned by Nansen."
+    },
+    "labeled_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "case_slug",
+    "wallet_class",
+    "labels_json"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
