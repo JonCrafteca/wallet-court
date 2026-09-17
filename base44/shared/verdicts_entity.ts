@@ -8,8 +8,7 @@
 // distinct pools so five materially different entity wallets no longer collapse
 // to the same verdict. No verdict alleges fraud, theft, insolvency, or misuse
 // of customer funds.
-import { selectLiveVerdictIndex } from "./verdicts_live.ts";
-import { VERDICTS } from "./verdicts.ts";
+import { selectPerformanceVerdict } from "./verdicts_performance.ts";
 
 function num(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -197,44 +196,10 @@ const FUND_POOL = [
   }
 ];
 
-// ---- TRADER / UNKNOWN (expanded retail) ----
-// Indices 0-4 are the existing VERDICTS (preserved verbatim). 5-8 are new.
-const NEW_RETAIL = [
-  {
-    code: "rug_survivors_guilt",
-    display_name: "Rug Survivor's Guilt",
-    headline: "You got out. You feel weird about it.",
-    roast: "The court finds you guilty of surviving a rug with your capital and most of your dignity intact. You sold before the floor gave out, which is admirable, and now you refresh the chart of a token you no longer hold, which is not. Survivor's guilt is real, and you have it, onchain.",
-    defense: "My client took profits. The court is confusing prudence for pathology.",
-    sentence: "60 days of not checking the price of the token you escaped. The court expects relapse within the hour."
-  },
-  {
-    code: "stop_loss_optional",
-    display_name: "Stop-Loss Optional",
-    headline: "You trade so often the fees are a lifestyle.",
-    roast: "The court has reviewed your trade count and concluded you do not have a strategy — you have a reflex. Every dip is a buy, every bounce is a sell, and every gas fee is a subscription. You are not trading the market; you are renting it, by the hour.",
-    defense: "My client is active. Activity is not, in itself, a crime.",
-    sentence: "90 days of mandatory holds longer than your average shower. The court sets the bar intentionally low."
-  },
-  {
-    code: "bought_the_rumor",
-    display_name: "Bought the Rumor, Married the Bag",
-    headline: "The rumor was false. The marriage is not.",
-    roast: "The court finds you guilty of buying the narrative at full price and holding the bag through every chapter of its slow debunking. You did not sell the news; you married the news, and the news has been quietly disappointing you ever since.",
-    defense: "My client has conviction. Conviction, the court will note, is not the same as being right.",
-    sentence: "120 days of mandatory 'sell the news' drills. The court will not enforce them; your therapist might."
-  },
-  {
-    code: "diamond_hands_by_accident",
-    display_name: "Diamond Hands by Accident",
-    headline: "You held because you forgot. It worked.",
-    roast: "The court has reviewed your win rate and your holding pattern and concluded your discipline is indistinguishable from neglect. You held winners not because you believed, but because you forgot you owned them, and the court finds this accidental conviction deeply offensive to everyone who tried on purpose.",
-    defense: "My client is a long-term investor. The long term was, admittedly, not the original plan.",
-    sentence: "No sentence. The court instead orders you to keep forgetting, since it is clearly your edge."
-  }
-];
-
-const RETAIL_POOL = [...VERDICTS, ...NEW_RETAIL];
+// Retail/trader verdict pool + the performance-driven rule engine live in
+// verdicts_performance.ts (Phase N2.2). The 5 original VERDICTS, the 4 prior
+// retail expansions, and the 10 new performance verdicts are assembled there
+// into RETAIL_POOL and selected by a documented precedence order.
 
 // Ordered rule lists. First match wins; default is the last pool entry.
 function pickByRules(pool, rules, metrics) {
@@ -276,18 +241,12 @@ const FUND_RULES = [
   { test: (m) => num(m.realized_pnl_pct) >= 0, index: 3 }
 ];
 
-// Retail/unknown selector: a few specific new branches, then the existing
-// selectLiveVerdictIndex logic (indices 0-4) for the preserved retail path.
+// Retail/unknown selector: delegates to the Phase N2.2 performance-driven
+// engine (verdicts_performance.ts), which uses the full saved evidence set and
+// a documented precedence order. The mandatory demo One Pump Chump is handled
+// separately by the demo path (selectDemoVerdictIndex + VERDICTS).
 function selectRetailVerdict(metrics) {
-  const pnl = num(metrics.realized_pnl_pct);
-  const win = num(metrics.win_rate_pct);
-  const trades = num(metrics.total_trades);
-  const tokens = num(metrics.tokens_traded);
-  if (pnl !== null && pnl <= -0.5 && win !== null && win >= 0.5) return RETAIL_POOL[5];
-  if (pnl !== null && pnl < 0 && trades !== null && trades >= 500) return RETAIL_POOL[6];
-  if (pnl !== null && pnl >= 0 && tokens !== null && tokens >= 100 && (win === null || win < 0.5)) return RETAIL_POOL[7];
-  if (pnl !== null && pnl >= 0.8 && win !== null && win >= 0.8) return RETAIL_POOL[8];
-  return RETAIL_POOL[selectLiveVerdictIndex(metrics)];
+  return selectPerformanceVerdict(metrics);
 }
 
 // Select a verdict object for a wallet class + metrics. Returns
