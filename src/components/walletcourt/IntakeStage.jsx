@@ -11,8 +11,10 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
   return (
     <section className="mx-auto max-w-3xl px-4 pt-8 sm:pt-12 pb-20">
       {/* Hero arrival */}
-      <div className="text-center mb-7 sm:mb-9">
-        <div className="inline-flex items-center gap-2 border-2 border-court-red bg-court-navy px-3 py-1 mb-4">
+      <div className="relative text-center mb-7 sm:mb-9">
+        <div className="pointer-events-none absolute -top-8 -left-2 h-16 w-16 bg-court-uv border-2 border-court-ice hidden sm:block" aria-hidden />
+        <div className="pointer-events-none absolute -bottom-6 -right-1 h-10 w-28 bg-court-uv border-2 border-court-red hidden sm:block" aria-hidden />
+        <div className="relative inline-flex items-center gap-2 border-2 border-court-red bg-court-navy px-3 py-1 mb-4">
           <Radio className="h-3.5 w-3.5 text-court-red animate-blink" />
           <span className="font-mono text-[0.6rem] uppercase tracking-[0.24em] text-court-red">Breaking · Case File</span>
         </div>
@@ -22,7 +24,7 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
         >
           Your Wallet Has<br className="hidden sm:block" /> Been Subpoenaed
         </h1>
-        <p className="mt-4 font-mono text-sm text-court-mute max-w-xl mx-auto">
+        <p className="relative mt-4 font-mono text-sm text-court-ice max-w-xl mx-auto">
           Nansen provides the onchain evidence. Wallet Court delivers the verdict.
         </p>
       </div>
@@ -52,7 +54,7 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
                       "border-2 px-3 py-2.5 font-display uppercase tracking-[0.06em] text-sm transition-colors",
                       network === n.id
                         ? "border-court-chart bg-court-chart text-court-navy"
-                        : "border-court-ice bg-court-uv text-court-ice hover:bg-court-cobalt"
+                        : "border-court-ice bg-court-navy text-court-ice hover:bg-court-uv"
                     )}
                   >
                     {n.label}
@@ -66,8 +68,8 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
               <label htmlFor="wallet-address" className="block font-mono text-[0.62rem] uppercase tracking-[0.18em] text-court-mute mb-2">
                 Wallet Address of the Accused
               </label>
-              <div className="flex items-center border-2 border-court-ice bg-court-cobalt focus-within:border-court-chart transition-colors">
-                <span className="px-3 text-court-red font-mono text-sm select-none border-r border-court-navy">№</span>
+              <div className="flex items-center border-2 border-court-ice bg-court-navy focus-within:border-court-chart transition-colors">
+                <span className="px-3 text-court-red font-mono text-sm select-none border-r border-court-mute">№</span>
                 <input
                   id="wallet-address"
                   type="text"
@@ -96,7 +98,7 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 border-2 border-court-red bg-court-red/10 px-3 py-2 text-sm text-court-red">
+              <div className="flex items-start gap-2 border-2 border-court-red bg-court-navy px-3 py-2 text-sm text-court-red">
                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                 <span className="font-mono">{error}</span>
               </div>
@@ -104,7 +106,7 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
 
             <button
               type="submit"
-              className="group w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-lg py-4 border-2 border-court-navy shadow-[5px_5px_0_0_#10142A] hover:shadow-none hover:translate-x-[5px] hover:translate-y-[5px] transition-all"
+              className="group w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-lg py-4 border-2 border-court-navy shadow-[5px_5px_0_0_#FF3B30] hover:shadow-none hover:translate-x-[5px] hover:translate-y-[5px] transition-all"
             >
               <Gavel className="h-5 w-5 group-hover:animate-gavel-strike" />
               Execute Subpoena
@@ -116,7 +118,7 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
         </div>
       </form>
 
-      <p className="mt-5 text-center font-mono text-[0.68rem] text-court-mute">
+      <p className="mt-5 text-center font-mono text-[0.68rem] text-court-ice">
         Try the demo address{" "}
         <code className="text-court-chart">0x71c000000000000000000000000000000000c4f1</code>{" "}
         — it always returns <span className="text-court-chart">One Pump Chump</span>.

@@ -57,7 +57,7 @@ export default function ShoutItGallery() {
         ))}
       </div>
 
-      <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.12em] text-court-mute">
+      <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.12em] text-court-ice">
         Dramatized reactions. Not real posts. No like, repost, follower, or verification counts shown.
       </p>
     </div>

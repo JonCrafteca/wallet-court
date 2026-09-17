@@ -27,14 +27,14 @@ export default function VerdictReveal({ trial, onReset }) {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-court-ice bg-court-cobalt px-4 py-2">
           <div className="flex items-center gap-3 font-mono text-[0.6rem] uppercase tracking-[0.14em]">
             <span className="text-court-chart font-bold">Case No. {trial.public_slug?.slice(-8).toUpperCase()}</span>
-            <span className="text-court-mute">{trial.network}</span>
-            <span className="text-court-mute truncate">{addr.slice(0, 8)}…{addr.slice(-6)}</span>
+            <span className="text-court-ice">{trial.network}</span>
+            <span className="text-court-ice truncate">{addr.slice(0, 8)}…{addr.slice(-6)}</span>
           </div>
           <div className="flex items-center gap-3 font-mono text-[0.58rem] uppercase tracking-[0.14em]">
             <span className={isLive ? "text-court-chart" : "text-court-red"}>
               {isLive ? "Live · Nansen Evidence" : "Demo Mode"}
             </span>
-            <span className="text-court-mute">Powered by Nansen API</span>
+            <span className="text-court-ice">Powered by Nansen API</span>
           </div>
         </div>
 

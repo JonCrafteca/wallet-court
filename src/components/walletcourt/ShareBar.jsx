@@ -40,7 +40,7 @@ export default function ShareBar({ slug, onReset }) {
         <button
           type="button"
           onClick={copy}
-          className="inline-flex items-center justify-center gap-2 border-2 border-court-navy bg-court-chart text-court-navy px-3 py-2.5 font-display uppercase tracking-[0.1em] text-sm hover:brightness-105 transition-all shadow-[3px_3px_0_0_#10142A]"
+          className="inline-flex items-center justify-center gap-2 border-2 border-court-navy bg-court-chart text-court-navy px-3 py-2.5 font-display uppercase tracking-[0.1em] text-sm hover:brightness-105 transition-all shadow-[3px_3px_0_0_#FF3B30]"
         >
           <Copy className="h-4 w-4" />
           Share Case

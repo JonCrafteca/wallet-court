@@ -4,8 +4,8 @@ export default function SeverityMeter({ severity, confidence }) {
   const sev = Math.max(0, Math.min(100, severity || 0));
   const tone =
     sev >= 80 ? { bar: "bg-court-red", text: "text-court-red", label: "Egregious" }
-    : sev >= 50 ? { bar: "bg-court-chart", text: "text-court-chart", label: "Reckless" }
-    : { bar: "bg-court-cobalt", text: "text-court-cobalt", label: "Suspiciously clean" };
+    : sev >= 50 ? { bar: "bg-court-cobalt", text: "text-court-ice", label: "Reckless" }
+    : { bar: "bg-court-chart", text: "text-court-chart", label: "Suspiciously clean" };
 
   return (
     <div className="border-2 border-court-ice bg-court-navy p-4">

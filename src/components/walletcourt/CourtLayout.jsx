@@ -12,7 +12,7 @@ export default function CourtLayout() {
               <span className="font-display uppercase tracking-[0.04em] text-court-ice text-xl sm:text-2xl leading-none">
                 Wallet Court
               </span>
-              <span className="hidden sm:inline font-mono text-[0.58rem] uppercase tracking-[0.22em] text-court-mute border-l border-court-mute pl-3">
+              <span className="hidden sm:inline font-mono text-[0.58rem] uppercase tracking-[0.22em] text-court-ice border-l border-court-mute pl-3">
                 Nansen Evidence Division
               </span>
             </div>

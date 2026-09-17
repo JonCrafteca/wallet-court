@@ -34,7 +34,7 @@ export default function LoadingStage({ visible }) {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-40 bg-court-cobalt/95 backdrop-blur-sm flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-40 bg-court-cobalt backdrop-blur-sm flex items-center justify-center px-4">
       <div className="w-full max-w-xl">
         <div className="border-4 border-court-ice bg-court-navy shadow-[8px_8px_0_0_#5127C7]">
           <div className="flex items-center justify-between border-b-2 border-court-ice bg-court-red px-4 py-1.5">
