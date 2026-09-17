@@ -18,7 +18,7 @@ export default function TickerTape() {
             {PHRASES.map((p, i) => (
               <span
                 key={i}
-                className={`flex items-center gap-2 px-4 py-1.5 font-mono text-[0.62rem] uppercase tracking-[0.18em] ${COLORS[i % COLORS.length]}`}
+                className={`flex items-center gap-2 px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${COLORS[i % COLORS.length]}`}
               >
                 {p}
                 <span className="text-court-ice">■</span>

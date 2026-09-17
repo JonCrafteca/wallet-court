@@ -1,6 +1,8 @@
 import { Gavel, AlertTriangle, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const DEMO_ADDRESS = "0x71c000000000000000000000000000000000c4f1";
+
 const CHYRON = [
   "The accused is presumed solvent until the evidence says otherwise.",
   "Failure to appear may result in continued bag-holding.",
@@ -80,21 +82,21 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
                 />
               </div>
               {network === "solana" && (
-                <p className="mt-2 font-mono text-sm text-court-mute">Solana addresses are base58, 32–44 characters.</p>
+                <p className="mt-2 font-mono text-base text-court-mute">Solana addresses are base58, 32–44 characters.</p>
               )}
             </div>
 
             {/* Chyron annotations */}
             <div className="border-l-4 border-court-red pl-4 space-y-1.5">
               {CHYRON.map((note) => (
-                <p key={note} className="font-mono text-sm text-court-ice leading-relaxed">
+                <p key={note} className="font-mono text-base text-court-ice leading-relaxed">
                   {note}
                 </p>
               ))}
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 border-2 border-court-red bg-court-navy px-3 py-3 text-sm text-court-red">
+              <div className="flex items-start gap-2 border-2 border-court-red bg-court-navy px-3 py-3 text-base text-court-red">
                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                 <span className="font-mono leading-relaxed">{error}</span>
               </div>
@@ -114,14 +116,18 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
         </div>
       </form>
 
-      <div className="mt-8 border-2 border-court-chart bg-court-uv px-4 py-3 text-center">
-        <span className="mr-2 bg-court-chart px-2 py-1 font-bold uppercase tracking-wider text-court-navy text-xs">
-          Guaranteed conviction
-        </span>
-        <span className="font-mono text-sm text-court-ice">
-          Try <code className="text-court-chart">0x71c000000000000000000000000000000000c4f1</code> — it always returns{" "}
-          <strong className="text-court-chart">One Pump Chump</strong>.
-        </span>
+      <div className="mt-10 text-center">
+        <button
+          type="button"
+          onClick={() => {
+            setNetwork("ethereum");
+            setAddress(DEMO_ADDRESS);
+          }}
+          className="inline-flex items-center justify-center gap-2 border-2 border-court-navy bg-court-chart text-court-navy font-display uppercase tracking-[0.1em] text-base px-6 py-3 hover:brightness-105 transition-all shadow-[4px_4px_0_0_#FF3B30]"
+        >
+          Try the One Pump Chump Demo
+        </button>
+        <p className="mt-3 font-mono text-base text-court-ice">Guaranteed conviction. Questionable stamina.</p>
       </div>
     </section>
   );

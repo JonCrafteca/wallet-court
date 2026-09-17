@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 
 const SHAME_SECTIONS = [
   { key: "most_severe", title: "Most Severe" },
@@ -12,38 +12,54 @@ const SHAME_SECTIONS = [
 ];
 
 const HONORS = [
-  { title: "Bag of the Day", desc: "The single worst-timed entry of the day, measured against Nansen trade data." },
-  { title: "Dump of the Day", desc: "The most spectacular exit right before the move continued." },
-  { title: "Escape Artist", desc: "The wallet that slipped out of a doomed position with the least damage." },
+  { title: "Bag of the Day", desc: "The strongest qualifying performance among eligible claimed wallets." },
+  { title: "Escape Artist", desc: "Exited a doomed position with suspiciously excellent timing." },
   { title: "Comeback Wallet", desc: "The clearest recovery from a historically terrible record." },
-  { title: "Court Favorite", desc: "The wallet the court secretly respects — disciplined, boring, and profitable." },
+  { title: "Diamond Hands, Somehow Correct", desc: "Held through the chaos and, against all available evidence, was right." },
+  { title: "Court Favorite", desc: "The wallet the court reluctantly respects." },
 ];
 
-function CaseCard({ c }) {
+function CaseCard({ c, rank }) {
   const isLive = c.data_mode === "live";
   const date = c.analyzed_at ? new Date(c.analyzed_at).toLocaleDateString() : "—";
   return (
     <Link
       to={`/case/${c.slug}`}
-      className="block border-2 border-court-ice bg-court-navy p-4 hover:border-court-chart transition-colors"
+      className="group flex flex-col h-full border-2 border-court-ice bg-court-navy p-5 hover:border-court-chart transition-colors"
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-mono text-xs text-court-ice">{c.address_short}</span>
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-display text-court-chart text-lg leading-none">#{rank}</span>
         <span
           className={cn(
-            "font-mono text-xs uppercase tracking-[0.12em] px-1.5 py-0.5 border",
-            isLive ? "border-court-chart text-court-chart" : "border-court-red text-court-red"
+            "font-mono text-xs uppercase tracking-[0.1em] px-2 py-1 border-2",
+            isLive
+              ? "border-court-chart bg-court-chart text-court-navy"
+              : "border-court-red bg-court-red text-court-ice"
           )}
         >
-          {isLive ? "Live" : "Demo"}
+          {isLive ? "Live · Nansen" : "Demo"}
         </span>
       </div>
-      <p className="font-display uppercase text-court-ice text-base leading-tight mb-3">{c.verdict_name}</p>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono text-xs text-court-mute">
+
+      <p className="font-mono text-sm text-court-ice mb-3">{c.address_short}</p>
+      <p className="font-display uppercase text-court-ice text-xl leading-tight mb-4">{c.verdict_name}</p>
+
+      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-sm text-court-mute">
         <span>{c.network}</span>
         <span>Sev {c.severity_score?.toFixed(0)}</span>
         <span>Conf {c.confidence_score?.toFixed(0)}%</span>
         <span>{date}</span>
+      </div>
+
+      {c.trial_count > 1 && (
+        <p className="mt-3 font-mono text-xs uppercase tracking-[0.1em] text-court-chart">
+          Tried {c.trial_count} times
+        </p>
+      )}
+
+      <div className="mt-3 flex items-center gap-1 font-mono text-xs uppercase tracking-[0.12em] text-court-ice group-hover:text-court-chart">
+        View Case
+        <ArrowRight className="h-3.5 w-3.5" />
       </div>
     </Link>
   );
@@ -79,7 +95,7 @@ export default function Hall() {
   }, []);
 
   return (
-    <section className="mx-auto max-w-5xl px-4 pt-10 sm:pt-14 pb-24">
+    <section className="mx-auto max-w-6xl px-4 pt-10 sm:pt-14 pb-24">
       <header className="text-center mb-8">
         <h1
           className="font-display uppercase leading-[0.86] text-court-ice"
@@ -128,7 +144,7 @@ function HallOfShame({ sections, status, error }) {
   }
   if (status === "error") {
     return (
-      <div className="flex items-start gap-2 border-2 border-court-red bg-court-navy px-4 py-3 text-sm text-court-red max-w-xl mx-auto">
+      <div className="flex items-start gap-2 border-2 border-court-red bg-court-navy px-4 py-3 text-base text-court-red max-w-xl mx-auto">
         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
         <span className="font-mono leading-relaxed">{error}</span>
       </div>
@@ -138,7 +154,7 @@ function HallOfShame({ sections, status, error }) {
 
   return (
     <div className="space-y-12">
-      <p className="text-center font-mono text-sm text-court-ice leading-relaxed max-w-2xl mx-auto">
+      <p className="text-center font-mono text-base text-court-ice leading-relaxed max-w-2xl mx-auto">
         Rankings are built from public case records. Demo cases are clearly labeled and never presented as live Nansen results.
       </p>
       {SHAME_SECTIONS.map((s) => {
@@ -149,17 +165,28 @@ function HallOfShame({ sections, status, error }) {
               {s.title}
             </h2>
             {items.length === 0 ? (
-              <p className="font-mono text-sm text-court-mute">No cases in this category yet.</p>
+              <p className="font-mono text-base text-court-mute">No cases in this category yet.</p>
             ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {items.map((c) => (
-                  <CaseCard key={c.slug} c={c} />
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr gap-4">
+                {items.map((c, i) => (
+                  <CaseCard key={c.slug} c={c} rank={i + 1} />
                 ))}
               </div>
             )}
           </div>
         );
       })}
+
+      {/* Dump of the Day — preview, coming with live cases */}
+      <div className="border-2 border-dashed border-court-chart bg-court-navy p-5 sm:p-6">
+        <span className="inline-block font-mono text-xs uppercase tracking-[0.14em] text-court-ice border-2 border-court-red bg-court-red px-2 py-1 mb-3">
+          Coming With Live Cases
+        </span>
+        <h3 className="font-display uppercase tracking-[0.06em] text-court-ice text-xl mb-2">Dump of the Day</h3>
+        <p className="font-mono text-base text-court-mute leading-relaxed max-w-2xl">
+          The most spectacular qualifying exit immediately before the move continued.
+        </p>
+      </div>
     </div>
   );
 }
@@ -179,7 +206,7 @@ function HallOfHonor() {
         {HONORS.map((h) => (
           <div key={h.title} className="border-2 border-court-ice bg-court-navy p-5">
             <h3 className="font-display uppercase tracking-[0.06em] text-court-ice text-lg mb-2">{h.title}</h3>
-            <p className="font-mono text-sm text-court-mute leading-relaxed">{h.desc}</p>
+            <p className="font-mono text-base text-court-mute leading-relaxed">{h.desc}</p>
           </div>
         ))}
       </div>

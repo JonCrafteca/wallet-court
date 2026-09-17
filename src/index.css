@@ -91,7 +91,7 @@
   /* Explicit broadcast zones: these do not depend on Tailwind color generation. */
   .court-shell {
     background:
-      linear-gradient(118deg, #2457FF 0 54%, #5127C7 54% 76%, #10142A 76% 100%);
+      linear-gradient(125deg, #2457FF 0%, #2f3fcf 45%, #5127C7 78%, #10142A 100%);
     color: #F5F7FF;
   }
 

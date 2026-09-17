@@ -68,7 +68,7 @@ export default function LoadingStage({ visible }) {
                       <span className="font-mono text-xs uppercase tracking-[0.12em] text-court-navy border border-court-chart bg-court-chart px-1.5 py-0.5">
                         Ex {EXHIBIT[idx % EXHIBIT.length]}
                       </span>
-                      <span className="font-mono text-sm text-court-ice truncate">{item.msg}</span>
+                      <span className="font-mono text-base text-court-ice truncate">{item.msg}</span>
                     </div>
                     <div className="mt-1.5 h-2 w-2/3 bg-court-navy" />
                   </motion.div>

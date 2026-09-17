@@ -37,7 +37,7 @@ export default function NansenEvidence({ trial }) {
         </span>
       </div>
 
-      <p className="font-mono text-sm text-court-mute leading-relaxed mb-5 max-w-2xl">
+      <p className="font-mono text-base text-court-mute leading-relaxed mb-5 max-w-2xl">
         The court examined the wallet's onchain behavior through Nansen. Here is the evidence, in plain language.
       </p>
 
@@ -52,7 +52,7 @@ export default function NansenEvidence({ trial }) {
             </div>
             <p className="font-mono text-xs uppercase tracking-[0.1em] text-court-mute mb-1">{it.label}</p>
             <p className="font-display text-2xl text-court-ice leading-none mb-2">{it.value}</p>
-            <p className="font-mono text-sm text-court-ice leading-relaxed">{it.detail}</p>
+            <p className="font-mono text-base text-court-ice leading-relaxed">{it.detail}</p>
           </div>
         ))}
       </div>

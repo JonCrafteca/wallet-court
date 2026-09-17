@@ -49,7 +49,7 @@ export default function ShoutItGallery() {
             )}
           >
             <Quote className="h-4 w-4 text-court-red mb-2" />
-            <p className="font-mono text-court-ice text-sm leading-relaxed">“{r.text}”</p>
+            <p className="font-mono text-court-ice text-base leading-relaxed">“{r.text}”</p>
             <p className="mt-3 font-mono text-xs text-court-chart">— {r.handle}</p>
           </motion.div>
         ))}

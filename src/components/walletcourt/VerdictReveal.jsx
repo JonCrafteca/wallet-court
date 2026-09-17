@@ -42,7 +42,7 @@ export default function VerdictReveal({ trial, onReset }) {
         <p className="font-mono text-court-navy leading-relaxed text-base">{trial.roast}</p>
         <div className="mt-4 border-l-4 border-court-red pl-4">
           <p className="font-mono text-xs uppercase tracking-[0.16em] text-court-red mb-1">Defense entered</p>
-          <p className="font-mono italic text-court-navy text-sm leading-relaxed">“{trial.defense_statement}”</p>
+          <p className="font-mono italic text-court-navy text-base leading-relaxed">“{trial.defense_statement}”</p>
         </div>
       </div>
 
