@@ -4,7 +4,7 @@
 // Live mode requires the two required Nansen endpoints to succeed; otherwise
 // the case falls back to an honestly-labeled demo verdict.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { secrets, waitUntil } from "base44:runtime";
+import { secrets } from "base44:runtime";
 import {
   validateAddress,
   normalizeAddress,
@@ -88,18 +88,6 @@ export default async function (req) {
           public_slug,
           analyzed_at: new Date().toISOString()
         });
-        // Persist raw labels (admin-only) for the admin evidence view. Never
-        // exposed publicly — WalletLabelSet is admin RLS, and the public case
-        // page only shows the safe wallet_class code + evidence card.
-        if (nansen.rawLabels && nansen.rawLabels.length) {
-          waitUntil(base44.asServiceRole.entities.WalletLabelSet.create({
-            case_slug: public_slug,
-            wallet_class: nansen.walletClass,
-            labels_json: JSON.stringify(nansen.rawLabels),
-            label_count: nansen.rawLabels.length,
-            labeled_at: new Date().toISOString()
-          }).catch(() => {}));
-        }
         return Response.json({ trial: record, analysis });
       }
 

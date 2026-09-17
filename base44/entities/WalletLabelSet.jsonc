@@ -4,7 +4,20 @@
   "properties": {
     "case_slug": {
       "type": "string",
-      "description": "public_slug of the WalletTrial these labels belong to."
+      "description": "public_slug of the WalletTrial these labels belong to (most recent enrichment)."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) address. Cache key, together with network. Never exposed publicly."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base",
+        "solana"
+      ],
+      "description": "Chain the labels were fetched on. Cache key, together with normalized_wallet_address."
     },
     "wallet_class": {
       "type": "string",
@@ -20,11 +33,13 @@
     },
     "labeled_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "When the labels were fetched. Used for 30-day cache freshness."
     }
   },
   "required": [
-    "case_slug",
+    "normalized_wallet_address",
+    "network",
     "wallet_class",
     "labels_json"
   ],

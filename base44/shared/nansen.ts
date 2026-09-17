@@ -5,22 +5,42 @@
 // never invented and never treated as zero.
 import { waitUntil } from "base44:runtime";
 import { fmtPctSigned, fmtPctPlain, fmtUsd, fmtInt, totalTradesEvidence, sampleEvidence, avgTokenAge } from "./format.ts";
-import { normalizeWalletClass, walletClassEvidence } from "./walletClass.ts";
+import { normalizeWalletClass } from "./walletClass.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
 
 // The four current Nansen profiler POST endpoints. required endpoints must both
 // succeed for a case to be labeled live; optional failures keep live mode but
 // mark the case partial.
+// The four automatic performance endpoints. Address Labels is deliberately
+// excluded — it costs 100 credits per call and is NEVER called automatically.
 export const NANSEN_ENDPOINTS = [
   { key: "pnl_summary", path: "/api/v1/profiler/address/pnl-summary", required: true, needsDateRange: true, dateFmt: "datetime", paginated: false },
   { key: "dex_trades", path: "/api/v1/profiler/dex-trades", required: true, needsDateRange: true, dateFmt: "date", paginated: true },
   { key: "current_balance", path: "/api/v1/profiler/address/current-balance", required: false, needsDateRange: false, dateFmt: null, paginated: true },
-  { key: "transactions", path: "/api/v1/profiler/address/transactions", required: false, needsDateRange: true, dateFmt: "datetime", paginated: true },
-  // Address Labels (item N2.1): optional 5th call. A labels failure must never
-  // block an otherwise valid live case — handled separately from required/perf.
-  { key: "address_labels", path: "/api/v1/profiler/address/labels", required: false, needsDateRange: false, dateFmt: null, paginated: true }
+  { key: "transactions", path: "/api/v1/profiler/address/transactions", required: false, needsDateRange: true, dateFmt: "datetime", paginated: true }
 ];
+
+// Credit-cost constants and the core endpoint-key list live in ./labelPlan.ts
+// (pure, unit-tested) to keep them importable without the platform runtime.
+
+// The Address Labels endpoint, isolated from the automatic pipeline. Used only
+// by the admin label-only backfill (enrichCasesWithLabels).
+export const LABELS_EP = { key: "address_labels", path: "/api/v1/profiler/address/labels", required: false, needsDateRange: false, dateFmt: null, paginated: true };
+
+// Fetch Address Labels for a single wallet (admin-triggered only). Returns the
+// safe wallet class, raw labels, and the call result (for usage logging). Never
+// called by fetchNansenEvidence or any automatic path.
+export async function fetchAddressLabels(apiKey, network, address, timeoutMs = 20000) {
+  const chain = CHAIN_BY_NETWORK[network];
+  const r = await callEndpoint(apiKey, LABELS_EP, { address, chain, pagination: { page: 1, per_page: 1000 } }, timeoutMs);
+  r.chain = chain;
+  if (!r.ok) return { ok: false, walletClass: "unknown", rawLabels: [], callResult: r };
+  const data = (r.json && (r.json.data || r.json.labels)) || [];
+  const rawLabels = Array.isArray(data) ? data : [];
+  const walletClass = normalizeWalletClass(rawLabels);
+  return { ok: true, walletClass, rawLabels, callResult: r };
+}
 
 export const CHAIN_BY_NETWORK = { ethereum: "ethereum", base: "base", solana: "solana" };
 
@@ -297,7 +317,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
         ? { from: dateFromDay, to: dateToDay }
         : { from: dateFromIso, to: dateToIso };
     }
-    if (ep.paginated) body.pagination = { page: 1, per_page: (ep.key === "current_balance" || ep.key === "address_labels") ? 1000 : 100 };
+    if (ep.paginated) body.pagination = { page: 1, per_page: ep.key === "current_balance" ? 1000 : 100 };
     if (ep.key === "current_balance" || ep.key === "transactions") body.hide_spam_token = true;
     const r = await callEndpoint(apiKey, ep, body, timeoutMs);
     r.chain = chain;
@@ -309,9 +329,6 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   for (const r of results) calls[r.key] = r;
 
   const requiredOk = !!calls.pnl_summary?.ok && !!calls.dex_trades?.ok;
-  // Labels are optional evidence: a labels failure must never block an
-  // otherwise valid live case or mark it partial. failedSources tracks only
-  // performance endpoints; labels are handled separately.
   const PERF_KEYS = ["pnl_summary", "dex_trades", "current_balance", "transactions"];
   const failedSources = PERF_KEYS.filter((k) => !calls[k]?.ok);
   const optionalFailed = ["current_balance", "transactions"].some((k) => !calls[k]?.ok);
@@ -323,10 +340,13 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
 
   const sources = NANSEN_ENDPOINTS.map((e) => `nansen:${e.key}:${calls[e.key]?.ok ? "live" : "unavailable"}`);
 
-  // Wallet classification from Nansen Address Labels (optional 5th call).
-  const labelsOk = !!calls.address_labels?.ok;
-  const rawLabels = labelsOk ? (pickArr(calls.address_labels.json, ["data", "labels"]) || []) : [];
-  const walletClass = normalizeWalletClass(rawLabels);
+  // Address Labels are NEVER called automatically (100 credits each, item N2.1).
+  // A wallet without admin-enriched labels stays "unknown" and uses retail/
+  // unknown verdict logic. The case remains live if core evidence succeeded.
+  // The Wallet Class evidence card is added only by the label-enrichment
+  // backfill, not by the automatic pipeline.
+  const walletClass = "unknown";
+  const rawLabels = [];
 
   let evidence = [];
   let metrics = {};
@@ -334,8 +354,6 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     const mapped = mapEvidence(calls, windowDays);
     evidence = mapped.evidence;
     metrics = mapped.metrics;
-    // Prepend the Wallet Class exhibit (item N2.4) — safe public label only.
-    evidence.unshift(walletClassEvidence(walletClass));
   }
 
   const meta = {
@@ -345,7 +363,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     evidence_date_range: { from: dateFromIso, to: dateToIso },
     freshness: to.toISOString(),
     snapshot_note: "Current balance is a point-in-time snapshot with no date range.",
-    labels_ok: labelsOk,
+    labels_ok: false,
     wallet_class: walletClass
   };
 

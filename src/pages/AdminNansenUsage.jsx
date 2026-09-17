@@ -143,7 +143,13 @@ export default function AdminNansenUsage() {
   const goal = stats?.goal || 1000;
   const successful = stats?.successful_calls || 0;
   const pct = Math.min(100, (successful / goal) * 100);
-  const expectedCalls = Math.min(parsed.wallets.length, Math.max(1, maxWallets || 1)) * 5;
+  const expectedCalls = Math.min(parsed.wallets.length, Math.max(1, maxWallets || 1)) * 4;
+  const expectedCredits = expectedCalls; // 4 core calls × 1 credit each
+  const byEp = stats?.by_endpoint || {};
+  const coreCalls = (byEp.pnl_summary || 0) + (byEp.dex_trades || 0) + (byEp.current_balance || 0) + (byEp.transactions || 0);
+  const labelCalls = byEp.address_labels || 0;
+  const estimatedTotalCredits = coreCalls * 1 + labelCalls * 100;
+  const actualCredits = stats?.credits_used ?? null;
 
   return (
     <section className="mx-auto max-w-5xl px-4 pt-8 sm:pt-12 pb-20">
@@ -152,7 +158,7 @@ export default function AdminNansenUsage() {
           Nansen API Usage
         </h1>
         <p className="mt-2 font-mono text-base text-court-ice leading-relaxed">
-          Audit of real Nansen profiler calls. Figures come only from recorded responses — nothing is fabricated or estimated.
+          Audit of real Nansen profiler calls. Actual credits come from Nansen response headers; documented estimated credits (from official pricing) are shown separately and never presented as actual usage.
         </p>
       </header>
 
@@ -194,6 +200,32 @@ export default function AdminNansenUsage() {
         <Stat label="Failures" value={stats?.failure_total ?? 0} danger />
       </div>
 
+      {/* Credit cost — actual vs documented estimated (item N2.1) */}
+      <div className="border-2 border-court-chart bg-court-navy p-4 sm:p-5 mb-6">
+        <h2 className="font-display uppercase tracking-[0.06em] text-court-chart text-lg mb-3">Credit Cost</h2>
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <div className="border-2 border-court-ice p-3">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute mb-1">Inexpensive core calls (1 credit each)</p>
+            <p className="font-display text-2xl text-court-ice">{coreCalls}</p>
+          </div>
+          <div className="border-2 border-court-red p-3">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute mb-1">Expensive label calls (100 credits each)</p>
+            <p className="font-display text-2xl text-court-red">{labelCalls}</p>
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <div className="border-2 border-court-mute/40 p-3">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute mb-1">Documented estimated credits (pricing)</p>
+            <p className="font-display text-2xl text-court-ice">{estimatedTotalCredits}</p>
+          </div>
+          <div className="border-2 border-court-mute/40 p-3">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute mb-1">Actual credits reported by Nansen</p>
+            <p className="font-display text-2xl text-court-chart">{actualCredits == null ? "—" : actualCredits}</p>
+          </div>
+        </div>
+        <p className="font-mono text-xs text-court-mute leading-relaxed">Estimates use official Nansen pricing and are never presented as actual usage. Actual credits are read from Nansen response headers when available.</p>
+      </div>
+
       {/* Corpus runner */}
       <div className="border-2 border-court-chart bg-court-navy p-4 sm:p-5 mb-8">
         <div className="flex items-center gap-2 mb-3">
@@ -201,7 +233,7 @@ export default function AdminNansenUsage() {
           <h2 className="font-display uppercase tracking-[0.06em] text-court-chart text-lg">Build Evidence Corpus</h2>
         </div>
         <p className="font-mono text-sm text-court-ice leading-relaxed mb-4">
-          Paste public wallet addresses, one per line. Optionally prefix a network: <code className="text-court-chart">ethereum:0x…</code>, <code className="text-court-chart">base:0x…</code>, <code className="text-court-chart">solana:…</code>. Default is Ethereum. Addresses are validated and deduplicated. Each wallet is analyzed one at a time using the real five-endpoint pipeline (4 performance + 1 address labels).
+          Paste public wallet addresses, one per line. Optionally prefix a network: <code className="text-court-chart">ethereum:0x…</code>, <code className="text-court-chart">base:0x…</code>, <code className="text-court-chart">solana:…</code>. Default is Ethereum. Addresses are validated and deduplicated. Each wallet is analyzed one at a time using the real four-endpoint pipeline (4 performance calls). Address Labels is never called automatically — it costs 100 credits per wallet and is admin-triggered only.
         </p>
 
         <textarea
@@ -224,7 +256,8 @@ export default function AdminNansenUsage() {
           </div>
           <div className="font-mono text-sm text-court-ice leading-relaxed">
             <p>Wallets: <span className="text-court-chart">{parsed.wallets.length}</span>{parsed.invalid.length > 0 && <span className="text-court-red"> · {parsed.invalid.length} invalid</span>}</p>
-            <p>Expected Nansen calls: <span className="text-court-chart">{expectedCalls}</span></p>
+            <p>Expected Nansen calls: <span className="text-court-chart">{expectedCalls}</span> (4 per wallet)</p>
+            <p>Documented estimated credits: <span className="text-court-chart">{expectedCredits}</span> (1 per core call; labels not included)</p>
           </div>
         </div>
 
