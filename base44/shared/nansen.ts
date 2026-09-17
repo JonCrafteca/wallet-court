@@ -4,6 +4,7 @@
 // All Nansen responses are normalized defensively: missing fields are omitted,
 // never invented and never treated as zero.
 import { waitUntil } from "base44:runtime";
+import { fmtPctSigned, fmtPctPlain, fmtUsd, totalTradesEvidence, sampleEvidence } from "./format.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
 
@@ -188,32 +189,7 @@ function pickArr(obj, keys) {
   return Array.isArray(v) ? v : undefined;
 }
 
-function fmtPctSigned(n) {
-  if (n === null || n === undefined) return null;
-  const s = n > 0 ? "+" : "";
-  return `${s}${n.toFixed(1)}%`;
-}
-function fmtPctPlain(n) {
-  if (n === null || n === undefined) return null;
-  return `${n.toFixed(0)}%`;
-}
-function fmtUsd(n) {
-  if (n === null || n === undefined) return null;
-  const s = n >= 0 ? "$" : "-$";
-  return `${s}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-function fmtHold(seconds) {
-  if (seconds === null || seconds === undefined) return null;
-  if (typeof seconds === "string") return seconds;
-  const s = Number(seconds);
-  if (!Number.isFinite(s)) return null;
-  if (s < 60) return `${Math.round(s)}s`;
-  if (s < 3600) { const m = Math.floor(s / 60); const r = Math.round(s % 60); return `${m}m ${r}s`; }
-  if (s < 86400) { const h = Math.floor(s / 3600); const m = Math.round((s % 3600) / 60); return `${h}h ${m.toString().padStart(2, "0")}m`; }
-  const d = Math.floor(s / 86400);
-  if (d < 365) return `${d} days`;
-  return `${(d / 365).toFixed(1)} years`;
-}
+// Display + sample/total helpers live in ./format (pure, unit-tested).
 
 function mapEvidence(calls, windowDays) {
   const pnl = calls.pnl_summary?.ok ? calls.pnl_summary.json : null;
@@ -224,7 +200,9 @@ function mapEvidence(calls, windowDays) {
   const metrics = {};
   const evidence = [];
 
-  // ---- PnL summary ----
+  // ---- PnL summary (totals over the evidence window) ----
+  // Ratios are preserved raw internally; ×100 formatting happens in the display
+  // helpers and the frontend metric formatter.
   const realizedPct = num(pick(pnl, ["realized_pnl_percent", "realizedPnlPercent", "pnl_percent"]));
   const realizedUsd = num(pick(pnl, ["realized_pnl_usd", "realizedPnlUsd", "realized_pnl_abs_usd"]));
   const winRate = num(pick(pnl, ["win_rate", "winRate", "win_rate_pct"]));
@@ -238,46 +216,46 @@ function mapEvidence(calls, windowDays) {
   if (tradedTokenCount !== null) metrics.tokens_traded = tradedTokenCount;
   if (tradedTimes !== null) metrics.total_trades = tradedTimes;
 
-  if (realizedPct !== null) evidence.push({ tag: "NANSEN · PNL", label: "Realized PnL", value: fmtPctSigned(realizedPct), detail: "Realized profit/loss over the reviewed window." });
-  else if (realizedUsd !== null) evidence.push({ tag: "NANSEN · PNL", label: "Realized PnL", value: fmtUsd(realizedUsd), detail: "Realized profit/loss over the reviewed window." });
-  if (winRate !== null) evidence.push({ tag: "NANSEN · PNL", label: "Win Rate", value: fmtPctPlain(winRate), detail: "Share of trades closed in profit." });
-  if (tradedTimes !== null) evidence.push({ tag: "NANSEN · PNL", label: "Total Trades", value: String(tradedTimes), detail: "Closed trades recorded by Nansen." });
-  if (tradedTokenCount !== null) evidence.push({ tag: "NANSEN · PNL", label: "Tokens Traded", value: String(tradedTokenCount), detail: "Distinct tokens traded in the window." });
+  if (realizedPct !== null) evidence.push({ tag: "NANSEN · PNL", label: "Realized PnL", value: fmtPctSigned(realizedPct), detail: "Realized profit/loss over the evidence window." });
+  else if (realizedUsd !== null) evidence.push({ tag: "NANSEN · PNL", label: "Realized PnL", value: fmtUsd(realizedUsd), detail: "Realized profit/loss over the evidence window." });
+  if (winRate !== null) evidence.push({ tag: "NANSEN · PNL", label: "Win Rate", value: fmtPctPlain(winRate), detail: "Share of sales closed above cost basis." });
+  if (tradedTimes !== null) evidence.push(totalTradesEvidence(tradedTimes));
+  if (tradedTokenCount !== null) evidence.push({ tag: "NANSEN · PNL", label: "Tokens Traded", value: String(tradedTokenCount), detail: "Distinct tokens bought or sold during the window." });
   if (Array.isArray(top5) && top5.length) {
     const wins = top5.filter((t) => num(t.realized_pnl ?? t.realizedPnl) > 0).length;
     const losses = top5.filter((t) => num(t.realized_pnl ?? t.realizedPnl) < 0).length;
     metrics.top5_wins = wins; metrics.top5_losses = losses;
-    evidence.push({ tag: "NANSEN · PNL", label: "Top-5 Token PnL", value: `${wins}W / ${losses}L`, detail: "Profitable vs unprofitable among the top 5 tokens by activity." });
+    evidence.push({ tag: "NANSEN · PNL", label: "Top-5 Token PnL", value: `${wins}W / ${losses}L`, detail: "Profitable vs unprofitable among the top 5 tokens by realized profit." });
   }
 
-  // ---- DEX trades (entry behavior) ----
+  // ---- DEX trades (paginated SAMPLE — first 100 records, not complete history) ----
   const dexData = pickArr(dex, ["data", "trades"]);
   if (Array.isArray(dexData)) {
     metrics.dex_trade_count = dexData.length;
-    evidence.push({ tag: "NANSEN · DEX", label: "DEX Trades", value: String(dexData.length), detail: "On-chain swaps recorded by Nansen in the window." });
+    evidence.push(sampleEvidence("NANSEN · DEX", "Recent DEX Trades", dexData.length, "on-chain swaps"));
     const ages = dexData.map((d) => num(d.token_bought_age_days ?? d.tokenBoughtAgeDays)).filter((x) => x !== null);
-    if (ages.length) { const avg = ages.reduce((a, b) => a + b, 0) / ages.length; metrics.avg_token_bought_age_days = avg; evidence.push({ tag: "NANSEN · DEX", label: "Avg Token Age at Buy", value: `${avg.toFixed(0)} days`, detail: "Average age of tokens when purchased — lower means buying newer tokens." }); }
+    if (ages.length) { const avg = ages.reduce((a, b) => a + b, 0) / ages.length; metrics.avg_token_bought_age_days = avg; evidence.push({ tag: "NANSEN · DEX", label: "Avg Token Age at Buy", value: `${avg.toFixed(0)} days`, detail: "Average age of tokens when purchased (sample) — lower means buying newer tokens." }); }
     const vals = dexData.map((d) => num(d.trade_value_usd ?? d.tradeValueUsd)).filter((x) => x !== null);
-    if (vals.length) { const avg = vals.reduce((a, b) => a + b, 0) / vals.length; metrics.avg_trade_value_usd = avg; evidence.push({ tag: "NANSEN · DEX", label: "Avg Trade Size", value: fmtUsd(avg), detail: "Mean swap value in USD." }); }
+    if (vals.length) { const avg = vals.reduce((a, b) => a + b, 0) / vals.length; metrics.avg_trade_value_usd = avg; evidence.push({ tag: "NANSEN · DEX", label: "Avg Trade Size", value: fmtUsd(avg), detail: "Mean swap value in USD (sample)." }); }
   }
 
-  // ---- Current balance (point-in-time snapshot) ----
+  // ---- Current balance (point-in-time SNAPSHOT, no date range) ----
   const balData = pickArr(bal, ["data", "balances", "tokenBalances"]);
   if (Array.isArray(balData)) {
     metrics.token_balance_count = balData.length;
-    evidence.push({ tag: "NANSEN · BALANCE", label: "Token Balances", value: String(balData.length), detail: "Distinct tokens currently held." });
+    evidence.push({ tag: "NANSEN · BALANCE", label: "Token Balances", value: String(balData.length), detail: "Distinct tokens currently held (Nansen point-in-time snapshot)." });
     const vals = balData.map((d) => num(d.value_usd ?? d.valueUsd)).filter((x) => x !== null);
-    if (vals.length) { const total = vals.reduce((a, b) => a + b, 0); metrics.portfolio_value_usd = total; evidence.push({ tag: "NANSEN · BALANCE", label: "Current Portfolio Value", value: fmtUsd(total), detail: "Sum of token USD values from Nansen's current snapshot." }); }
+    if (vals.length) { const total = vals.reduce((a, b) => a + b, 0); metrics.portfolio_value_usd = total; evidence.push({ tag: "NANSEN · BALANCE", label: "Current Portfolio Value", value: fmtUsd(total), detail: "Sum of token USD values across returned holdings (Nansen current snapshot)." }); }
   }
 
-  // ---- Transactions (frequency) ----
+  // ---- Transactions (paginated SAMPLE — first 100 records, not complete history) ----
   const txData = pickArr(tx, ["data", "transactions"]);
   if (Array.isArray(txData)) {
     metrics.transaction_count = txData.length;
-    evidence.push({ tag: "NANSEN · TX", label: "Transaction Count", value: String(txData.length), detail: "Total transactions in the window." });
-    if (windowDays > 0) { const freq = txData.length / windowDays; metrics.tx_frequency_per_day = freq; evidence.push({ tag: "NANSEN · TX", label: "Transaction Frequency", value: `${freq.toFixed(2)}/day`, detail: "Average transactions per day over the window." }); }
+    evidence.push(sampleEvidence("NANSEN · TX", "Recent Transactions", txData.length, "transactions"));
+    if (windowDays > 0) { const freq = txData.length / windowDays; metrics.tx_frequency_per_day = freq; evidence.push({ tag: "NANSEN · TX", label: "Transaction Frequency", value: `${freq.toFixed(2)}/day`, detail: "Average transactions per day across the examined sample." }); }
     const vols = txData.map((d) => num(d.volume_usd ?? d.volumeUsd)).filter((x) => x !== null);
-    if (vols.length) { const avg = vols.reduce((a, b) => a + b, 0) / vols.length; metrics.avg_tx_volume_usd = avg; evidence.push({ tag: "NANSEN · TX", label: "Avg Tx Volume", value: fmtUsd(avg), detail: "Mean transaction volume in USD." }); }
+    if (vols.length) { const avg = vols.reduce((a, b) => a + b, 0) / vols.length; metrics.avg_tx_volume_usd = avg; evidence.push({ tag: "NANSEN · TX", label: "Avg Tx Volume", value: fmtUsd(avg), detail: "Mean transaction volume in USD (sample)." }); }
   }
 
   return { metrics, evidence };
@@ -311,7 +289,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
         ? { from: dateFromDay, to: dateToDay }
         : { from: dateFromIso, to: dateToIso };
     }
-    if (ep.paginated) body.pagination = { page: 1, per_page: 100 };
+    if (ep.paginated) body.pagination = { page: 1, per_page: ep.key === "current_balance" ? 1000 : 100 };
     if (ep.key === "current_balance" || ep.key === "transactions") body.hide_spam_token = true;
     const r = await callEndpoint(apiKey, ep, body, timeoutMs);
     r.chain = chain;
@@ -346,7 +324,8 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     failed_sources: failedSources,
     window_days: windowDays,
     evidence_date_range: { from: dateFromIso, to: dateToIso },
-    freshness: to.toISOString()
+    freshness: to.toISOString(),
+    snapshot_note: "Current balance is a point-in-time snapshot with no date range."
   };
 
   logUsage(base44, caseSlug, outcome, Object.values(calls));

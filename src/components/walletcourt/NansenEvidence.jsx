@@ -10,6 +10,30 @@ function safeParse(s, fallback) {
   }
 }
 
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+// Formats a raw stored metric for the Technical Metrics panel. Percentage
+// fields are stored as decimal ratios (0.84 == 84%) and multiplied by 100
+// here only at display time; USD, counts, and rates are formatted by key.
+function formatMetric(k, v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (k === "realized_pnl_pct" || k === "win_rate_pct") {
+    const n = typeof v === "number" ? v : parseFloat(v);
+    return Number.isFinite(n) ? `${n > 0 ? "+" : ""}${(n * 100).toFixed(1)}%` : String(v);
+  }
+  if (k.endsWith("_usd")) {
+    const n = typeof v === "number" ? v : parseFloat(v);
+    return Number.isFinite(n) ? `${n >= 0 ? "$" : "-$"}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(v);
+  }
+  if (k === "avg_token_bought_age_days") return `${Math.round(Number(v))} days`;
+  if (k === "tx_frequency_per_day") return `${Number(v).toFixed(2)}/day`;
+  return String(v);
+}
+
 const EXHIBIT = ["A", "B", "C", "D", "E", "F"];
 
 export default function NansenEvidence({ trial }) {
@@ -78,9 +102,14 @@ export default function NansenEvidence({ trial }) {
             </div>
           )}
           {meta && (
-            <p className="font-mono text-xs text-court-mute leading-relaxed">
-              Evidence window: {meta.evidence_date_range?.from} → {meta.evidence_date_range?.to} ({meta.window_days} days). Source freshness: {meta.freshness ? new Date(meta.freshness).toLocaleString() : "—"}.
-            </p>
+            <div className="space-y-1">
+              <p className="font-mono text-xs text-court-mute leading-relaxed">
+                Evidence window (PnL · DEX · Transactions): {fmtDate(meta.evidence_date_range?.from)} – {fmtDate(meta.evidence_date_range?.to)} ({meta.window_days} days).
+              </p>
+              <p className="font-mono text-xs text-court-mute leading-relaxed">
+                Current balance: point-in-time snapshot as of {fmtDate(meta.freshness)} (no date range).
+              </p>
+            </div>
           )}
           {metricEntries.length > 0 && (
             <div>
@@ -89,7 +118,7 @@ export default function NansenEvidence({ trial }) {
                 {metricEntries.map(([k, v]) => (
                   <div key={k} className="flex items-baseline justify-between gap-3 font-mono text-sm">
                     <dt className="text-court-mute">{k.replace(/_/g, " ")}</dt>
-                    <dd className="text-court-ice text-right">{String(v)}</dd>
+                    <dd className="text-court-ice text-right">{formatMetric(k, v)}</dd>
                   </div>
                 ))}
               </dl>
