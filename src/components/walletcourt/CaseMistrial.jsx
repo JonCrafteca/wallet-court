@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Gavel } from "lucide-react";
+import { displayAddressShort } from "@/lib/wallet";
 
 // Phase N2.3 — public Mistrial experience. Shown when some onchain activity
 // exists but the evidence is too thin to defensibly support any verdict.
@@ -10,8 +11,7 @@ function parseJson(s, fallback) {
 }
 
 export default function CaseMistrial({ trial, onReset }) {
-  const addr = trial.normalized_wallet_address || "";
-  const shortAddr = addr ? (addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr) : "";
+  const shortAddr = displayAddressShort(trial);
 
   const saved = parseJson(trial.metrics_json, {});
   const meta = saved._meta || {};

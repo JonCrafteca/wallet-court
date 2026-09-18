@@ -86,7 +86,7 @@ export default function Challenge() {
       }
     : sourceTrial
     ? {
-        address_short: shortAddr(sourceTrial.normalized_wallet_address || sourceTrial.wallet_address),
+        address_short: sourceTrial.address_short || shortAddr(sourceTrial.normalized_wallet_address || sourceTrial.wallet_address),
         verdict_name: sourceTrial.verdict_name,
         severity: sourceTrial.severity_score,
         confidence: sourceTrial.confidence_score,

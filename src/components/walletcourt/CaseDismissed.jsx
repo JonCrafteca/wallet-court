@@ -1,12 +1,12 @@
 import { motion } from "framer-motion";
 import { Gavel } from "lucide-react";
+import { displayAddressShort } from "@/lib/wallet";
 
 // Phase N2.3 — public Case Dismissed experience. Shown when the evidence gate
 // classified a successful-but-empty Nansen profile. No verdict, severity,
 // confidence, charge, sentence, evidence badge, share, challenge, or badges.
 export default function CaseDismissed({ trial, onReset }) {
-  const addr = trial.normalized_wallet_address || "";
-  const shortAddr = addr ? (addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr) : "";
+  const shortAddr = displayAddressShort(trial);
   const network = (trial.network || "ethereum").toUpperCase();
 
   return (

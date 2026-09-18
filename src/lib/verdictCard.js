@@ -2,6 +2,8 @@
 // This is a dedicated share-card generator — not a screenshot of the verdict
 // page — so the card has its own controlled Electric Court TV layout.
 
+import { displayAddressShort } from "@/lib/wallet";
+
 const COLORS = {
   cobalt: "#2457FF",
   uv: "#5127C7",
@@ -189,8 +191,7 @@ export async function drawVerdictCard(canvas, trial) {
   }
 
   // Address + network
-  const addr = trial.normalized_wallet_address || trial.wallet_address || "";
-  const short = addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
+  const short = displayAddressShort(trial);
   ctx.fillStyle = COLORS.mute;
   ctx.font = `500 ${22 * s}px "JetBrains Mono", monospace`;
   ctx.fillText(`${(trial.network || "").toUpperCase()} · ${short}`, 40 * s, 402 * s);

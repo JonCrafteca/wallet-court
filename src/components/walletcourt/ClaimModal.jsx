@@ -44,8 +44,12 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState(null);
 
-  const caseAddr = (trial.normalized_wallet_address || "").toLowerCase();
-  const caseShort = shortOf(trial.normalized_wallet_address);
+  const caseShort = trial.address_short || shortOf(trial.normalized_wallet_address || trial.wallet_address);
+  // Soft UX match against the abbreviated address only. The real verification
+  // is server-side in verifyWalletClaim, which recovers the signer and compares
+  // it to the stored address — never trusting a frontend-supplied address.
+  const connectedShort = address ? shortOf(address).toLowerCase() : "";
+  const matchesCase = !!(caseShort && connectedShort && connectedShort === caseShort.toLowerCase());
 
   useEffect(() => {
     if (open) {
@@ -62,7 +66,7 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
   // When a wallet connects, validate it matches the case and request a nonce.
   useEffect(() => {
     if (!open || !isAuthenticated || step !== "connect") return;
-    if (isConnected && address && address.toLowerCase() === caseAddr) {
+    if (isConnected && address && matchesCase) {
       trackClaim(CLAIM_EVENTS.WALLET_CONNECTED, { network: trial.network });
       requestNonce();
     }
@@ -132,7 +136,7 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
     }
   }
 
-  const wrongDefendant = isConnected && address && address.toLowerCase() !== caseAddr;
+  const wrongDefendant = isConnected && address && !matchesCase;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

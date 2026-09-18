@@ -8,6 +8,7 @@ import ClaimWalletSection from "./ClaimWalletSection";
 import CaseDismissed from "./CaseDismissed";
 import CaseMistrial from "./CaseMistrial";
 import { getCaseOutcome } from "@/lib/caseOutcome";
+import { displayAddressShort } from "@/lib/wallet";
 
 export default function VerdictReveal({ trial, onReset }) {
   // Evidence-sufficiency gate (N2.3): branch the public presentation on outcome.
@@ -15,10 +16,9 @@ export default function VerdictReveal({ trial, onReset }) {
   if (outcome === "dismissed_no_evidence") return <CaseDismissed trial={trial} onReset={onReset} />;
   if (outcome === "mistrial_insufficient_evidence") return <CaseMistrial trial={trial} onReset={onReset} />;
 
-  const addr = trial.normalized_wallet_address || "";
   const isOnePump = trial.verdict_code === "one_pump_chump";
   const isLive = trial.data_mode === "live";
-  const shortAddr = addr ? (addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr) : "";
+  const shortAddr = displayAddressShort(trial);
 
   return (
     <section className="mx-auto max-w-3xl px-4 pt-8 sm:pt-12 pb-20">
