@@ -121,12 +121,23 @@ describe("missing optional metrics do not fabricate evidence", () => {
     // Without holdings evidence, the engine must NOT invent a holder verdict.
     expect(selectPerformanceVerdict({ total_trades: 0 }).code).toBe("suspiciously_competent");
   });
-  it("no trading activity + holdings + active tx history → token_collector (no loss, no churn)", () => {
+  it("no trading activity + MEANINGFUL holdings + active tx history → token_collector (no loss, no churn)", () => {
     // No loss evidence → not bagholder; txCount>=20 → not witness protection.
-    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 50 }).code).toBe("token_collector");
+    // N2.4: holdings must be meaningful (portfolio value >= $25), not dust.
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, portfolio_value_usd: 5000, transaction_count: 50 }).code).toBe("token_collector");
   });
-  it("no trading activity + holdings + very low tx → wallet_in_witness_protection", () => {
-    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 5 }).code).toBe("wallet_in_witness_protection");
+  it("no trading activity + MEANINGFUL holdings + very low tx → wallet_in_witness_protection", () => {
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, portfolio_value_usd: 5000, transaction_count: 5 }).code).toBe("wallet_in_witness_protection");
+  });
+  it("dust-only holdings (token count, no portfolio value) do NOT produce a holder verdict", () => {
+    // N2.4 hardening: a positive token count alone cannot support a holder verdict.
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 50 }).code).not.toBe("token_collector");
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 5 }).code).not.toBe("wallet_in_witness_protection");
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 50 }).code).not.toBe("portfolio_polygamist");
+  });
+  it("dust holdings below the $25 minimum do NOT produce a holder verdict", () => {
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 30, portfolio_value_usd: 1, transaction_count: 50 }).code).not.toBe("token_collector");
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 30, portfolio_value_usd: 24.99, transaction_count: 5 }).code).not.toBe("wallet_in_witness_protection");
   });
   it("missing PnL never produces a bagholder verdict", () => {
     // Holdings present but PnL absent — must not be bagholder_emeritus or museum_grade.

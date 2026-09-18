@@ -93,8 +93,11 @@ export function isCircuitOpen(record, nowMs) {
   if (!record) return false;
   if (record.circuit_status === CIRCUIT_STATUS.CLOSED) return false;
   if (record.circuit_status === CIRCUIT_STATUS.HALF_OPEN) return true;
-  // OPEN: block until the cooldown elapses.
-  const retry = record.retry_after ? new Date(record.retry_after).getTime() : 0;
+  // OPEN: block until the cooldown elapses. A missing or unparseable retry_after
+  // is treated as still-blocking (fail safe) — openCircuit always sets it, so this
+  // only guards against corrupted state, but failing closed (blocking) ensures an
+  // open circuit never silently lets paid calls through.
+  const retry = record.retry_after ? new Date(record.retry_after).getTime() : NaN;
   if (!Number.isFinite(retry)) return true;
   return nowMs < retry;
 }

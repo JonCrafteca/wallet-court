@@ -6,13 +6,10 @@
 import { waitUntil } from "base44:runtime";
 import { fmtPctSigned, fmtPctPlain, fmtUsd, fmtInt, totalTradesEvidence, sampleEvidence, avgTokenAge } from "./format.ts";
 import { normalizeWalletClass } from "./walletClass.ts";
-import {
-  classifyRecessType,
-  isHardOperationalError,
-  highestPrecedenceRecess,
-  RECESS_TYPES
-} from "./circuitBreaker.ts";
-import { OPERATIONAL_FAILURE } from "./evidenceGate.ts";
+// assessRecess is pure pipeline-level recess logic, extracted into its own
+// module so it is unit-testable without the platform runtime. Re-exported here
+// for backward compatibility with existing importers (analyzeWalletWithNansen).
+export { assessRecess } from "./recessAssessment.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
 
@@ -401,64 +398,5 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   };
 }
 
-// Assess whether an operational failure should block the case (Court Recess) vs
-// allow a partial verdict/dismissal/mistrial. Returns null when the case may
-// proceed; otherwise { recessType, errorCategory, requestId } describing the
-// blocking failure so the pipeline can open the circuit and return Court Recess.
-//
-// Blocking rules (N2.4):
-//   1. Any hard operational error (auth/credits/rate_limit/missing_key) in any
-//      failed call → block (account-level; every endpoint is affected).
-//   2. A required endpoint (pnl_summary / dex_trades) failed → block (cannot
-//      defensibly determine a verdict without PnL + DEX evidence).
-//   3. The evidence gate returned OPERATIONAL_FAILURE (no activity AND the
-//      current_balance endpoint failed, so emptiness cannot be confirmed) →
-//      block, using the balance call's recess type.
-//   4. Otherwise (only an optional soft failure, or no failure) → proceed; the
-//      pipeline runs the evidence gate for verdict/dismissed/mistrial.
-export function assessRecess(nansenResult, gateOutcome) {
-  const failedCalls = Array.isArray(nansenResult?.failedCalls) ? nansenResult.failedCalls : [];
-  if (!failedCalls.length) return null;
-
-  // 1. Hard operational error anywhere.
-  const hard = failedCalls.filter((c) => isHardOperationalError(c.errorCategory));
-  if (hard.length) {
-    const types = hard.map((c) => classifyRecessType(c.errorCategory));
-    const recessType = highestPrecedenceRecess(types);
-    const lead = hard[0];
-    return { recessType, errorCategory: lead.errorCategory, requestId: lead.requestId };
-  }
-
-  // 2. Required endpoint failed.
-  const requiredFailed = failedCalls.find((c) => c.key === "pnl_summary" || c.key === "dex_trades");
-  if (requiredFailed) {
-    return {
-      recessType: classifyRecessType(requiredFailed.errorCategory),
-      errorCategory: requiredFailed.errorCategory,
-      requestId: requiredFailed.requestId
-    };
-  }
-
-  // 3. Evidence gate could not confirm an empty profile because an endpoint
-  //    needed for confirmation (current_balance) failed.
-  if (gateOutcome === OPERATIONAL_FAILURE) {
-    const balanceFailed = failedCalls.find((c) => c.key === "current_balance");
-    if (balanceFailed) {
-      return {
-        recessType: classifyRecessType(balanceFailed.errorCategory),
-        errorCategory: balanceFailed.errorCategory,
-        requestId: balanceFailed.requestId
-      };
-    }
-    // Fallback: any remaining failed optional call.
-    const any = failedCalls[0];
-    return {
-      recessType: classifyRecessType(any.errorCategory),
-      errorCategory: any.errorCategory,
-      requestId: any.requestId
-    };
-  }
-
-  // 4. Optional soft failure with sufficient remaining evidence → proceed.
-  return null;
-}
+// assessRecess now lives in ./recessAssessment.ts (pure, unit-testable) and is
+// re-exported above. The blocking rules are documented there.

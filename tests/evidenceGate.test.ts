@@ -81,6 +81,60 @@ describe("mistrial_insufficient_evidence — thin activity", () => {
   });
 });
 
+// --- Holdings-evidence hardening (N2.4) — token count alone is not meaningful ---
+
+describe("holdings-evidence hardening (N2.4) — token count alone is not meaningful", () => {
+  const okMeta = { failed_sources: [] };
+
+  it("token count alone (no portfolio value) does not support a holder verdict → mistrial", () => {
+    expect(classifyOutcome({ total_trades: 0, token_balance_count: 30, transaction_count: 5 }, okMeta)).toBe("mistrial_insufficient_evidence");
+  });
+  it("dust/spam-only holdings (portfolio value below minimum) → mistrial, not a holder verdict", () => {
+    expect(classifyOutcome({ total_trades: 0, token_balance_count: 30, portfolio_value_usd: 1, transaction_count: 5 }, okMeta)).toBe("mistrial_insufficient_evidence");
+  });
+  it("portfolio value exactly at the minimum → meaningful (holder verdict path)", () => {
+    expect(hasMeaningfulHoldingsEvidence({ portfolio_value_usd: MIN_PORTFOLIO_VALUE_USD })).toBe(true);
+    expect(classifyOutcome({ total_trades: 0, token_balance_count: 5, portfolio_value_usd: MIN_PORTFOLIO_VALUE_USD, transaction_count: 50 }, okMeta)).toBe("verdict");
+  });
+  it("portfolio value just below the minimum → not meaningful (mistrial)", () => {
+    expect(hasMeaningfulHoldingsEvidence({ portfolio_value_usd: MIN_PORTFOLIO_VALUE_USD - 0.01 })).toBe(false);
+  });
+  it("meaningful holdings + sufficient portfolio value → verdict (holder path)", () => {
+    expect(classifyOutcome({ total_trades: 0, token_balance_count: 25, portfolio_value_usd: 150000, transaction_count: 100 }, okMeta)).toBe("verdict");
+  });
+  it("unvalued balance (token count present, portfolio value absent) → mistrial", () => {
+    expect(classifyOutcome({ total_trades: 0, token_balance_count: 10, transaction_count: 3 }, okMeta)).toBe("mistrial_insufficient_evidence");
+  });
+  it("dust holdings + affirmative trading loss → verdict (loss-based, not holder)", () => {
+    // Dust holdings but a realized loss backed by trades is affirmative evidence → not mistrial.
+    expect(classifyOutcome({ realized_pnl_pct: -0.5, total_trades: 10, token_balance_count: 30, portfolio_value_usd: 1 }, okMeta)).toBe("verdict");
+  });
+  it("a single dust token cannot independently support a holder verdict", () => {
+    expect(classifyOutcome({ total_trades: 0, token_balance_count: 1, portfolio_value_usd: 0.01, transaction_count: 2 }, okMeta)).toBe("mistrial_insufficient_evidence");
+  });
+});
+
+// --- Partial evidence may proceed only when remaining evidence independently supports the verdict ---
+
+describe("partial evidence — remaining affirmative evidence must independently support the verdict", () => {
+  it("partial (transactions failed) + meaningful holdings → verdict (holdings independently support it)", () => {
+    const m = { token_balance_count: 25, portfolio_value_usd: 150000, total_trades: 0 };
+    expect(classifyOutcome(m, { partial: true, failed_sources: ["transactions"] })).toBe("verdict");
+  });
+  it("partial (transactions failed) + dust-only holdings → mistrial (holdings do NOT independently support)", () => {
+    const m = { token_balance_count: 25, portfolio_value_usd: 1, total_trades: 0 };
+    expect(classifyOutcome(m, { partial: true, failed_sources: ["transactions"] })).toBe("mistrial_insufficient_evidence");
+  });
+  it("partial (current_balance failed) + affirmative trading loss → verdict (loss independently supports)", () => {
+    const m = { realized_pnl_pct: -0.5, win_rate_pct: 0.3, total_trades: 100, dex_trade_count: 50 };
+    expect(classifyOutcome(m, { partial: true, failed_sources: ["current_balance"] })).toBe("verdict");
+  });
+  it("partial (current_balance failed) + thin trading → mistrial (no independent support)", () => {
+    const m = { total_trades: 1, realized_pnl_pct: -0.1 };
+    expect(classifyOutcome(m, { partial: true, failed_sources: ["current_balance"] })).toBe("mistrial_insufficient_evidence");
+  });
+});
+
 // --- Verdict: sufficient affirmative evidence ---
 
 describe("verdict — sufficient affirmative evidence", () => {
