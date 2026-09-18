@@ -161,3 +161,36 @@ describe("N2.4 guarantee — blocking recess returns a non-null decision (no tri
     expect(assessRecess(result([call("transactions", "timeout")]), "verdict")).toBeNull();
   });
 });
+
+// ---- unsupported_chain must NOT open the global circuit (N2.4 correction) ----
+
+describe("unsupported_chain — never blocks, never opens the circuit", () => {
+  it("unsupported_chain on a required endpoint does NOT block (filtered out)", () => {
+    // Even though pnl_summary is required, unsupported_chain is request
+    // validation, not a provider outage. assessRecess filters it out and
+    // returns null; the pipeline handles it as a 400 upstream.
+    expect(assessRecess(result([call("pnl_summary", "unsupported_chain")]), "verdict")).toBeNull();
+  });
+  it("unsupported_chain on an optional endpoint does NOT block", () => {
+    expect(assessRecess(result([call("current_balance", "unsupported_chain")]), OPERATIONAL_FAILURE)).toBeNull();
+  });
+  it("unsupported_chain mixed with a real provider failure → only the real failure blocks", () => {
+    const r = assessRecess(result([
+      call("pnl_summary", "unsupported_chain"),
+      call("dex_trades", "auth")
+    ]), "verdict");
+    expect(r).not.toBeNull();
+    expect(r.recessType).toBe(RECESS_TYPES.AUTH);
+    expect(r.errorCategory).toBe("auth");
+  });
+  it("unsupported_chain alone with operational_failure gate → does NOT block (filtered)", () => {
+    expect(assessRecess(result([call("current_balance", "unsupported_chain")]), OPERATIONAL_FAILURE)).toBeNull();
+  });
+  it("only unsupported_chain failures → null (no blocking, no circuit)", () => {
+    expect(assessRecess(result([
+      call("pnl_summary", "unsupported_chain"),
+      call("dex_trades", "unsupported_chain"),
+      call("current_balance", "unsupported_chain")
+    ]), "verdict")).toBeNull();
+  });
+});

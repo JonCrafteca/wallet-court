@@ -54,6 +54,25 @@
       "format": "date-time",
       "description": "When the circuit was last closed by a successful recovery probe."
     },
+    "circuit_version": {
+      "type": "number",
+      "default": 0,
+      "description": "Optimistic-concurrency token. Incremented on every state transition. Used as a compare-and-set guard so a request that began before another request opened the circuit cannot later close that newer circuit (stale-success protection)."
+    },
+    "probe_lease_id": {
+      "type": "string",
+      "description": "Unique token identifying the active half-open recovery probe lease. Only the lease holder may close or reopen the circuit. Null when no probe is in flight."
+    },
+    "probe_started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the active probe lease was granted."
+    },
+    "probe_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the probe lease expires. A stale (expired) lease may be reclaimed by a new probe; a live lease blocks concurrent probes."
+    },
     "updated_at": {
       "type": "string",
       "format": "date-time",

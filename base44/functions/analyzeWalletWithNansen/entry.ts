@@ -27,14 +27,15 @@ import {
 import { selectEntityVerdict } from "../../shared/verdicts_entity.ts";
 import { applySeverityCap } from "../../shared/verdicts_performance.ts";
 import { classifyOutcome, OPERATIONAL_FAILURE } from "../../shared/evidenceGate.ts";
-import { fetchNansenEvidence, assessRecess } from "../../shared/nansen.ts";
+import { fetchNansenEvidence, assessRecess, CHAIN_BY_NETWORK, ERR } from "../../shared/nansen.ts";
 import {
   isCircuitOpen,
   sanitizeReason,
   recessHttpStatus,
+  readCircuitVersion,
   RECESS_TYPES
 } from "../../shared/circuitBreaker.ts";
-import { getCircuit, openCircuit, closeCircuit } from "../../shared/circuitStore.ts";
+import { getCircuit, openCircuit, closeCircuitWithVersion } from "../../shared/circuitStore.ts";
 
 const PROVIDER = "nansen";
 
@@ -65,6 +66,14 @@ export default async function (req) {
       return Response.json({ error: "That does not look like a valid address for the selected network." }, { status: 422 });
     }
 
+    // Pre-flight: unsupported_chain is a request-validation error, NOT a Nansen
+    // provider outage. It returns a public-safe 400 before any circuit check or
+    // Nansen call — no WalletTrial, no slug, no ProviderCircuit mutation, no
+    // Court Recess. Only genuine provider operational failures open the circuit.
+    if (!CHAIN_BY_NETWORK[network]) {
+      return Response.json({ error: "The selected network is not currently supported." }, { status: 400 });
+    }
+
     const normalized = normalizeAddress(network, wallet_address);
     const windowDays = Math.min(Math.max(parseInt(body?.window_days, 10) || 180, 7), 365);
 
@@ -85,7 +94,10 @@ export default async function (req) {
     }
 
     // ---- Circuit check BEFORE any paid Nansen request (N2.4) ----
+    // Capture the circuit_version at the start so a stale success cannot later
+    // close a newer circuit opened by another request (stale-success protection).
     const circuit = await getCircuit(base44, PROVIDER);
+    const circuitVersionAtStart = readCircuitVersion(circuit);
     const now = Date.now();
     if (isCircuitOpen(circuit, now)) {
       return courtRecessResponse(circuit, now);
@@ -99,6 +111,12 @@ export default async function (req) {
       base44,
       timeoutMs: 20000
     });
+
+    // Defensive: if the provider reported an unsupported chain (should be caught
+    // by the pre-flight), return a 400 — never a Court Recess, never a trial.
+    if (nansen.errorCategory === ERR.UNSUPPORTED_CHAIN) {
+      return Response.json({ error: "The selected network is not currently supported." }, { status: 400 });
+    }
 
     // Evidence-sufficiency gate on the successfully-obtained evidence.
     const gateOutcome = classifyOutcome(nansen.metrics, nansen.meta);
@@ -119,10 +137,14 @@ export default async function (req) {
       }, now);
     }
 
-    // No blocking failure. On a successful live/partial result, ensure the
-    // circuit is closed (recovery) if it was previously open/half-open.
+    // No blocking failure. On a successful live/partial result, close the
+    // circuit ONLY if this request still owns the recovery generation (its
+    // captured circuit_version matches the current record). A request that
+    // began before another request opened the circuit must NOT close that
+    // newer circuit — the CAS updateMany matches 0 documents and the circuit
+    // stays open. (Stale-success protection, N2.4.)
     if (circuit && circuit.circuit_status !== "closed") {
-      await closeCircuit(base44, PROVIDER, { requestId: null }).catch(() => {});
+      await closeCircuitWithVersion(base44, PROVIDER, circuitVersionAtStart, Date.now(), { requestId: null }).catch(() => {});
     }
 
     if (gateOutcome === "dismissed_no_evidence" || gateOutcome === "mistrial_insufficient_evidence") {

@@ -31,7 +31,11 @@ import {
 import { OPERATIONAL_FAILURE } from "./evidenceGate.ts";
 
 export function assessRecess(nansenResult, gateOutcome) {
-  const failedCalls = Array.isArray(nansenResult?.failedCalls) ? nansenResult.failedCalls : [];
+  let failedCalls = Array.isArray(nansenResult?.failedCalls) ? nansenResult.failedCalls : [];
+  // unsupported_chain is a request-validation error, NOT a provider outage. It
+  // must never open the global circuit. Filter it out here so it cannot trigger
+  // any blocking rule; the pipeline handles it as a 400 upstream.
+  failedCalls = failedCalls.filter((c) => c && c.errorCategory !== "unsupported_chain");
   if (!failedCalls.length) return null;
 
   // 1. Hard operational error anywhere.

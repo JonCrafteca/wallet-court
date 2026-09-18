@@ -156,3 +156,50 @@ export function isHardOperationalError(errorCategory) {
 export function recessHttpStatus(recessType) {
   return recessType === RECESS_TYPES.RATE_LIMIT ? 429 : 503;
 }
+
+// ---- Probe-lease helpers (pure, unit-testable) ----
+
+// Generate a unique probe-lease token. Uses crypto.randomUUID when available,
+// falling back to a random+timestamp string.
+export function generateLeaseId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+}
+
+// Does the circuit currently hold a non-expired probe lease?
+export function hasActiveProbeLease(record, nowMs) {
+  if (!record || !record.probe_lease_id) return false;
+  if (record.circuit_status !== CIRCUIT_STATUS.HALF_OPEN) return false;
+  const exp = record.probe_expires_at ? new Date(record.probe_expires_at).getTime() : NaN;
+  if (!Number.isFinite(exp)) return false;
+  return nowMs < exp;
+}
+
+// Has a previously-granted probe lease expired (stale lease)?
+export function isProbeLeaseExpired(record, nowMs) {
+  if (!record || !record.probe_lease_id) return false;
+  const exp = record.probe_expires_at ? new Date(record.probe_expires_at).getTime() : NaN;
+  if (!Number.isFinite(exp)) return true; // unparseable expiry = treat as expired (reclaimable)
+  return nowMs >= exp;
+}
+
+// Compare-and-set guard for stale-success protection. A request that captured
+// `capturedVersion` when it began may only close/reopen the circuit if the
+// current `currentVersion` still matches. Returns true when the caller owns
+// the current recovery generation.
+export function ownsCurrentVersion(capturedVersion, currentVersion) {
+  if (capturedVersion == null || currentVersion == null) return false;
+  const c = Number(capturedVersion);
+  const cur = Number(currentVersion);
+  if (!Number.isFinite(c) || !Number.isFinite(cur)) return false;
+  return c === cur;
+}
+
+// Read the circuit_version from a record, defaulting null/undefined to 0.
+export function readCircuitVersion(record) {
+  const v = record?.circuit_version;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}

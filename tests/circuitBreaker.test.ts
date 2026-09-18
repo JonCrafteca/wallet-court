@@ -10,6 +10,11 @@ import {
   highestPrecedenceRecess,
   isHardOperationalError,
   recessHttpStatus,
+  hasActiveProbeLease,
+  isProbeLeaseExpired,
+  ownsCurrentVersion,
+  readCircuitVersion,
+  generateLeaseId,
   RECESS_TYPES,
   CIRCUIT_STATUS,
   COOLDOWN_SECONDS,
@@ -275,5 +280,120 @@ describe("concurrent probe protection — HALF_OPEN blocks a second probe", () =
     const rec = { circuit_status: CIRCUIT_STATUS.OPEN, retry_after: new Date(now - 1).toISOString() };
     expect(isCircuitOpen(rec, now)).toBe(false);
     expect(isHalfOpenEligible(rec, now)).toBe(true);
+  });
+});
+
+// ---- Probe-lease helpers (pure) ----
+
+describe("hasActiveProbeLease — a live lease blocks concurrent probes", () => {
+  const now = 1_700_000_000_000;
+  it("a half_open circuit with a non-expired lease is active", () => {
+    expect(hasActiveProbeLease({
+      circuit_status: CIRCUIT_STATUS.HALF_OPEN,
+      probe_lease_id: "lease-1",
+      probe_expires_at: new Date(now + 10_000).toISOString()
+    }, now)).toBe(true);
+  });
+  it("an expired lease is NOT active", () => {
+    expect(hasActiveProbeLease({
+      circuit_status: CIRCUIT_STATUS.HALF_OPEN,
+      probe_lease_id: "lease-1",
+      probe_expires_at: new Date(now - 1).toISOString()
+    }, now)).toBe(false);
+  });
+  it("a half_open circuit with no lease_id is NOT active", () => {
+    expect(hasActiveProbeLease({ circuit_status: CIRCUIT_STATUS.HALF_OPEN, probe_expires_at: new Date(now + 10_000).toISOString() }, now)).toBe(false);
+  });
+  it("an open or closed circuit with a lease_id is NOT active", () => {
+    expect(hasActiveProbeLease({ circuit_status: CIRCUIT_STATUS.OPEN, probe_lease_id: "x", probe_expires_at: new Date(now + 10_000).toISOString() }, now)).toBe(false);
+    expect(hasActiveProbeLease({ circuit_status: CIRCUIT_STATUS.CLOSED, probe_lease_id: "x", probe_expires_at: new Date(now + 10_000).toISOString() }, now)).toBe(false);
+  });
+  it("an unparseable expiry is NOT active", () => {
+    expect(hasActiveProbeLease({ circuit_status: CIRCUIT_STATUS.HALF_OPEN, probe_lease_id: "x", probe_expires_at: "garbage" }, now)).toBe(false);
+  });
+  it("null record is NOT active", () => {
+    expect(hasActiveProbeLease(null, now)).toBe(false);
+  });
+});
+
+describe("isProbeLeaseExpired — stale lease reclamation", () => {
+  const now = 1_700_000_000_000;
+  it("a lease past its expiry is expired", () => {
+    expect(isProbeLeaseExpired({ probe_lease_id: "x", probe_expires_at: new Date(now - 1).toISOString() }, now)).toBe(true);
+  });
+  it("a lease before its expiry is NOT expired", () => {
+    expect(isProbeLeaseExpired({ probe_lease_id: "x", probe_expires_at: new Date(now + 10_000).toISOString() }, now)).toBe(false);
+  });
+  it("no lease_id → not expired (nothing to reclaim)", () => {
+    expect(isProbeLeaseExpired({ probe_expires_at: new Date(now - 1).toISOString() }, now)).toBe(false);
+  });
+  it("an unparseable expiry is treated as expired (reclaimable)", () => {
+    expect(isProbeLeaseExpired({ probe_lease_id: "x", probe_expires_at: "garbage" }, now)).toBe(true);
+  });
+});
+
+describe("generateLeaseId — unique probe-lease tokens", () => {
+  it("returns a non-empty string", () => {
+    const id = generateLeaseId();
+    expect(typeof id).toBe("string");
+    expect(id.length).toBeGreaterThan(0);
+  });
+  it("two calls produce different ids", () => {
+    expect(generateLeaseId()).not.toBe(generateLeaseId());
+  });
+});
+
+// ---- Stale-success protection (pure CAS guard) ----
+// Regression: Request A begins (captures version V). Request B fails and opens
+// the circuit (version V+1). Request A later succeeds. A must NOT close the
+// newer circuit because it does not own the recovery generation.
+
+describe("ownsCurrentVersion — stale-success CAS guard", () => {
+  it("matching versions → owns the recovery generation (may close)", () => {
+    expect(ownsCurrentVersion(5, 5)).toBe(true);
+    expect(ownsCurrentVersion(0, 0)).toBe(true);
+  });
+  it("stale version (A captured V, B bumped to V+1) → does NOT own (may not close)", () => {
+    expect(ownsCurrentVersion(5, 6)).toBe(false);
+    expect(ownsCurrentVersion(0, 1)).toBe(false);
+  });
+  it("non-finite versions → does NOT own (fail safe)", () => {
+    expect(ownsCurrentVersion(NaN, 5)).toBe(false);
+    expect(ownsCurrentVersion(5, NaN)).toBe(false);
+    expect(ownsCurrentVersion(null, 0)).toBe(false);
+    expect(ownsCurrentVersion(undefined, 0)).toBe(false);
+  });
+});
+
+describe("readCircuitVersion — defaults null/undefined to 0", () => {
+  it("reads a numeric version", () => {
+    expect(readCircuitVersion({ circuit_version: 7 })).toBe(7);
+  });
+  it("defaults null/undefined/missing to 0", () => {
+    expect(readCircuitVersion({ circuit_version: null })).toBe(0);
+    expect(readCircuitVersion({})).toBe(0);
+    expect(readCircuitVersion(null)).toBe(0);
+  });
+  it("defaults non-numeric to 0", () => {
+    expect(readCircuitVersion({ circuit_version: "abc" })).toBe(0);
+  });
+});
+
+describe("stale-success regression — A cannot close a circuit B opened", () => {
+  // Simulates the pure decision the pipeline makes via closeCircuitWithVersion:
+  // A captured version V at start; after B opened (V→V+1), A's captured version
+  // no longer owns the current version, so the CAS would match 0 documents.
+  it("A captured V=3, B opened to V=4 → A does not own V=4 → CAS rejects", () => {
+    const aCaptured = 3;
+    const currentAfterB = 4;
+    expect(ownsCurrentVersion(aCaptured, currentAfterB)).toBe(false);
+  });
+  it("A captured V=3, no one opened → current is still V=3 → A owns → CAS accepts", () => {
+    const aCaptured = 3;
+    const currentUnchanged = 3;
+    expect(ownsCurrentVersion(aCaptured, currentUnchanged)).toBe(true);
+  });
+  it("A captured V=0 (old record), B opened to V=1 → A does not own V=1", () => {
+    expect(ownsCurrentVersion(0, 1)).toBe(false);
   });
 });
