@@ -5,8 +5,16 @@ import ShareActions from "./ShareActions";
 import ShoutItGallery from "./ShoutItGallery";
 import SentenceRuling from "./SentenceRuling";
 import ClaimWalletSection from "./ClaimWalletSection";
+import CaseDismissed from "./CaseDismissed";
+import CaseMistrial from "./CaseMistrial";
+import { getCaseOutcome } from "@/lib/caseOutcome";
 
 export default function VerdictReveal({ trial, onReset }) {
+  // Evidence-sufficiency gate (N2.3): branch the public presentation on outcome.
+  const outcome = getCaseOutcome(trial);
+  if (outcome === "dismissed_no_evidence") return <CaseDismissed trial={trial} onReset={onReset} />;
+  if (outcome === "mistrial_insufficient_evidence") return <CaseMistrial trial={trial} onReset={onReset} />;
+
   const addr = trial.normalized_wallet_address || "";
   const isOnePump = trial.verdict_code === "one_pump_chump";
   const isLive = trial.data_mode === "live";

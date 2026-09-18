@@ -5,6 +5,7 @@
 // Never returns full wallet addresses, roasts, evidence, metrics, or any
 // internal/private record. Public app (no auth), so the service role reads.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
+import { getCaseOutcome } from "../../shared/evidenceGate.ts";
 
 export default async function (req) {
   try {
@@ -15,7 +16,11 @@ export default async function (req) {
       "-created_date",
       500
     );
-    const all = records || [];
+    // Exclude dismissed/mistrial cases from every Hall section and trial counts.
+    const all = (records || []).filter((t) => {
+      const o = getCaseOutcome(t);
+      return o !== "dismissed_no_evidence" && o !== "mistrial_insufficient_evidence";
+    });
 
     // Count completed trials per wallet (address + network) for the "Tried X
     // times" badge, without ever exposing the full address.

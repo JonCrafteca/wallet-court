@@ -8,7 +8,7 @@ import { HALL_CLASS_FILTERS, shortClassLabel } from "@/lib/walletClass";
 const SHAME_SECTIONS = [
   { key: "most_severe", title: "Most Severe" },
   { key: "highest_confidence", title: "Highest Confidence" },
-  { key: "recently_convicted", title: "Recently Convicted" },
+  { key: "recently_convicted", title: "Recent Cases" },
   { key: "one_pump_wonders", title: "One Pump Wonders" },
 ];
 

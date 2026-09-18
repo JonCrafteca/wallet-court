@@ -36,7 +36,17 @@
         "live"
       ],
       "default": "demo",
-      "description": "demo = deterministic fixtures; live = real Nansen onchain evidence."
+      "description": "Evidence completeness: demo = fixtures; live = real Nansen evidence (partial cases carry _meta.partial=true in metrics_json)."
+    },
+    "case_outcome": {
+      "type": "string",
+      "enum": [
+        "verdict",
+        "dismissed_no_evidence",
+        "mistrial_insufficient_evidence",
+        "demo"
+      ],
+      "description": "Active case outcome classification (Phase N2.3). verdict = deterministic verdict issued; dismissed_no_evidence = successful empty evidence profile; mistrial_insufficient_evidence = activity too thin to defensibly verdict; demo = fixture verdict. Absent on pre-N2.3 records (inferred as verdict/demo)."
     },
     "wallet_class": {
       "type": "string",
@@ -44,41 +54,41 @@
     },
     "verdict_code": {
       "type": "string",
-      "description": "Machine code of the canonical verdict, e.g. one_pump_chump."
+      "description": "Machine code of the canonical verdict, e.g. one_pump_chump. Null for dismissed/mistrial outcomes."
     },
     "verdict_name": {
       "type": "string",
-      "description": "Display name of the verdict, e.g. One Pump Chump."
+      "description": "Display name of the verdict, e.g. One Pump Chump. Null for dismissed/mistrial outcomes."
     },
     "severity_score": {
       "type": "number",
-      "description": "0-100. Higher = more egregious trading behavior."
+      "description": "0-100. Higher = more egregious trading behavior. Null for dismissed/mistrial outcomes."
     },
     "confidence_score": {
       "type": "number",
-      "description": "0-100. How confident the court is in the verdict."
+      "description": "0-100. How confident the court is in the verdict. Null for dismissed/mistrial outcomes."
     },
     "headline": {
       "type": "string"
     },
     "roast": {
       "type": "string",
-      "description": "The cheeky courtroom roast of the wallet's behavior."
+      "description": "The cheeky courtroom roast of the wallet's behavior. Null for dismissed/mistrial outcomes."
     },
     "defense_statement": {
       "type": "string",
-      "description": "The wallet's (imagined) defense, entered into the record."
+      "description": "The wallet's (imagined) defense, entered into the record. Null for dismissed/mistrial outcomes."
     },
     "sentence": {
       "type": "string"
     },
     "evidence_items_json": {
       "type": "string",
-      "description": "JSON array of evidence exhibit objects."
+      "description": "JSON array of evidence exhibit objects. Preserved on dismissed/mistrial cases for audit; not displayed as active evidence on dismissed cases."
     },
     "metrics_json": {
       "type": "string",
-      "description": "JSON object of numeric trading metrics."
+      "description": "JSON object of numeric trading metrics, with _meta carrying partial/failed_sources/window metadata. Preserved unchanged across re-score and evidence-gate migrations."
     },
     "source_endpoints_json": {
       "type": "string",
@@ -100,7 +110,7 @@
     },
     "rescore_audit_json": {
       "type": "string",
-      "description": "JSON audit note for deterministic re-score migrations (e.g. N2.2). Records phase, operation, evidence source, migration type, timestamp, and previous/next verdict. Internal-only; never exposed on the public case page."
+      "description": "JSON audit note for deterministic re-score / evidence-gate migrations. Records phase, operation, evidence source, migration type, timestamp, and previous/next state. Internal-only; never exposed on the public case page."
     }
   },
   "required": [

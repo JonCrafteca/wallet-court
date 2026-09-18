@@ -3,6 +3,7 @@
 // and returns a shareable challenge slug. Never stores full wallet addresses.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { findCaseBySlug, sanitizeHandle, isValidHandle, shortAddr, randomSlug } from "../../shared/caseUtils.ts";
+import { getCaseOutcome } from "../../shared/evidenceGate.ts";
 
 export default async function (req) {
   try {
@@ -19,6 +20,12 @@ export default async function (req) {
 
     const trial = await findCaseBySlug(base44, source_case_slug);
     if (!trial) return Response.json({ error: "Case not found." }, { status: 404 });
+
+    // Dismissed/mistrial cases carry no verdict and cannot be challenged.
+    const outcome = getCaseOutcome(trial);
+    if (outcome === "dismissed_no_evidence" || outcome === "mistrial_insufficient_evidence") {
+      return Response.json({ error: "This case has no verdict and cannot be challenged." }, { status: 422 });
+    }
 
     handles = handles.map(sanitizeHandle).filter(Boolean).filter(isValidHandle);
     handles = [...new Set(handles)].slice(0, 3);

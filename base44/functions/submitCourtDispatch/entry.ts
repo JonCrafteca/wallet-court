@@ -4,6 +4,7 @@
 // sanitized public fields (no full wallet addresses).
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { findCaseBySlug, sanitizeHandle, isValidHandle } from "../../shared/caseUtils.ts";
+import { getCaseOutcome } from "../../shared/evidenceGate.ts";
 
 export default async function (req) {
   try {
@@ -38,6 +39,12 @@ export default async function (req) {
 
     const trial = await findCaseBySlug(base44, case_slug);
     if (!trial) return Response.json({ error: "Case not found." }, { status: 404 });
+
+    // Dismissed/mistrial cases have no verdict to share.
+    const outcome = getCaseOutcome(trial);
+    if (outcome === "dismissed_no_evidence" || outcome === "mistrial_insufficient_evidence") {
+      return Response.json({ error: "This case has no verdict to share." }, { status: 422 });
+    }
 
     // Throttle rapid duplicates: same case + text + pending within 10 minutes.
     const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();

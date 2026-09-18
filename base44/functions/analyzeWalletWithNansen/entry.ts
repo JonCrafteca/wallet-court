@@ -20,6 +20,7 @@ import {
 } from "../../shared/verdicts_live.ts";
 import { selectEntityVerdict } from "../../shared/verdicts_entity.ts";
 import { applySeverityCap } from "../../shared/verdicts_performance.ts";
+import { classifyOutcome } from "../../shared/evidenceGate.ts";
 import { fetchNansenEvidence } from "../../shared/nansen.ts";
 
 function newSlug() {
@@ -75,6 +76,35 @@ export default async function (req) {
       };
 
       if (nansen.outcome === "live" || nansen.outcome === "partial") {
+        // Evidence-sufficiency gate (N2.3): run BEFORE verdict selection so the
+        // court never invents a verdict on empty or inadequate evidence.
+        const gateOutcome = classifyOutcome(nansen.metrics, nansen.meta);
+        if (gateOutcome === "dismissed_no_evidence" || gateOutcome === "mistrial_insufficient_evidence") {
+          const record = await base44.asServiceRole.entities.WalletTrial.create({
+            wallet_address,
+            normalized_wallet_address: normalized,
+            network,
+            status: "completed",
+            data_mode: "live",
+            wallet_class: nansen.walletClass,
+            case_outcome: gateOutcome,
+            verdict_code: null,
+            verdict_name: null,
+            headline: null,
+            roast: null,
+            defense_statement: null,
+            sentence: null,
+            severity_score: null,
+            confidence_score: null,
+            evidence_items_json: JSON.stringify(nansen.evidence),
+            metrics_json: JSON.stringify({ ...nansen.metrics, _meta: nansen.meta }),
+            source_endpoints_json: JSON.stringify(nansen.sources),
+            public_slug,
+            analyzed_at: new Date().toISOString()
+          });
+          return Response.json({ trial: record, analysis });
+        }
+
         const verdict = selectEntityVerdict(nansen.walletClass, nansen.metrics);
         const { severity: rawSeverity, confidence } = computeSeverityConfidence(nansen.metrics, nansen.partial);
         const severity = applySeverityCap(verdict, rawSeverity);
@@ -86,6 +116,7 @@ export default async function (req) {
           status: "completed",
           data_mode: "live",
           wallet_class: nansen.walletClass,
+          case_outcome: "verdict",
           ...payload,
           public_slug,
           analyzed_at: new Date().toISOString()
@@ -116,6 +147,7 @@ async function createDemoTrial(base44, wallet_address, normalized, network, publ
     network,
     status: "completed",
     data_mode: "demo",
+    case_outcome: "demo",
     ...payload,
     public_slug,
     analyzed_at: new Date().toISOString()
