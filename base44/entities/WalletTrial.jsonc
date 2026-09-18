@@ -97,6 +97,10 @@
     "analyzed_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "rescore_audit_json": {
+      "type": "string",
+      "description": "JSON audit note for deterministic re-score migrations (e.g. N2.2). Records phase, operation, evidence source, migration type, timestamp, and previous/next verdict. Internal-only; never exposed on the public case page."
     }
   },
   "required": [
