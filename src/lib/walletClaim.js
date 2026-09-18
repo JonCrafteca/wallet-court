@@ -67,3 +67,23 @@ export async function moderateDefense(id, action, note) {
   const res = await base44.functions.invoke("moderateDefense", { id, action, note });
   return res?.data;
 }
+
+export async function createDisputeNonce(caseSlug) {
+  const res = await base44.functions.invoke("createWalletClaimNonce", { case_slug: caseSlug, purpose: "wallet_dispute" });
+  return res?.data;
+}
+
+export async function submitDispute(caseSlug, message, signature) {
+  const res = await base44.functions.invoke("submitClaimDispute", { case_slug: caseSlug, message, signature });
+  return res?.data;
+}
+
+export async function adminOverrideClaim(claimSlug, action, reason) {
+  const res = await base44.functions.invoke("adminOverrideClaim", { claim_slug: claimSlug, action, reason });
+  return res?.data;
+}
+
+export async function cleanupDeletedAccount(userId) {
+  const res = await base44.functions.invoke("cleanupDeletedAccount", { user_id: userId });
+  return res?.data;
+}

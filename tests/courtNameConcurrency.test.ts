@@ -260,6 +260,10 @@ describe("courtNameConcurrency — immutable history", () => {
     expect(da.history.length).toBe(1);
     expect(da.history[0].court_name).toBe("First");
 
+    // Bypass the 30-day cooldown by backdating the last change.
+    const claim = da.claims.get("c1");
+    claim.court_name_changed_at = new Date(Date.now() - 31 * 86400000).toISOString();
+
     await setCourtNameAtomically(da, "wlt_aaaa", "Second", "u1");
     expect(da.history.length).toBe(2);
     expect(da.history[1].court_name).toBe("Second");
