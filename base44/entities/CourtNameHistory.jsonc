@@ -1,0 +1,54 @@
+{
+  "name": "CourtNameHistory",
+  "type": "object",
+  "properties": {
+    "claim_slug": {
+      "type": "string",
+      "description": "Claim slug the name change pertains to."
+    },
+    "court_name": {
+      "type": "string",
+      "description": "The Court Name that was set. Null if the name was cleared."
+    },
+    "court_name_normalized": {
+      "type": "string",
+      "description": "Lowercased Court Name. Null if the name was cleared."
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the name was changed. Immutable."
+    },
+    "changed_by_user_id": {
+      "type": "string",
+      "description": "User id who changed the name. For account-cleanup actions, this is the admin user id."
+    }
+  },
+  "required": [
+    "claim_slug",
+    "changed_at",
+    "changed_by_user_id"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "name": "ClaimDispute",
+  "type": "object",
+  "properties": {
+    "case_slug": {
+      "type": "string",
+      "description": "Public slug of the case being disputed."
+    },
+    "dispute_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the user requesting recovery. Authenticated; set by the backend function."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base",
+        "solana"
+      ]
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) wallet address. Admin-only; never exposed publicly."
+    },
+    "message_hash": {
+      "type": "string",
+      "description": "SHA-256 of the signed dispute message. Used to identify the consumed nonce."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "reviewing",
+        "resolved",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "resolution": {
+      "type": "string",
+      "description": "Admin's resolution note. Set when the dispute is resolved or rejected."
+    },
+    "resolved_by": {
+      "type": "string",
+      "description": "Admin user id who resolved the dispute."
+    },
+    "resolved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "case_slug",
+    "dispute_user_id",
+    "network",
+    "normalized_wallet_address",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

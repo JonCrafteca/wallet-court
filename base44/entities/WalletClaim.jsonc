@@ -10,13 +10,14 @@
       "type": "string",
       "enum": [
         "ethereum",
-        "base"
+        "base",
+        "solana"
       ],
-      "description": "Chain the claim was verified on. Solana is not claimable in Phase N3."
+      "description": "Chain the claim was verified on."
     },
     "normalized_wallet_address": {
       "type": "string",
-      "description": "Lowercased EVM address. Never exposed publicly; only address_short is returned to visitors."
+      "description": "Lowercased (EVM) or canonical (Solana) address. Never exposed publicly; only address_short is returned to visitors."
     },
     "address_short": {
       "type": "string",
@@ -44,7 +45,7 @@
     },
     "signature_scheme": {
       "type": "string",
-      "description": "e.g. eip191_personal_sign"
+      "description": "e.g. eip191_personal_sign or ed25519_detached"
     },
     "public_alias": {
       "type": "string",
@@ -62,6 +63,15 @@
       "type": "string",
       "format": "date-time",
       "description": "When the Court Name was last changed. Enforces the 30-day cooldown."
+    },
+    "court_name_version": {
+      "type": "number",
+      "default": 0,
+      "description": "Optimistic-concurrency token for Court Name CAS updates. Incremented on every court-name transition. Used as a compare-and-set guard so two concurrent requests cannot both set the same name on the same claim."
+    },
+    "court_name_history_json": {
+      "type": "string",
+      "description": "JSON array of {court_name, changed_at} entries. Convenience copy of the immutable CourtNameHistory records. The authoritative history is in CourtNameHistory."
     },
     "profile_visibility": {
       "type": "string",

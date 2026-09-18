@@ -10,25 +10,27 @@
       "type": "string",
       "enum": [
         "ethereum",
-        "base"
+        "base",
+        "solana"
       ]
     },
     "normalized_wallet_address": {
       "type": "string",
-      "description": "Lowercased EVM address the nonce is bound to."
+      "description": "Lowercased (EVM) or canonical (Solana) address the nonce is bound to."
     },
     "case_slug": {
       "type": "string",
-      "description": "public_slug of the case (for wallet_claim) or claim_slug (for wallet_revoke) the nonce was issued for."
+      "description": "public_slug of the case (for wallet_claim/wallet_dispute) or claim_slug (for wallet_revoke) the nonce was issued for."
     },
     "purpose": {
       "type": "string",
       "enum": [
         "wallet_claim",
-        "wallet_revoke"
+        "wallet_revoke",
+        "wallet_dispute"
       ],
       "default": "wallet_claim",
-      "description": "Purpose bound into the signed message. Prevents replaying a claim nonce for revocation or vice versa."
+      "description": "Purpose bound into the signed message. Prevents replaying a claim nonce for revocation or dispute, and vice versa."
     },
     "domain": {
       "type": "string",
@@ -49,7 +51,7 @@
     "used_at": {
       "type": "string",
       "format": "date-time",
-      "description": "Set when the nonce is consumed. Null while unused."
+      "description": "Set when the nonce is consumed. Null while unused. Consumed atomically via CAS (updateMany with used_at: null filter)."
     },
     "created_at": {
       "type": "string",

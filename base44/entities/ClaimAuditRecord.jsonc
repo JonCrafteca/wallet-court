@@ -1,0 +1,69 @@
+{
+  "name": "ClaimAuditRecord",
+  "type": "object",
+  "properties": {
+    "claim_slug": {
+      "type": "string",
+      "description": "Claim slug the audit record pertains to."
+    },
+    "admin_user_id": {
+      "type": "string",
+      "description": "Admin user id who performed the action."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "override_revoke",
+        "account_cleanup",
+        "dispute_resolved"
+      ],
+      "description": "The admin action performed. override_revoke = admin revoked a claim; account_cleanup = public identity removed for a deleted account; dispute_resolved = admin resolved a recovery dispute."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Required human-readable reason for the action. Never null or empty. Immutable once recorded."
+    },
+    "before_state_json": {
+      "type": "string",
+      "description": "JSON snapshot of the claim state before the action. Immutable."
+    },
+    "after_state_json": {
+      "type": "string",
+      "description": "JSON snapshot of the claim state after the action. Immutable."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the audit record was created. Immutable."
+    }
+  },
+  "required": [
+    "claim_slug",
+    "admin_user_id",
+    "action",
+    "reason",
+    "created_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

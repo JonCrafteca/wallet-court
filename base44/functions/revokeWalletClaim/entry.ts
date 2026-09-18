@@ -1,13 +1,15 @@
 // Wallet Court — owner-only wallet claim revocation. Requires a fresh wallet
-// signature with purpose "wallet_revoke". Reuses the nonce infrastructure:
-// the owner first calls createWalletClaimNonce with purpose "wallet_revoke",
-// signs the message, then calls this function. Sets the claim status to
-// "revoked". Never silently transfers ownership.
+// signature with purpose "wallet_revoke". Supports EVM (EIP-191) and Solana
+// (Ed25519). The nonce is consumed atomically via CAS. Sets the claim status
+// to "revoked". Never silently transfers ownership.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { verifyMessage } from "npm:ethers@6.13.4";
 import {
-  sha256Hex, parseClaimMessage, REVOKE_PURPOSE
+  isEvmNetwork, sha256Hex, parseClaimMessage, REVOKE_PURPOSE
 } from "../../shared/walletClaim.ts";
+import { verifySolanaSignature } from "../../shared/solanaVerify.ts";
+import { acquireValidNonce, validateNonceFields } from "../../shared/nonceLifecycle.ts";
+import { makeNonceDataAccess } from "../../shared/claimDataAccess.ts";
 
 export default async function (req) {
   try {
@@ -34,29 +36,35 @@ export default async function (req) {
     const message_hash = await sha256Hex(message);
     const nowIso = new Date().toISOString();
 
-    const candidates = await base44.asServiceRole.entities.WalletClaimNonce.filter(
-      { owner_user_id: user.id, normalized_wallet_address: normalized, message_hash, purpose: REVOKE_PURPOSE, used_at: null, expires_at: { $gte: nowIso } },
-      "-created_date", 5
-    );
-    const nonceRec = candidates && candidates[0];
-    if (!nonceRec) return Response.json({ error: "Revocation session expired or already used. Please start again.", code: "nonce_invalid" }, { status: 401 });
+    // CAS nonce consumption — atomic one-time use
+    const nonceDa = makeNonceDataAccess(base44);
+    const nonceResult = await acquireValidNonce(nonceDa, {
+      ownerUserId: user.id, normalizedAddress: normalized,
+      messageHash: message_hash, purpose: REVOKE_PURPOSE, nowIso
+    });
+    if (!nonceResult.ok) return Response.json({ error: nonceResult.error, code: nonceResult.code }, { status: 401 });
+    const nonceRec = nonceResult.nonce;
 
-    await base44.asServiceRole.entities.WalletClaimNonce.update(nonceRec.id, { used_at: nowIso });
-
+    // Validate all parsed fields
     const parsed = parseClaimMessage(message);
-    if (parsed.purpose !== REVOKE_PURPOSE) return Response.json({ error: "Purpose mismatch.", code: "claim_failed" }, { status: 401 });
-    if (parsed.account !== user.id) return Response.json({ error: "Account mismatch.", code: "claim_failed" }, { status: 401 });
-    if (parsed.case !== claim_slug) return Response.json({ error: "Claim mismatch.", code: "claim_failed" }, { status: 401 });
-    if (parsed.network !== network) return Response.json({ error: "Network mismatch.", code: "claim_failed" }, { status: 401 });
-    if (parsed.wallet !== normalized) return Response.json({ error: "Wallet mismatch.", code: "claim_failed" }, { status: 401 });
-    if (parsed.domain !== nonceRec.domain) return Response.json({ error: "Domain mismatch.", code: "claim_failed" }, { status: 401 });
-    if (parsed.expires !== nonceRec.expires_at) return Response.json({ error: "Message expired.", code: "claim_failed" }, { status: 401 });
+    const fieldError = validateNonceFields(parsed, {
+      purpose: REVOKE_PURPOSE, account: user.id, caseSlug: claim_slug,
+      network, wallet: normalized, domain: nonceRec.domain, expiresAt: nonceRec.expires_at
+    });
+    if (fieldError) return Response.json({ error: fieldError, code: "claim_failed" }, { status: 401 });
 
-    let recovered;
-    try { recovered = verifyMessage(message, signature); } catch {
-      return Response.json({ error: "Invalid signature.", code: "claim_failed" }, { status: 401 });
+    // Verify signature — EVM or Solana
+    let signatureValid = false;
+    if (isEvmNetwork(network)) {
+      let recovered;
+      try { recovered = verifyMessage(message, signature); } catch {
+        return Response.json({ error: "Invalid signature.", code: "claim_failed" }, { status: 401 });
+      }
+      signatureValid = !!(recovered && recovered.toLowerCase() === normalized);
+    } else if (network === "solana") {
+      signatureValid = await verifySolanaSignature(message, signature, normalized);
     }
-    if (!recovered || recovered.toLowerCase() !== normalized) {
+    if (!signatureValid) {
       return Response.json({ error: "Signature does not match this wallet.", code: "claim_failed" }, { status: 401 });
     }
 

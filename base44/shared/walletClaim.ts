@@ -5,15 +5,17 @@
 import { validateAddress, normalizeAddress } from "./verdicts.ts";
 import { sanitizeHandlePublic } from "./handles.ts";
 
-export const SUPPORTED_CLAIM_NETWORKS = ["ethereum", "base"];
+export const SUPPORTED_CLAIM_NETWORKS = ["ethereum", "base", "solana"];
 export const CLAIM_PURPOSE = "wallet_claim";
 export const REVOKE_PURPOSE = "wallet_revoke";
+export const DISPUTE_PURPOSE = "wallet_dispute";
 export const CLAIM_STATEMENT =
   "Signing proves control of this wallet only. It does not authorize transactions, approvals, transfers, or access to funds.";
 export const NONCE_TTL_MS = 5 * 60 * 1000;
 export const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 export const RATE_LIMIT_MAX = 6;
 export const SIGNATURE_SCHEME = "eip191_personal_sign";
+export const SOLANA_SIGNATURE_SCHEME = "ed25519_detached";
 
 export function isClaimableNetwork(network) {
   return SUPPORTED_CLAIM_NETWORKS.includes(network);
@@ -21,6 +23,18 @@ export function isClaimableNetwork(network) {
 
 export function isValidEvmAddress(address) {
   return validateAddress("ethereum", address);
+}
+
+export function isSolanaAddress(address) {
+  return validateAddress("solana", address);
+}
+
+export function isEvmNetwork(network) {
+  return network === "ethereum" || network === "base";
+}
+
+export function isClaimableAddress(network, address) {
+  return validateAddress(network, address);
 }
 
 export function normalizeClaimAddress(network, address) {
