@@ -19,6 +19,7 @@ import {
   buildLiveVerdictPayload
 } from "../../shared/verdicts_live.ts";
 import { selectEntityVerdict } from "../../shared/verdicts_entity.ts";
+import { applySeverityCap } from "../../shared/verdicts_performance.ts";
 import { fetchNansenEvidence } from "../../shared/nansen.ts";
 
 function newSlug() {
@@ -75,7 +76,8 @@ export default async function (req) {
 
       if (nansen.outcome === "live" || nansen.outcome === "partial") {
         const verdict = selectEntityVerdict(nansen.walletClass, nansen.metrics);
-        const { severity, confidence } = computeSeverityConfidence(nansen.metrics, nansen.partial);
+        const { severity: rawSeverity, confidence } = computeSeverityConfidence(nansen.metrics, nansen.partial);
+        const severity = applySeverityCap(verdict, rawSeverity);
         const payload = buildLiveVerdictPayload(verdict, nansen.evidence, nansen.metrics, nansen.meta, nansen.sources, severity, confidence);
         const record = await base44.asServiceRole.entities.WalletTrial.create({
           wallet_address,

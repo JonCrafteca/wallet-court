@@ -27,17 +27,20 @@ const FIXTURES = {
   liquidityDonor: { realized_pnl_pct: -0.5, win_rate_pct: 0.3, total_trades: 60, avg_trade_value_usd: 25000 },
   oneGoodTrade: { realized_pnl_pct: 0.5, total_trades: 3, tokens_traded: 2, win_rate_pct: 0.67 },
   diversifiedBad: { realized_pnl_pct: -0.4, win_rate_pct: 0.3, total_trades: 300, tokens_traded: 250, token_balance_count: 80 },
-  gasFeeSugarDaddy: { tx_frequency_per_day: 8, realized_pnl_pct: 0, total_trades: 0 }
+  gasFeeSugarDaddy: { tx_frequency_per_day: 8, realized_pnl_pct: 0, total_trades: 0 },
+  bagholderWithLoss: { realized_pnl_pct: -0.15, total_trades: 5, token_balance_count: 30, portfolio_value_usd: 8000 },
+  churner: { avg_holding_seconds: 300, total_trades: 80, realized_pnl_pct: 0, win_rate_pct: 0.4 },
+  witnessProtection: { total_trades: 0, token_balance_count: 36, portfolio_value_usd: 25000, transaction_count: 8 }
 };
 
-describe("performance verdict engine — 12 fixtures produce 12 distinct verdicts", () => {
+describe("performance verdict engine — 15 fixtures produce 15 distinct verdicts", () => {
   const codes = Object.entries(FIXTURES).map(([_, m]) => selectPerformanceVerdict(m).code);
 
   it("produces at least 7 distinct verdicts", () => {
     expect(new Set(codes).size).toBeGreaterThanOrEqual(7);
   });
-  it("actually produces 12 distinct verdicts (maximal variety)", () => {
-    expect(new Set(codes).size).toBe(12);
+  it("actually produces 15 distinct verdicts (maximal variety)", () => {
+    expect(new Set(codes).size).toBe(15);
   });
 
   it("profitable high-win → suspiciously_competent", () => {
@@ -51,10 +54,19 @@ describe("performance verdict engine — 12 fixtures produce 12 distinct verdict
   it("high-turnover low-win → frequent_trader_infrequent_winner", () => {
     expect(selectPerformanceVerdict(FIXTURES.highTurnoverLowWin).code).toBe("frequent_trader_infrequent_winner");
   });
-  it("inactive bagholder → bagholder_emeritus (differs from high-turnover)", () => {
-    expect(selectPerformanceVerdict(FIXTURES.inactiveBagholder).code).toBe("bagholder_emeritus");
+  it("inactive holder without loss → token_collector (differs from high-turnover)", () => {
+    expect(selectPerformanceVerdict(FIXTURES.inactiveBagholder).code).toBe("token_collector");
     expect(selectPerformanceVerdict(FIXTURES.inactiveBagholder).code)
       .not.toBe(selectPerformanceVerdict(FIXTURES.highTurnoverLowWin).code);
+  });
+  it("holder with affirmative loss → bagholder_emeritus", () => {
+    expect(selectPerformanceVerdict(FIXTURES.bagholderWithLoss).code).toBe("bagholder_emeritus");
+  });
+  it("rapid churn → commitment_issues_onchain", () => {
+    expect(selectPerformanceVerdict(FIXTURES.churner).code).toBe("commitment_issues_onchain");
+  });
+  it("low-activity holder → wallet_in_witness_protection", () => {
+    expect(selectPerformanceVerdict(FIXTURES.witnessProtection).code).toBe("wallet_in_witness_protection");
   });
   it("highly diversified → portfolio_polygamist (diversification-related)", () => {
     expect(selectPerformanceVerdict(FIXTURES.highlyDiversified).code).toBe("portfolio_polygamist");
@@ -109,12 +121,18 @@ describe("missing optional metrics do not fabricate evidence", () => {
     // Without holdings evidence, the engine must NOT invent a holder verdict.
     expect(selectPerformanceVerdict({ total_trades: 0 }).code).toBe("suspiciously_competent");
   });
-  it("no trading activity + holdings present + active tx history → bagholder_emeritus", () => {
-    // txCount>=20 avoids commitment_issues; holdings<50 avoids polygamist/museum.
-    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 50 }).code).toBe("bagholder_emeritus");
+  it("no trading activity + holdings + active tx history → token_collector (no loss, no churn)", () => {
+    // No loss evidence → not bagholder; txCount>=20 → not witness protection.
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 50 }).code).toBe("token_collector");
   });
-  it("no trading activity + holdings present + ghosted → commitment_issues_onchain", () => {
-    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 5 }).code).toBe("commitment_issues_onchain");
+  it("no trading activity + holdings + very low tx → wallet_in_witness_protection", () => {
+    expect(selectPerformanceVerdict({ total_trades: 0, token_balance_count: 10, transaction_count: 5 }).code).toBe("wallet_in_witness_protection");
+  });
+  it("missing PnL never produces a bagholder verdict", () => {
+    // Holdings present but PnL absent — must not be bagholder_emeritus or museum_grade.
+    const v = selectPerformanceVerdict({ total_trades: 0, token_balance_count: 120, portfolio_value_usd: 5000 });
+    expect(v.code).not.toBe("bagholder_emeritus");
+    expect(v.code).not.toBe("museum_grade_bagholder");
   });
   it("a verdict never invents a holding count from nothing", () => {
     // Only PnL known; holdings absent — must not trigger a holdings-based verdict.
@@ -175,15 +193,25 @@ describe("precedence — overlapping rules resolve deterministically", () => {
     const m = { realized_pnl_pct: -0.4, win_rate_pct: 0.3, total_trades: 300, tokens_traded: 250, token_balance_count: 80 };
     expect(selectPerformanceVerdict(m).code).toBe("diversified_into_every_bad_decision");
   });
+  it("a low-activity holder is witness_protection, not commitment_issues (low tx ≠ churn)", () => {
+    const m = { total_trades: 0, token_balance_count: 36, portfolio_value_usd: 25000, transaction_count: 8 };
+    expect(selectPerformanceVerdict(m).code).toBe("wallet_in_witness_protection");
+    expect(selectPerformanceVerdict(m).code).not.toBe("commitment_issues_onchain");
+  });
+  it("a holder without loss is token_collector, not bagholder_emeritus (missing PnL ≠ loss)", () => {
+    const m = { total_trades: 0, token_balance_count: 30, portfolio_value_usd: 8000, transaction_count: 50 };
+    expect(selectPerformanceVerdict(m).code).toBe("token_collector");
+    expect(selectPerformanceVerdict(m).code).not.toBe("bagholder_emeritus");
+  });
 });
 
 describe("verdict pool integrity", () => {
-  it("RETAIL_POOL has 19 verdicts (5 original + 4 prior + 10 new)", () => {
-    expect(RETAIL_POOL.length).toBe(19);
+  it("RETAIL_POOL has 21 verdicts (5 original + 4 prior + 12 new)", () => {
+    expect(RETAIL_POOL.length).toBe(21);
   });
-  it("all 10 new performance verdicts are present and unique", () => {
+  it("all 12 new performance verdicts are present and unique", () => {
     const codes = PERFORMANCE_VERDICTS.map((v) => v.code);
-    expect(new Set(codes).size).toBe(10);
+    expect(new Set(codes).size).toBe(12);
     expect(codes).toContain("diamond_hands_somehow_correct");
     expect(codes).toContain("bagholder_emeritus");
     expect(codes).toContain("portfolio_polygamist");
@@ -194,6 +222,8 @@ describe("verdict pool integrity", () => {
     expect(codes).toContain("liquidity_donor");
     expect(codes).toContain("commitment_issues_onchain");
     expect(codes).toContain("one_good_trade_and_a_personality");
+    expect(codes).toContain("token_collector");
+    expect(codes).toContain("wallet_in_witness_protection");
   });
   it("every verdict has headline, roast, defense, and sentence", () => {
     for (const v of RETAIL_POOL) {

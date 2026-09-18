@@ -152,10 +152,10 @@ export const PERFORMANCE_VERDICTS = [
   {
     code: "commitment_issues_onchain",
     display_name: "Commitment Issues, Onchain",
-    headline: "Bought in. Ghosted. Never closed.",
-    roast: "The court has reviewed your transaction history and found a wallet that showed up once, bought a few things, and then emotionally left the chain. You are not a holder; you are an ex who left their stuff in the apartment and never came back for it. The positions are still there. You, apparently, are not.",
-    defense: "My client is busy. The court is confusing absence for a strategy.",
-    sentence: "60 days of mandatory engagement with at least one of your own positions. The court expects no reply."
+    headline: "Every position is a revolving door.",
+    roast: "The court has reviewed your holding periods and finds a wallet constitutionally incapable of staying. Positions enter and exit within the hour, treated like hotel rooms — checked in, checked out, never unpacked. The court sees velocity but no conviction, and your portfolio is less an investment than a very busy waiting room.",
+    defense: "My client is nimble. Nimbleness, the court will note, is not the same as commitment.",
+    sentence: "90 days of mandatory holds exceeding one full sleep cycle. The court expects withdrawal symptoms."
   },
   {
     code: "one_good_trade_and_a_personality",
@@ -164,6 +164,24 @@ export const PERFORMANCE_VERDICTS = [
     roast: "The court has reviewed your trade count and your PnL and found a wallet that did one thing right and has been dining out on it ever since. The trade was good. The personality built around it is enormous. You are not a trader; you are a single anecdote with a wallet attached, and the court respects the anecdote more than the portfolio.",
     defense: "My client made one excellent decision. The court is penalizing quality over quantity.",
     sentence: "Indefinite retelling of the one trade. The court orders you to find a second one."
+  },
+  {
+    code: "token_collector",
+    display_name: "Token Collector",
+    headline: "Possession with intent to hold.",
+    roast: "The court has reviewed your holdings and finds a wallet in no particular hurry — tokens collected, kept, and never particularly bothered with. You are not losing money, making money, or doing much of anything. You simply have tokens, the way one keeps coins in a drawer. The court cannot fault the strategy because the court cannot find one.",
+    defense: "My client is a collector. Collecting, the court will note, is not a crime.",
+    sentence: "Ordered to explain whether this is a portfolio or a digital curio cabinet.",
+    severity_cap: 50
+  },
+  {
+    code: "wallet_in_witness_protection",
+    display_name: "Wallet in Witness Protection",
+    headline: "Suspiciously low profile.",
+    roast: "The court has reviewed the record and finds barely a sound from the defendant — a modest collection of tokens, a mere handful of transactions, and a wallet that appears to have entered a witness protection program of its own making. The court does not allege wrongdoing; it merely notes that legitimate portfolios typically make more noise than this.",
+    defense: "My client values privacy. Privacy, the court will note, is not a crime.",
+    sentence: "Remanded to an undisclosed blockchain address until signs of activity emerge.",
+    severity_cap: 55
   }
 ];
 
@@ -190,9 +208,16 @@ const BY_CODE = Object.fromEntries(RETAIL_POOL.map((v) => [v.code, v]));
 //   14 premature_liquidator              modest profit + decent win
 //   15 suspiciously_competent            strong profit + good win
 //   16 portfolio_polygamist              no trading + many holdings + valuable
-//   17 museum_grade_bagholder            no trading + huge token collection
-//   18 commitment_issues_onchain         no trading + modest holdings + ghosted
-//   DEFAULT bagholder_emeritus (no trading) / suspiciously_competent (active, unmatched)
+//   17 museum_grade_bagholder            no trading + huge token collection + AFFIRMATIVE LOSS
+//   18 bagholder_emeritus                holdings + AFFIRMATIVE LOSS (any activity)
+//   19 commitment_issues_onchain         AFFIRMATIVE CHURN: short holds + high turnover
+//   20 wallet_in_witness_protection      no trading + holdings + very low tx activity
+//   21 token_collector                   no trading + holdings (neutral holder default)
+//   DEFAULT token_collector (no trading, no loss) / suspiciously_competent (active, unmatched)
+// NOTE: bagholder_emeritus and museum_grade_bagholder require negative realized PnL —
+//   missing PnL is never treated as negative. commitment_issues_onchain requires
+//   affirmative short-hold + turnover evidence — low transaction activity alone
+//   routes to wallet_in_witness_protection, not commitment_issues.
 export const PERFORMANCE_RULES = [
   {
     code: "one_pump_chump",
@@ -365,17 +390,45 @@ export const PERFORMANCE_RULES = [
     test: (m) => {
       if (!noActiveTrading(m)) return false;
       const holdings = num(m.token_balance_count);
-      return holdings !== null && holdings >= 100;
+      if (holdings === null || holdings < 100) return false;
+      const pnl = num(m.realized_pnl_pct);
+      return pnl !== null && pnl < 0;
+    }
+  },
+  {
+    code: "bagholder_emeritus",
+    test: (m) => {
+      const holdings = num(m.token_balance_count);
+      if (holdings === null || holdings <= 0) return false;
+      const pnl = num(m.realized_pnl_pct);
+      return pnl !== null && pnl < 0;
     }
   },
   {
     code: "commitment_issues_onchain",
     test: (m) => {
+      const hold = num(m.avg_holding_seconds);
+      if (hold === null || hold >= 3600) return false;
+      const trades = num(m.total_trades);
+      return trades !== null && trades >= 20;
+    }
+  },
+  {
+    code: "wallet_in_witness_protection",
+    test: (m) => {
       if (!noActiveTrading(m)) return false;
       const holdings = num(m.token_balance_count);
-      if (holdings === null || holdings >= 50) return false;
+      if (holdings === null || holdings <= 0) return false;
       const txCount = num(m.transaction_count);
-      return txCount === null || txCount < 20;
+      return txCount !== null && txCount <= 10;
+    }
+  },
+  {
+    code: "token_collector",
+    test: (m) => {
+      if (!noActiveTrading(m)) return false;
+      const holdings = num(m.token_balance_count);
+      return holdings !== null && holdings > 0;
     }
   }
 ];
@@ -386,6 +439,18 @@ export function selectPerformanceVerdict(metrics) {
   for (const r of PERFORMANCE_RULES) {
     if (r.test(m)) return BY_CODE[r.code];
   }
-  // Default: inactive holders → bagholder emeritus; active but unmatched → suspiciously competent.
-  return noActiveTrading(m) ? BY_CODE["bagholder_emeritus"] : BY_CODE["suspiciously_competent"];
+  // Default: inactive holders without loss evidence → token_collector (neutral);
+  // active but unmatched → suspiciously_competent. bagholder_emeritus is reserved
+  // for affirmative loss evidence (its rule above) and is never the default.
+  return noActiveTrading(m) ? BY_CODE["token_collector"] : BY_CODE["suspiciously_competent"];
+}
+
+// Apply a verdict's optional severity_cap. Neutral holder verdicts (token_collector,
+// wallet_in_witness_protection) cap severity so computeSeverityConfidence's 0-PnL /
+// 0-win baseline — which reads as mildly negative — does not overstate severity for
+// wallets that simply hold tokens without loss. The cap is only applied when the
+// verdict defines one; all other verdicts keep their computed severity.
+export function applySeverityCap(verdict, severity) {
+  if (!verdict || verdict.severity_cap == null) return severity;
+  return Math.min(severity, verdict.severity_cap);
 }

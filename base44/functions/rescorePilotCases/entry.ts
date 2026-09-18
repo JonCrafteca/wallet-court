@@ -14,6 +14,7 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { selectEntityVerdict } from "../../shared/verdicts_entity.ts";
 import { computeSeverityConfidence } from "../../shared/verdicts_live.ts";
+import { applySeverityCap } from "../../shared/verdicts_performance.ts";
 
 export default async function (req) {
   try {
@@ -46,7 +47,8 @@ export default async function (req) {
       const partial = !!(meta.partial);
       const walletClass = t.wallet_class || "unknown";
       const verdict = selectEntityVerdict(walletClass, metrics);
-      const { severity, confidence } = computeSeverityConfidence(metrics, partial);
+      const { severity: rawSeverity, confidence } = computeSeverityConfidence(metrics, partial);
+      const severity = applySeverityCap(verdict, rawSeverity);
       const addr = t.normalized_wallet_address || t.wallet_address || "";
       const short = addr ? (addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr) : "";
       return {
