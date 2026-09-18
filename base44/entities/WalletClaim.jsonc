@@ -12,7 +12,7 @@
         "ethereum",
         "base"
       ],
-      "description": "Chain the claim was verified on. Solana is not claimable in Phase 3A."
+      "description": "Chain the claim was verified on. Solana is not claimable in Phase N3."
     },
     "normalized_wallet_address": {
       "type": "string",
@@ -24,7 +24,7 @@
     },
     "claim_slug": {
       "type": "string",
-      "description": "Permanent, non-address-based slug for the public Rap Sheet URL."
+      "description": "Permanent, non-address-based slug for the public Rap Sheet URL. Format: wlt_XXXXXXXX (cryptographically random, collision-checked)."
     },
     "status": {
       "type": "string",
@@ -48,7 +48,20 @@
     },
     "public_alias": {
       "type": "string",
-      "description": "Optional owner-chosen display name (3-24 chars, sanitized)."
+      "description": "Legacy alias field. Superseded by court_name in Phase N3. Retained for backward compatibility."
+    },
+    "court_name": {
+      "type": "string",
+      "description": "Owner-chosen Court Name (3-24 chars, alphanumeric + _ -). Display value. Null if not set."
+    },
+    "court_name_normalized": {
+      "type": "string",
+      "description": "Lowercased Court Name for case-insensitive uniqueness enforcement. Null if not set."
+    },
+    "court_name_changed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the Court Name was last changed. Enforces the 30-day cooldown."
     },
     "profile_visibility": {
       "type": "string",

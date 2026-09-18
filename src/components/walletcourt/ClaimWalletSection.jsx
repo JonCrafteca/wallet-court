@@ -6,6 +6,7 @@ import { base44 } from "@/api/base44Client";
 import { getClaimStatus } from "@/lib/walletClaim";
 import { reownConfigured } from "@/lib/reown";
 import ClaimModal from "./ClaimModal";
+import OfficialDefensePanel from "./OfficialDefensePanel";
 
 export default function ClaimWalletSection({ trial }) {
   const { isAuthenticated } = useAuth();
@@ -21,12 +22,9 @@ export default function ClaimWalletSection({ trial }) {
       const s = await getClaimStatus(trial.public_slug);
       if (alive) setStatus(s);
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [trial.public_slug, refreshKey]);
 
-  // Resume the claim flow automatically after login (?claim=1).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("claim") === "1" && isAuthenticated && eligible) {
@@ -63,20 +61,30 @@ export default function ClaimWalletSection({ trial }) {
   // Claimed by the current user.
   if (status?.claimed && status?.is_owner) {
     return (
-      <div className="border-2 border-court-chart bg-court-uv p-4 sm:p-5">
-        <div className="flex items-center gap-2 mb-2">
-          <ShieldCheck className="h-5 w-5 text-court-chart" />
-          <span className="font-display uppercase tracking-[0.06em] text-court-chart text-lg">Wallet Control Verified</span>
+      <div>
+        <div className="border-2 border-court-chart bg-court-uv p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="h-5 w-5 text-court-chart" />
+            <span className="font-display uppercase tracking-[0.06em] text-court-chart text-lg">Wallet Control Verified</span>
+          </div>
+          {status.court_name && (
+            <p className="font-display text-court-ice text-xl mb-1">{status.court_name}</p>
+          )}
+          <p className="font-mono text-sm text-court-ice leading-relaxed mb-3">
+            You own this wallet's permanent court record.
+          </p>
+          <Link
+            to={`/wallet/${status.claim_slug}`}
+            className="inline-flex items-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.08em] text-sm px-4 py-2.5 border-2 border-court-navy hover:brightness-105 transition-all"
+          >
+            Manage Rap Sheet <ExternalLink className="h-4 w-4" />
+          </Link>
         </div>
-        <p className="font-mono text-sm text-court-ice leading-relaxed mb-3">
-          You own this wallet's permanent court record.
-        </p>
-        <Link
-          to={`/wallet/${status.claim_slug}`}
-          className="inline-flex items-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.08em] text-sm px-4 py-2.5 border-2 border-court-navy hover:brightness-105 transition-all"
-        >
-          Manage Rap Sheet <ExternalLink className="h-4 w-4" />
-        </Link>
+        {status.official_defense && (
+          <div className="mt-4">
+            <OfficialDefensePanel publicDefense={status.official_defense} isOwner={false} />
+          </div>
+        )}
       </div>
     );
   }
@@ -84,21 +92,31 @@ export default function ClaimWalletSection({ trial }) {
   // Claimed by someone else.
   if (status?.claimed && !status?.is_owner) {
     return (
-      <div className="border-2 border-court-ice bg-court-navy p-4 sm:p-5 flex items-center gap-3">
-        <Lock className="h-5 w-5 text-court-mute shrink-0" />
-        <div className="min-w-0">
-          <p className="font-display uppercase tracking-[0.06em] text-court-ice text-lg">Claimed Wallet</p>
-          <p className="font-mono text-sm text-court-mute leading-relaxed">
-            {status.linkable ? "This wallet's owner has a public Rap Sheet." : "The owner of this wallet has claimed it."}
-          </p>
+      <div>
+        <div className="border-2 border-court-ice bg-court-navy p-4 sm:p-5 flex items-center gap-3">
+          <Lock className="h-5 w-5 text-court-mute shrink-0" />
+          <div className="min-w-0">
+            <p className="font-display uppercase tracking-[0.06em] text-court-ice text-lg">Claimed Wallet</p>
+            {status.court_name && (
+              <p className="font-display text-court-ice text-base">{status.court_name}</p>
+            )}
+            <p className="font-mono text-sm text-court-mute leading-relaxed">
+              {status.linkable ? "This wallet's owner has a public Rap Sheet." : "The owner of this wallet has claimed it."}
+            </p>
+          </div>
+          {status.linkable && status.claim_slug && (
+            <Link
+              to={`/wallet/${status.claim_slug}`}
+              className="ml-auto inline-flex items-center gap-2 bg-court-navy text-court-ice font-display uppercase tracking-[0.08em] text-sm px-3 py-2 border-2 border-court-ice hover:bg-court-uv transition-colors"
+            >
+              Rap Sheet <ExternalLink className="h-4 w-4" />
+            </Link>
+          )}
         </div>
-        {status.linkable && status.claim_slug && (
-          <Link
-            to={`/wallet/${status.claim_slug}`}
-            className="ml-auto inline-flex items-center gap-2 bg-court-navy text-court-ice font-display uppercase tracking-[0.08em] text-sm px-3 py-2 border-2 border-court-ice hover:bg-court-uv transition-colors"
-          >
-            Rap Sheet <ExternalLink className="h-4 w-4" />
-          </Link>
+        {status.official_defense && (
+          <div className="mt-4">
+            <OfficialDefensePanel publicDefense={status.official_defense} isOwner={false} />
+          </div>
         )}
       </div>
     );

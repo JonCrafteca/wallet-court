@@ -1,16 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Gavel, Share2, Copy, Check } from "lucide-react";
+import { ShieldCheck, Gavel, Share2, Copy, Check, AtSign } from "lucide-react";
 import { trackClaim, CLAIM_EVENTS } from "@/lib/claimAnalytics";
 import BadgeCabinet from "./BadgeCabinet";
 import RapSheetOwnerControls from "./RapSheetOwnerControls";
+import OfficialDefensePanel from "./OfficialDefensePanel";
 
 function fmtDate(iso) {
-  try {
-    return iso ? new Date(iso).toLocaleDateString() : "";
-  } catch {
-    return "";
-  }
+  try { return iso ? new Date(iso).toLocaleDateString() : ""; } catch { return ""; }
 }
 
 function Stat({ label, value }) {
@@ -22,10 +19,10 @@ function Stat({ label, value }) {
   );
 }
 
-export default function RapSheet({ data, claimSlug }) {
+export default function RapSheet({ data, claimSlug, onReload }) {
   const [copied, setCopied] = useState(false);
   const isOwner = data.is_owner;
-  const displayName = data.public_alias || data.address_short || "Anonymous Wallet";
+  const displayName = data.court_name || data.public_alias || data.address_short || "Anonymous Wallet";
   const rapUrl = typeof window !== "undefined" ? `${window.location.origin}/wallet/${claimSlug}` : "";
 
   async function share() {
@@ -34,9 +31,7 @@ export default function RapSheet({ data, claimSlug }) {
       setCopied(true);
       trackClaim(CLAIM_EVENTS.RAP_SHEET_SHARED, { visibility: data.profile_visibility });
       setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   return (
@@ -58,6 +53,22 @@ export default function RapSheet({ data, claimSlug }) {
         <p className="font-mono text-xs text-court-mute mt-1">Verified {fmtDate(data.verified_at)}</p>
       </div>
 
+      {/* Social handles */}
+      {data.handles && data.handles.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {data.handles.map((h) => (
+            <div key={h.provider} className="inline-flex items-center gap-1.5 border-2 border-court-ice bg-court-navy px-3 py-1.5">
+              <AtSign className="h-3.5 w-3.5 text-court-chart" />
+              <span className="font-mono text-xs text-court-ice">{h.provider_label}</span>
+              <span className="font-mono text-sm text-court-ice">{h.display_handle}</span>
+              <span className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-court-mute border border-court-mute px-1 py-0.5">
+                {h.verification_state === "verified" ? "Verified" : "Unverified"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Stats */}
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat label="Court Appearances" value={data.counts?.appearances ?? 0} />
@@ -66,10 +77,21 @@ export default function RapSheet({ data, claimSlug }) {
         <Stat label="Latest Verdict" value={data.latest_verdict?.name || "—"} />
       </div>
 
+      {/* Official Defense (public view) */}
+      {!isOwner && data.official_defense && (
+        <div className="mt-6">
+          <OfficialDefensePanel
+            claimSlug={claimSlug}
+            publicDefense={data.official_defense}
+            isOwner={false}
+          />
+        </div>
+      )}
+
       {/* Owner controls */}
       {isOwner && (
         <div className="mt-8">
-          <RapSheetOwnerControls data={data} />
+          <RapSheetOwnerControls data={data} onReload={onReload} />
         </div>
       )}
 

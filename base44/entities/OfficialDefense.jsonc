@@ -1,0 +1,82 @@
+{
+  "name": "OfficialDefense",
+  "type": "object",
+  "properties": {
+    "claim_slug": {
+      "type": "string",
+      "description": "claim_slug of the WalletClaim this defense belongs to."
+    },
+    "owner_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the defense author."
+    },
+    "version": {
+      "type": "number",
+      "description": "Monotonically increasing version number. Version 1 is the first submission."
+    },
+    "text": {
+      "type": "string",
+      "description": "Plain-text defense, max 280 Unicode code points. No HTML, scripts, or media."
+    },
+    "moderation_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "hidden"
+      ],
+      "default": "pending"
+    },
+    "replaces_version": {
+      "type": "number",
+      "description": "Version number of the previous defense this version replaces. Null for version 1."
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "moderated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "moderated_by": {
+      "type": "string",
+      "description": "Admin user id who last moderated this version."
+    },
+    "moderation_note": {
+      "type": "string",
+      "description": "Internal admin note. Never exposed publicly."
+    }
+  },
+  "required": [
+    "claim_slug",
+    "owner_user_id",
+    "version",
+    "text",
+    "moderation_status",
+    "submitted_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -71,10 +71,12 @@ export default function VerdictReveal({ trial, onReset }) {
         <ShareActions trial={trial} onReset={onReset} />
       </div>
 
-      {/* 6. Wallet ownership / Rap Sheet */}
-      <div className="mt-10">
-        <ClaimWalletSection trial={trial} />
-      </div>
+      {/* 6. Wallet ownership / Rap Sheet — hidden on demo cases */}
+      {isLive && (
+        <div className="mt-10">
+          <ClaimWalletSection trial={trial} />
+        </div>
+      )}
 
       {/* 7. ShoutIt Public Gallery */}
       <div className="mt-12">

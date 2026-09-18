@@ -1,0 +1,78 @@
+{
+  "name": "WalletHandle",
+  "type": "object",
+  "properties": {
+    "claim_slug": {
+      "type": "string",
+      "description": "claim_slug of the WalletClaim this handle belongs to."
+    },
+    "owner_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the wallet owner. Set only by backend functions."
+    },
+    "provider": {
+      "type": "string",
+      "enum": [
+        "x",
+        "fomo",
+        "pump_fun"
+      ],
+      "description": "Social platform identifier."
+    },
+    "normalized_handle": {
+      "type": "string",
+      "description": "Lowercased, sanitized handle. Used for per-provider uniqueness within a claim."
+    },
+    "display_handle": {
+      "type": "string",
+      "description": "Original-casing handle for display."
+    },
+    "verification_state": {
+      "type": "string",
+      "enum": [
+        "unverified",
+        "verified"
+      ],
+      "default": "unverified",
+      "description": "unverified = self-reported; verified = backed by a real provider-authenticated connection. Always unverified in Phase N3."
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "visible",
+        "hidden"
+      ],
+      "default": "visible"
+    }
+  },
+  "required": [
+    "claim_slug",
+    "owner_user_id",
+    "provider",
+    "normalized_handle",
+    "display_handle",
+    "verification_state"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

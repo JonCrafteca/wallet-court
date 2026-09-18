@@ -19,7 +19,16 @@
     },
     "case_slug": {
       "type": "string",
-      "description": "public_slug of the case the nonce was issued for."
+      "description": "public_slug of the case (for wallet_claim) or claim_slug (for wallet_revoke) the nonce was issued for."
+    },
+    "purpose": {
+      "type": "string",
+      "enum": [
+        "wallet_claim",
+        "wallet_revoke"
+      ],
+      "default": "wallet_claim",
+      "description": "Purpose bound into the signed message. Prevents replaying a claim nonce for revocation or vice versa."
     },
     "domain": {
       "type": "string",
@@ -40,7 +49,7 @@
     "used_at": {
       "type": "string",
       "format": "date-time",
-      "description": "Set when the nonce is consumed (success or failure). Null while unused."
+      "description": "Set when the nonce is consumed. Null while unused."
     },
     "created_at": {
       "type": "string",
@@ -52,6 +61,7 @@
     "network",
     "normalized_wallet_address",
     "case_slug",
+    "purpose",
     "nonce_hash",
     "message_hash",
     "expires_at"
