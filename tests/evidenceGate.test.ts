@@ -7,8 +7,10 @@ import {
   isDismissedOrMistrial,
   isVerdictOutcome,
   buildOutcomeUpdate,
-  CASE_OUTCOMES
+  CASE_OUTCOMES,
+  OPERATIONAL_FAILURE
 } from "../base44/shared/evidenceGate.ts";
+import { hasMeaningfulHoldingsEvidence, MIN_PORTFOLIO_VALUE_USD } from "../base44/shared/holdingsEvidence.ts";
 
 // --- Dismissed: fully successful all-zero evidence ---
 
@@ -31,21 +33,29 @@ describe("dismissed_no_evidence — successful empty profile", () => {
   });
 });
 
-// --- Dismissed must NOT fire on operational failures ---
+// --- Operational failures are never dismissed OR mistrial (N2.4 correction) ---
 
-describe("operational failures are never dismissed", () => {
-  const emptyish = { total_trades: 0, tokens_traded: 0, dex_trade_count: 0, transaction_count: 0, token_balance_count: 0 };
+describe("operational failures are never dismissed or mistrial (N2.4)", () => {
+  const emptyish = { total_trades: 0, tokens_traded: 0, dex_trade_count: 0, transaction_count: 0, token_balance_count: 0, portfolio_value_usd: 0 };
 
-  it("missing endpoint (failed_sources non-empty) must not become dismissed", () => {
+  it("balance endpoint failed + no activity → operational_failure (NOT dismissed, NOT mistrial)", () => {
+    expect(classifyOutcome(emptyish, { failed_sources: ["current_balance"] })).toBe(OPERATIONAL_FAILURE);
     expect(classifyOutcome(emptyish, { failed_sources: ["current_balance"] })).not.toBe("dismissed_no_evidence");
+    expect(classifyOutcome(emptyish, { failed_sources: ["current_balance"] })).not.toBe("mistrial_insufficient_evidence");
     expect(isDismissed(emptyish, { failed_sources: ["current_balance"] })).toBe(false);
   });
-  it("provider error (any failed source) must not become dismissed", () => {
-    expect(classifyOutcome(emptyish, { failed_sources: ["pnl_summary"] })).not.toBe("dismissed_no_evidence");
-    expect(classifyOutcome(emptyish, { failed_sources: ["dex_trades", "transactions"] })).not.toBe("dismissed_no_evidence");
+  it("required endpoint (pnl) failed + no activity → operational_failure", () => {
+    expect(classifyOutcome(emptyish, { failed_sources: ["pnl_summary"] })).toBe(OPERATIONAL_FAILURE);
   });
-  it("no activity + endpoint failure → mistrial (cannot confirm empty)", () => {
-    expect(classifyOutcome(emptyish, { failed_sources: ["current_balance"] })).toBe("mistrial_insufficient_evidence");
+  it("required endpoint (dex) failed + no activity → operational_failure", () => {
+    expect(classifyOutcome(emptyish, { failed_sources: ["dex_trades", "transactions"] })).toBe(OPERATIONAL_FAILURE);
+  });
+  it("only transactions failed + no activity → dismissed (transactions is optional; emptiness confirmable)", () => {
+    // pnl + dex + current_balance all succeeded → can confirm empty profile.
+    expect(classifyOutcome(emptyish, { failed_sources: ["transactions"] })).toBe("dismissed_no_evidence");
+  });
+  it("operational_failure is not a stored case outcome (not in CASE_OUTCOMES)", () => {
+    expect(CASE_OUTCOMES).not.toContain(OPERATIONAL_FAILURE);
   });
 });
 
@@ -63,8 +73,11 @@ describe("mistrial_insufficient_evidence — thin activity", () => {
   it("only transactions, no trades/tokens/dex → mistrial", () => {
     expect(classifyOutcome({ transaction_count: 12, total_trades: 0, tokens_traded: 0, dex_trade_count: 0 }, { failed_sources: [] })).toBe("mistrial_insufficient_evidence");
   });
-  it("isMistrial false when holdings exist (holder verdict path)", () => {
-    expect(isMistrial({ total_trades: 1, token_balance_count: 5 })).toBe(false);
+  it("isMistrial false when meaningful holdings exist (holder verdict path)", () => {
+    expect(isMistrial({ total_trades: 1, token_balance_count: 5, portfolio_value_usd: 5000 })).toBe(false);
+  });
+  it("isMistrial true for dust-only holdings (token count without meaningful value)", () => {
+    expect(isMistrial({ total_trades: 1, token_balance_count: 5 })).toBe(true);
   });
 });
 

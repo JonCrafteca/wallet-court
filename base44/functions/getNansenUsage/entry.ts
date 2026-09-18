@@ -3,6 +3,8 @@
 // the API key or raw Nansen responses (those are never stored to begin with).
 // Figures come only from recorded responses; nothing is fabricated or estimated.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
+import { getCircuit } from "../../shared/circuitStore.ts";
+import { isCircuitOpen, isHalfOpenEligible, secondsUntilRetry } from "../../shared/circuitBreaker.ts";
 
 export default async function (req) {
   try {
@@ -61,6 +63,39 @@ export default async function (req) {
       error_category: r.error_category
     }));
 
+    // Provider circuit status (Phase N2.4). Admin-only; sanitized.
+    const now = Date.now();
+    const circuitRecord = await getCircuit(base44, "nansen");
+    const circuit = circuitRecord ? {
+      provider: circuitRecord.provider,
+      circuit_status: circuitRecord.circuit_status,
+      recess_type: circuitRecord.recess_type || null,
+      sanitized_reason: circuitRecord.sanitized_reason || null,
+      opened_at: circuitRecord.opened_at || null,
+      retry_after: circuitRecord.retry_after || null,
+      last_request_id: circuitRecord.last_request_id || null,
+      consecutive_failures: circuitRecord.consecutive_failures || 0,
+      recovered_at: circuitRecord.recovered_at || null,
+      updated_at: circuitRecord.updated_at || null,
+      visitor_requests_blocked: isCircuitOpen(circuitRecord, now),
+      half_open_eligible: isHalfOpenEligible(circuitRecord, now),
+      retry_in_seconds: secondsUntilRetry(circuitRecord, now)
+    } : {
+      provider: "nansen",
+      circuit_status: "closed",
+      recess_type: null,
+      sanitized_reason: null,
+      opened_at: null,
+      retry_after: null,
+      last_request_id: null,
+      consecutive_failures: 0,
+      recovered_at: null,
+      updated_at: null,
+      visitor_requests_blocked: false,
+      half_open_eligible: false,
+      retry_in_seconds: 0
+    };
+
     return Response.json({
       stats: {
         successful_calls: successTotal,
@@ -75,6 +110,7 @@ export default async function (req) {
         credits_remaining_latest: creditsRemainingLatest,
         key_health: keyHealth
       },
+      circuit,
       recent
     });
   } catch (error) {

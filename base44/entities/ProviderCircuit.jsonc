@@ -1,0 +1,91 @@
+{
+  "name": "ProviderCircuit",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "description": "Provider name, e.g. 'nansen'. One circuit record per provider."
+    },
+    "circuit_status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed",
+        "half_open"
+      ],
+      "description": "Circuit state: open = visitor requests blocked during cooldown; closed = accepting requests; half_open = a single controlled recovery probe is in flight (visitors still blocked)."
+    },
+    "recess_type": {
+      "type": "string",
+      "enum": [
+        "court_recess_credits",
+        "court_recess_auth",
+        "court_recess_rate_limit",
+        "court_recess_provider",
+        "court_recess_unknown"
+      ],
+      "description": "Operational failure classification. Null when the circuit is closed."
+    },
+    "sanitized_reason": {
+      "type": "string",
+      "description": "Public-safe reason string. Never stores raw provider payloads, authorization headers, secrets, or full wallet addresses."
+    },
+    "opened_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the circuit was last opened."
+    },
+    "retry_after": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Earliest time a controlled half-open recovery probe may be attempted."
+    },
+    "last_request_id": {
+      "type": "string",
+      "description": "Last safe Nansen request ID associated with the opening failure, if any. Never a full address or secret."
+    },
+    "consecutive_failures": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of consecutive blocking failures since the last successful recovery."
+    },
+    "recovered_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the circuit was last closed by a successful recovery probe."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last time this circuit record was written."
+    }
+  },
+  "required": [
+    "provider",
+    "circuit_status",
+    "opened_at",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

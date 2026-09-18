@@ -20,6 +20,7 @@
 //   avg_token_bought_age_days, token_balance_count, portfolio_value_usd,
 //   transaction_count, tx_frequency_per_day, avg_holding_seconds.
 import { VERDICTS } from "./verdicts.ts";
+import { hasMeaningfulHoldingsEvidence } from "./holdingsEvidence.ts";
 
 function num(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -28,20 +29,21 @@ function num(v) {
 }
 
 // No realized trading activity: zero (or absent) sales, tokens traded, and DEX
-// trades, AND some holder evidence (holdings or portfolio value present). The
-// holder-evidence requirement prevents empty/unknown metrics from fabricating
-// a holder verdict — a wallet with no data is "unknown", not a bagholder.
+// trades, AND meaningful holder evidence (aggregate portfolio value >= the
+// launch minimum). N2.4 hardening: a positive token count alone is NOT holder
+// evidence — dust/spam/unsolicited tokens can create false holdings. The
+// meaningful-evidence requirement also prevents empty/unknown metrics from
+// fabricating a holder verdict — a wallet with no data is "unknown", not a
+// bagholder. All approved N2.2 holder cases have portfolio values far above the
+// minimum, so they are unaffected.
 function noActiveTrading(m) {
   const trades = num(m.total_trades);
   const tokens = num(m.tokens_traded);
   const dex = num(m.dex_trade_count);
-  const holdings = num(m.token_balance_count);
-  const portVal = num(m.portfolio_value_usd);
   const noSales = (trades === null || trades === 0)
     && (tokens === null || tokens === 0)
     && (dex === null || dex === 0);
-  const hasHolderEvidence = (holdings !== null && holdings > 0) || (portVal !== null && portVal > 0);
-  return noSales && hasHolderEvidence;
+  return noSales && hasMeaningfulHoldingsEvidence(m);
 }
 
 // ---- Existing retail verdicts (preserved verbatim from the prior phase) ----

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Play, Pause, Square, Loader2, Check, X, KeyRound, Activity } from "lucide-react";
+import { AlertTriangle, Play, Pause, Square, Loader2, Check, X, KeyRound, Activity, Zap, Stethoscope } from "lucide-react";
 import { NETWORKS, validateAddress, normalizeAddress } from "@/lib/wallet";
 import AdminPilotPanel from "@/components/walletcourt/AdminPilotPanel";
 
@@ -22,9 +22,12 @@ export default function AdminNansenUsage() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [stats, setStats] = useState(null);
+  const [circuit, setCircuit] = useState(null);
   const [recent, setRecent] = useState([]);
   const [loadingStats, setLoadingStats] = useState(true);
   const [error, setError] = useState("");
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [healthResult, setHealthResult] = useState(null);
 
   const [text, setText] = useState("");
   const [maxWallets, setMaxWallets] = useState(25);
@@ -50,7 +53,7 @@ export default function AdminNansenUsage() {
     try {
       const res = await base44.functions.invoke("getNansenUsage", {});
       if (res?.data?.error) setError(res.data.error);
-      else { setStats(res.data.stats); setRecent(res.data.recent || []); setError(""); }
+      else { setStats(res.data.stats); setCircuit(res.data.circuit || null); setRecent(res.data.recent || []); setError(""); }
     } catch (e) {
       setError(e?.message || "Failed to load usage.");
     } finally {
@@ -136,6 +139,20 @@ export default function AdminNansenUsage() {
   function resumeRun() { pauseRef.current = false; setPaused(false); }
   function stopRun() { stopRef.current = true; setPaused(false); }
 
+  async function runHealthCheck() {
+    setHealthChecking(true); setHealthResult(null); setError("");
+    try {
+      const res = await base44.functions.invoke("adminProviderHealthCheck", {});
+      if (res?.data?.error) setError(res.data.error);
+      else setHealthResult(res.data);
+      await loadStats();
+    } catch (e) {
+      setError(e?.message || "Health check failed.");
+    } finally {
+      setHealthChecking(false);
+    }
+  }
+
   if (!authChecked) return <div className="mx-auto max-w-md px-4 pt-24 text-center font-mono text-base text-court-ice animate-blink">Checking credentials…</div>;
   if (!user) return <AccessDenied message="Sign in to access the Nansen usage dashboard." />;
   if (user.role !== "admin") return <AccessDenied message="Admin access required." />;
@@ -181,6 +198,9 @@ export default function AdminNansenUsage() {
           <p className="mt-1 font-mono text-xs text-court-mute">{pct.toFixed(1)}% of buildathon goal</p>
         </div>
       </div>
+
+      {/* Provider circuit breaker (Phase N2.4) */}
+      <CircuitPanel circuit={circuit} healthChecking={healthChecking} healthResult={healthResult} onHealthCheck={runHealthCheck} />
 
       {/* Stat grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -429,6 +449,76 @@ function KeyHealth({ health }) {
         <p className={cn("font-display text-2xl", m.cls)}>{m.label}</p>
         <p className="font-mono text-xs text-court-mute leading-relaxed mt-1">{m.note}</p>
       </div>
+    </div>
+  );
+}
+
+const RECESS_LABELS = {
+  court_recess_credits: "Recess — Credits",
+  court_recess_auth: "Recess — Auth",
+  court_recess_rate_limit: "Recess — Rate Limit",
+  court_recess_provider: "Recess — Provider",
+  court_recess_unknown: "Recess — Unknown"
+};
+
+function CircuitPanel({ circuit, healthChecking, healthResult, onHealthCheck }) {
+  if (!circuit) return null;
+  const open = circuit.circuit_status === "open";
+  const halfOpen = circuit.circuit_status === "half_open";
+  const closed = circuit.circuit_status === "closed";
+  const statusLabel = closed ? "Court Open" : halfOpen ? "Half-Open / Recovery Check" : (RECESS_LABELS[circuit.recess_type] || "Recess — Unknown");
+  const tone = closed ? "text-court-chart" : halfOpen ? "text-court-chart" : "text-court-red";
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+
+  return (
+    <div className={cn("border-2 bg-court-navy p-4 sm:p-5 mb-6", closed ? "border-court-chart" : "border-court-red")}>
+      <div className="flex items-center gap-2 mb-3">
+        <Zap className={cn("h-5 w-5 shrink-0", tone)} />
+        <h2 className="font-display uppercase tracking-[0.06em] text-court-ice text-lg">Provider Circuit Breaker</h2>
+        <span className={cn("ml-auto font-display uppercase tracking-[0.08em] text-sm", tone)}>{statusLabel}</span>
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+        <CircuitStat label="Visitor Requests Blocked" value={circuit.visitor_requests_blocked ? "Yes" : "No"} danger={circuit.visitor_requests_blocked} />
+        <CircuitStat label="Consecutive Failures" value={circuit.consecutive_failures ?? 0} danger={!!(circuit.consecutive_failures)} />
+        <CircuitStat label="Retry In (s)" value={circuit.retry_in_seconds ?? 0} />
+        <CircuitStat label="Opened At" value={fmt(circuit.opened_at)} />
+        <CircuitStat label="Retry After" value={fmt(circuit.retry_after)} />
+        <CircuitStat label="Recovered At" value={fmt(circuit.recovered_at)} />
+        <CircuitStat label="Last Safe Request ID" value={circuit.last_request_id || "—"} mono />
+        <CircuitStat label="Sanitized Reason" value={circuit.sanitized_reason || "—"} />
+        <CircuitStat label="Half-Open Eligible" value={circuit.half_open_eligible ? "Yes" : "No"} />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onHealthCheck}
+          disabled={healthChecking || closed}
+          className="inline-flex items-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.08em] text-sm px-4 py-2.5 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:brightness-105 transition-all disabled:opacity-50 disabled:shadow-none"
+        >
+          {healthChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />} Run Health Check
+        </button>
+        <span className="font-mono text-xs text-court-mute leading-relaxed">
+          Performs one controlled Nansen probe when the cooldown has elapsed. Visitors are never used as probes. No real probe is initiated during the implementation phase.
+        </span>
+      </div>
+      {healthResult && (
+        <div className="mt-3 border-2 border-court-mute/40 p-3 font-mono text-xs text-court-ice">
+          <span className="uppercase tracking-[0.1em] text-court-mute">Probe result: </span>
+          <span className={cn("uppercase", healthResult.status === "recovered" ? "text-court-chart" : healthResult.status === "closed" ? "text-court-mute" : "text-court-red")}>
+            {healthResult.status}{healthResult.recess_type ? ` · ${healthResult.recess_type}` : ""}
+          </span>
+          {healthResult.message && <span className="text-court-mute"> — {healthResult.message}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CircuitStat({ label, value, danger, mono }) {
+  return (
+    <div className="border-2 border-court-mute/40 p-3">
+      <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute mb-1">{label}</p>
+      <p className={cn("font-mono text-sm leading-relaxed break-words", danger ? "text-court-red" : "text-court-ice", mono && "truncate")}>{value}</p>
     </div>
   );
 }
