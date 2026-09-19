@@ -16,12 +16,12 @@ import Wallet from '@/pages/Wallet';
 import AdminCourtDispatches from '@/pages/AdminCourtDispatches';
 import AdminNansenUsage from '@/pages/AdminNansenUsage';
 import AdminDefenses from '@/pages/AdminDefenses';
+import Account from '@/pages/Account';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
-import { Navigate } from 'react-router-dom';
 
 function App() {
   return (
@@ -37,7 +37,8 @@ function App() {
               <Route path="/about" element={<About />} />
               <Route path="/challenge/:sourceCaseSlug" element={<Challenge />} />
               <Route path="/wallet/:claimSlug" element={<Wallet />} />
-              <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/account" element={<Account />} />
                 <Route path="/admin/court-dispatches" element={<AdminCourtDispatches />} />
                 <Route path="/admin/nansen-usage" element={<AdminNansenUsage />} />
                 <Route path="/admin/defenses" element={<AdminDefenses />} />

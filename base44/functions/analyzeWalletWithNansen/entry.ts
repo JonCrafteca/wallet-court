@@ -47,6 +47,15 @@ export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
 
+    // Server-side creator attribution: if the visitor is signed in, stamp their
+    // user id on the trial. Anonymous submissions get null — never a guessed or
+    // client-supplied id. Used by getAccountDashboard to list My Trials.
+    let submittedByUserId = null;
+    try {
+      const currentUser = await base44.auth.me();
+      if (currentUser && currentUser.id) submittedByUserId = currentUser.id;
+    } catch {}
+
     let body;
     try {
       body = await req.json();
@@ -81,7 +90,7 @@ export default async function (req) {
     // and never touches the circuit.
     if (normalized.toLowerCase() === MANDATORY_DEMO_ADDRESS) {
       const public_slug = newSlug();
-      const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug);
+      const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId);
       return Response.json({ trial, analysis: { outcome: "demo", error_category: null, partial: false, nansen_calls: 0 } });
     }
 
@@ -89,7 +98,7 @@ export default async function (req) {
     if (!apiKey || !apiKey.trim()) {
       // No key configured — honest demo. Not a provider outage; no circuit action.
       const public_slug = newSlug();
-      const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug);
+      const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId);
       return Response.json({ trial, analysis: { outcome: "demo", error_category: "missing_key", partial: false, nansen_calls: 0 } });
     }
 
@@ -154,6 +163,7 @@ export default async function (req) {
         network,
         status: "completed",
         data_mode: "live",
+        submitted_by_user_id: submittedByUserId,
         wallet_class: nansen.walletClass,
         case_outcome: gateOutcome,
         verdict_code: null,
@@ -192,6 +202,7 @@ export default async function (req) {
       network,
       status: "completed",
       data_mode: "live",
+      submitted_by_user_id: submittedByUserId,
       wallet_class: nansen.walletClass,
       case_outcome: "verdict",
       ...payload,
@@ -247,7 +258,7 @@ function computeRetryAfterForRecess(recessType, nowMs) {
   return nowMs + secs * 1000;
 }
 
-async function createDemoTrial(base44, wallet_address, normalized, network, public_slug) {
+async function createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId) {
   const verdictIndex = selectDemoVerdictIndex(normalized);
   const verdict = VERDICTS[verdictIndex];
   const payload = buildVerdictPayload(verdict, normalized, network, "demo", null);
@@ -257,6 +268,7 @@ async function createDemoTrial(base44, wallet_address, normalized, network, publ
     network,
     status: "completed",
     data_mode: "demo",
+    submitted_by_user_id: submittedByUserId || null,
     case_outcome: "demo",
     ...payload,
     public_slug,

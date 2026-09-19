@@ -98,6 +98,10 @@
       "type": "string",
       "description": "Unique slug for the permanent public case page."
     },
+    "submitted_by_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the signed-in account that submitted this trial. Set server-side from the authenticated session only \u2014 never trusted from a client-supplied value. Null for anonymous submissions (pre-N4 and account-free visitors). Used by getAccountDashboard to list My Trials. Never exposed in public responses."
+    },
     "error_code": {
       "type": "string"
     },

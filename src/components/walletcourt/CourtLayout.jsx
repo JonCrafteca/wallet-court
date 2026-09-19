@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, Link } from "react-router-dom";
 import { Menu, X, LogOut } from "lucide-react";
 import TickerTape from "./TickerTape";
 import ShoutItMark from "./ShoutItMark";
@@ -23,9 +23,9 @@ export default function CourtLayout() {
         <header className="court-header sticky top-0 z-30 border-b-4">
           <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between gap-3">
             <div className="flex items-baseline gap-3 min-w-0">
-              <span className="font-display uppercase tracking-[0.04em] text-court-ice text-xl sm:text-2xl leading-none">
+              <Link to="/" aria-label="Wallet Court home" className="font-display uppercase tracking-[0.04em] text-court-ice text-xl sm:text-2xl leading-none hover:text-court-chart transition-colors">
                 Wallet Court
-              </span>
+              </Link>
               <span className="hidden md:inline font-mono text-xs uppercase tracking-[0.22em] text-court-ice border-l border-court-mute pl-3">
                 Nansen Evidence Division
               </span>
@@ -49,6 +49,21 @@ export default function CourtLayout() {
                   {n.label}
                 </NavLink>
               ))}
+              {isAuthenticated && (
+                <NavLink
+                  to="/account"
+                  className={({ isActive }) =>
+                    cn(
+                      "ml-2 px-3 py-1.5 font-display uppercase tracking-[0.08em] text-sm border-2 transition-colors",
+                      isActive
+                        ? "bg-court-chart text-court-navy border-court-chart"
+                        : "text-court-ice border-court-ice hover:bg-court-uv"
+                    )
+                  }
+                >
+                  My Court
+                </NavLink>
+              )}
               <span className="ml-2 inline-flex items-center gap-1.5 border-2 border-court-chart bg-court-navy px-2 py-1 text-xs uppercase tracking-[0.18em] text-court-chart">
                 <span className="h-1.5 w-1.5 rounded-full bg-court-chart animate-blink" />
                 Demo
@@ -95,6 +110,22 @@ export default function CourtLayout() {
                   {n.label}
                 </NavLink>
               ))}
+              {isAuthenticated && (
+                <NavLink
+                  to="/account"
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      "block px-3 py-2.5 font-display uppercase tracking-[0.08em] text-base border-2",
+                      isActive
+                        ? "bg-court-chart text-court-navy border-court-chart"
+                        : "text-court-ice border-court-ice"
+                    )
+                  }
+                >
+                  My Court
+                </NavLink>
+              )}
               {isAuthenticated && (
                 <button
                   type="button"
