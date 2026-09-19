@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Outlet, NavLink } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogOut } from "lucide-react";
 import TickerTape from "./TickerTape";
 import ShoutItMark from "./ShoutItMark";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/AuthContext";
 
 const NAV = [
   { to: "/", label: "Courtroom", end: true },
@@ -13,6 +14,7 @@ const NAV = [
 
 export default function CourtLayout() {
   const [open, setOpen] = useState(false);
+  const { isAuthenticated, logout } = useAuth();
 
   return (
     <div className="court-shell min-h-screen font-body relative overflow-x-hidden">
@@ -51,6 +53,15 @@ export default function CourtLayout() {
                 <span className="h-1.5 w-1.5 rounded-full bg-court-chart animate-blink" />
                 Demo
               </span>
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => logout()}
+                  className="ml-2 inline-flex items-center gap-1.5 border-2 border-court-ice text-court-ice px-2.5 py-1 font-display uppercase tracking-[0.08em] text-xs hover:bg-court-red hover:border-court-red transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Sign Out
+                </button>
+              )}
             </nav>
 
             <button
@@ -84,6 +95,15 @@ export default function CourtLayout() {
                   {n.label}
                 </NavLink>
               ))}
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => { logout(); setOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 font-display uppercase tracking-[0.08em] text-base border-2 text-court-ice border-court-ice hover:bg-court-red hover:border-court-red"
+                >
+                  <LogOut className="h-5 w-5" /> Sign Out
+                </button>
+              )}
             </nav>
           )}
 

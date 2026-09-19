@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { BrowserProvider, JsonRpcSigner } from "ethers";
 import { Loader2, ShieldX, AlertTriangle } from "lucide-react";
-import { reownConfigured } from "@/lib/reown";
+import { reownReady } from "@/lib/reown";
 import { createRevokeNonce, revokeClaim } from "@/lib/walletClaim";
 
 function RevokeClaimInner({ claimSlug, onRevoked }) {
@@ -110,6 +110,6 @@ function RevokeClaimInner({ claimSlug, onRevoked }) {
 }
 
 export default function RevokeClaimSection({ claimSlug, onRevoked }) {
-  if (!reownConfigured) return null;
+  if (!reownReady) return null;
   return <RevokeClaimInner claimSlug={claimSlug} onRevoked={onRevoked} />;
 }

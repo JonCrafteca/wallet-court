@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
-import { reownConfigured } from "@/lib/reown";
+import { reownReady } from "@/lib/reown";
 import { createClaimNonce, verifyClaim } from "@/lib/walletClaim";
 import { trackClaim, CLAIM_EVENTS } from "@/lib/claimAnalytics";
 
@@ -268,9 +268,9 @@ function SetupDisabledDialog({ trial, open, onOpenChange }) {
         </DialogHeader>
         <div className="px-5 py-5">
           <div className="border-2 border-court-red bg-court-navy p-4 font-mono text-sm text-court-ice leading-relaxed">
-            <p className="text-court-red font-display uppercase tracking-[0.06em] mb-1">Wallet connection not configured</p>
+            <p className="text-court-red font-display uppercase tracking-[0.06em] mb-1">Wallet Claiming Temporarily Unavailable</p>
             <p>
-              The administrator must set <code className="text-court-chart">VITE_REOWN_PROJECT_ID</code> in the app environment variables to enable wallet claiming. The rest of Wallet Court still works.
+              Wallet claiming is temporarily unavailable. Please try again later. The rest of Wallet Court still works.
             </p>
           </div>
         </div>
@@ -280,7 +280,7 @@ function SetupDisabledDialog({ trial, open, onOpenChange }) {
 }
 
 export default function ClaimModal({ trial, open, onOpenChange, onClaimed }) {
-  if (!reownConfigured) {
+  if (!reownReady) {
     return <SetupDisabledDialog trial={trial} open={open} onOpenChange={onOpenChange} />;
   }
   return (

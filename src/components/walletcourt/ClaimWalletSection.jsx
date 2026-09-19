@@ -4,7 +4,7 @@ import { ShieldCheck, Wallet as WalletIcon, Lock, ExternalLink } from "lucide-re
 import { useAuth } from "@/lib/AuthContext";
 import { base44 } from "@/api/base44Client";
 import { getClaimStatus } from "@/lib/walletClaim";
-import { reownConfigured } from "@/lib/reown";
+import { reownReady } from "@/lib/reown";
 import ClaimModal from "./ClaimModal";
 import OfficialDefensePanel from "./OfficialDefensePanel";
 
@@ -123,7 +123,7 @@ export default function ClaimWalletSection({ trial }) {
   }
 
   // Unclaimed EVM.
-  const setupDisabled = !reownConfigured;
+  const setupDisabled = !reownReady;
   return (
     <>
       <div className="border-2 border-court-ice bg-court-navy p-4 sm:p-5">
@@ -136,8 +136,7 @@ export default function ClaimWalletSection({ trial }) {
             </p>
             {setupDisabled ? (
               <p className="font-mono text-sm text-court-red leading-relaxed">
-                Wallet claiming is not configured. The administrator must set{" "}
-                <code className="text-court-chart">VITE_REOWN_PROJECT_ID</code> to enable it.
+                Wallet claiming is temporarily unavailable. Please try again later.
               </p>
             ) : (
               <button
