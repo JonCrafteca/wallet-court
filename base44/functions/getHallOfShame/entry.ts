@@ -1,101 +1,94 @@
-// Wallet Court — public Hall of Shame data. Returns only sanitized public fields
-// per case (abbreviated address, network, verdict, scores, mode, date, slug,
-// and a trial count). Cases are deduplicated by normalized address + network so
-// the same wallet never appears more than once inside a ranking section.
+// Wallet Court — public Hall data. Returns sanitized public fields per case
+// (abbreviated address, network, verdict, scores, mode, date, slug, trial
+// count). Supports two views:
+//   - summary (default): max 3 cards per section + honor + daily awards
+//   - category: paginated filtered view for dedicated routes
+//
 // Never returns full wallet addresses, roasts, evidence, metrics, or any
 // internal/private record. Public app (no auth), so the service role reads.
+// Zero Nansen calls — reads only saved WalletTrial records.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { getCaseOutcome } from "../../shared/evidenceGate.ts";
+import {
+  HALL_CATEGORIES,
+  SUMMARY_LIMIT,
+  CATEGORY_PAGE_SIZE,
+  CATEGORY_TITLES,
+  CATEGORY_ROUTES,
+  getEligibleForCategory,
+  selectBagOfTheDay,
+  selectDumpOfTheDay,
+  sanitizeForHall,
+  sanitizeForHonor,
+  keyOf,
+} from "../../shared/hallSelection.ts";
+
+const VALID_CATEGORIES = new Set(HALL_CATEGORIES);
 
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
+    const body = req.body || {};
+    const view = body.view || "summary"; // "summary" | "category"
+    const category = body.category || null;
+    const offset = Math.max(0, parseInt(body.offset) || 0);
+    const limit = Math.min(48, Math.max(1, parseInt(body.limit) || CATEGORY_PAGE_SIZE));
 
+    // Fetch completed cases (capped at 500 for safety; never the full collection).
     const records = await base44.asServiceRole.entities.WalletTrial.filter(
       { status: "completed" },
       "-created_date",
       500
     );
-    // Exclude dismissed/mistrial cases from every Hall section and trial counts.
-    const all = (records || []).filter((t) => {
-      const o = getCaseOutcome(t);
-      return o !== "dismissed_no_evidence" && o !== "mistrial_insufficient_evidence";
-    });
 
-    // Count completed trials per wallet (address + network) for the "Tried X
-    // times" badge, without ever exposing the full address.
+    // Trial count per wallet (without exposing the full address).
     const countMap = {};
-    for (const t of all) {
+    for (const t of records || []) {
       const k = keyOf(t);
       if (k) countMap[k] = (countMap[k] || 0) + 1;
     }
 
-    const bySeverity = dedupBest(all, (t) => t.severity_score || 0)
-      .sort((a, b) => (b.severity_score || 0) - (a.severity_score || 0))
-      .slice(0, 8);
-    const byConfidence = dedupBest(all, (t) => t.confidence_score || 0)
-      .sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0))
-      .slice(0, 8);
-    const byRecent = dedupBest(all, ts)
-      .sort((a, b) => ts(b) - ts(a))
-      .slice(0, 8);
-    const onePump = dedupBest(
-      all.filter((t) => t.verdict_code === "one_pump_chump"),
-      (t) => t.severity_score || 0
-    )
-      .sort((a, b) => (b.severity_score || 0) - (a.severity_score || 0))
-      .slice(0, 8);
+    if (view === "category") {
+      if (!VALID_CATEGORIES.has(category)) {
+        return Response.json({ error: "Invalid category." }, { status: 400 });
+      }
+      const eligible = getEligibleForCategory(records || [], category);
+      const page = eligible.slice(offset, offset + limit);
+      return Response.json({
+        view: "category",
+        category,
+        title: CATEGORY_TITLES[category],
+        route: CATEGORY_ROUTES[category],
+        items: page.map((t) => sanitizeForHall(t, countMap)),
+        total: eligible.length,
+        offset,
+        limit,
+        has_more: offset + limit < eligible.length,
+      });
+    }
+
+    // Summary view: max 3 per section + honor + daily awards
+    const sections = {};
+    for (const cat of HALL_CATEGORIES) {
+      const eligible = getEligibleForCategory(records || [], cat);
+      sections[cat] = eligible.slice(0, SUMMARY_LIMIT).map((t) =>
+        cat === "honor" ? sanitizeForHonor(t) : sanitizeForHall(t, countMap)
+      );
+    }
+
+    // Daily awards (deterministic, frozen at UTC day start).
+    const bag = selectBagOfTheDay(records || []);
+    const dump = selectDumpOfTheDay(records || []);
 
     return Response.json({
-      sections: {
-        most_severe: bySeverity.map((t) => sanitize(t, countMap)),
-        highest_confidence: byConfidence.map((t) => sanitize(t, countMap)),
-        recently_convicted: byRecent.map((t) => sanitize(t, countMap)),
-        one_pump_wonders: onePump.map((t) => sanitize(t, countMap))
-      }
+      view: "summary",
+      sections,
+      daily_awards: {
+        bag: bag.winner ? { ...sanitizeForHonor(bag.winner), cohort: bag.cohort, award_date: bag.awardDate } : null,
+        dump: dump.winner ? { ...sanitizeForHall(dump.winner, countMap), cohort: dump.cohort, award_date: dump.awardDate } : null,
+      },
+      category_routes: CATEGORY_ROUTES,
     });
   } catch (error) {
     return Response.json({ error: error.message || "The docket could not be loaded." }, { status: 500 });
   }
-}
-
-function keyOf(t) {
-  const addr = t.normalized_wallet_address || t.wallet_address || "";
-  if (!addr) return "";
-  return `${addr}|${t.network || ""}`;
-}
-
-// Keep only the best-scoring case per wallet so a wallet never repeats within
-// a single ranking section.
-function dedupBest(list, scoreFn) {
-  const best = {};
-  for (const t of list) {
-    const k = keyOf(t);
-    if (!k) continue;
-    if (!best[k] || scoreFn(t) > scoreFn(best[k])) best[k] = t;
-  }
-  return Object.values(best);
-}
-
-function ts(t) {
-  const v = t.analyzed_at || t.created_date;
-  return v ? new Date(v).getTime() : 0;
-}
-
-function sanitize(t, countMap) {
-  const addr = t.normalized_wallet_address || t.wallet_address || "";
-  const short = addr ? (addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr) : "";
-  return {
-    slug: t.public_slug,
-    network: t.network,
-    verdict_name: t.verdict_name,
-    verdict_code: t.verdict_code,
-    severity_score: t.severity_score,
-    confidence_score: t.confidence_score,
-    data_mode: t.data_mode,
-    analyzed_at: t.analyzed_at || t.created_date,
-    address_short: short,
-    wallet_class: t.wallet_class || "unknown",
-    trial_count: countMap[keyOf(t)] || 1
-  };
 }

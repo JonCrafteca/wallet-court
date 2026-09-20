@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ChevronDown, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { selectSnapshotMetrics, countExhibits, SNAPSHOT_MAX } from "@/lib/evidenceSnapshot";
+import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
 
 function safeParse(s, fallback) {
   try {
@@ -39,7 +41,7 @@ function formatMetric(k, v) {
   return String(v);
 }
 
-const EXHIBIT = ["A", "B", "C", "D", "E", "F"];
+const EXHIBIT = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"];
 
 export default function NansenEvidence({ trial }) {
   const items = safeParse(trial.evidence_items_json, []);
@@ -49,6 +51,20 @@ export default function NansenEvidence({ trial }) {
   const isLive = trial.data_mode === "live";
   const meta = metrics._meta || null;
   const metricEntries = Object.entries(metrics).filter(([k]) => !k.startsWith("_"));
+
+  // Compact snapshot: up to 6 metrics selected by verdict-family priority.
+  const snapshot = selectSnapshotMetrics(trial.metrics_json, trial.verdict_code);
+  const exhibitCount = countExhibits(trial.evidence_items_json);
+  const snapshotId = "evidence-snapshot";
+
+  function toggleOpen() {
+    const next = !open;
+    setOpen(next);
+    trackShare(next ? SHARE_EVENTS.EVIDENCE_SNAPSHOT_EXPANDED : SHARE_EVENTS.EVIDENCE_SNAPSHOT_COLLAPSED, {
+      verdict_code: trial.verdict_code,
+      exhibit_count: exhibitCount,
+    });
+  }
 
   return (
     <section>
@@ -71,74 +87,98 @@ export default function NansenEvidence({ trial }) {
         The court examined the wallet's onchain behavior through Nansen. Here is the evidence, in plain language.
       </p>
 
-      <div className="grid sm:grid-cols-3 gap-4">
-        {items.map((it, i) => (
-          <div key={i} className="border-2 border-court-ice bg-court-navy p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-display uppercase tracking-[0.08em] text-court-chart text-sm">
-                Exhibit {EXHIBIT[i % EXHIBIT.length]}
-              </span>
-              <span className="font-mono text-xs uppercase tracking-[0.1em] text-court-mute">{it.tag}</span>
+      {/* Compact snapshot: max 6 metrics, 3×2 desktop / 2×3 mobile */}
+      {snapshot.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" aria-label="Evidence snapshot">
+          {snapshot.map((m) => (
+            <div key={m.key} className="border-2 border-court-ice bg-court-navy p-3 sm:p-4">
+              <p className="font-mono text-xs uppercase tracking-[0.1em] text-court-mute mb-1">{m.label}</p>
+              <p className="font-display text-2xl text-court-ice leading-none mb-1">{m.value}</p>
+              {m.context && (
+                <p className="font-mono text-xs text-court-mute leading-snug">{m.context}</p>
+              )}
             </div>
-            <p className="font-mono text-xs uppercase tracking-[0.1em] text-court-mute mb-1">{it.label}</p>
-            <p className="font-display text-2xl text-court-ice leading-none mb-2">{it.value}</p>
-            <p className="font-mono text-base text-court-ice leading-relaxed">{it.detail}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="mt-5 inline-flex items-center gap-2 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors"
-      >
-        <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
-        {open ? "Hide Full Evidence" : "View Full Evidence"}
-      </button>
+      {/* Full evidence disclosure */}
+      {exhibitCount > 0 && (
+        <button
+          type="button"
+          onClick={toggleOpen}
+          aria-expanded={open}
+          aria-controls={snapshotId}
+          className="mt-5 inline-flex items-center gap-2 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors focus-visible:outline-2 focus-visible:outline-court-chart focus-visible:outline-offset-2"
+        >
+          <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+          {open ? "HIDE FULL EVIDENCE" : `VIEW ALL ${exhibitCount} EXHIBITS`}
+        </button>
+      )}
 
       {open && (
-        <div className="mt-4 border-2 border-court-mute bg-court-navy p-4 space-y-4">
-          {meta?.partial && (
-            <div className="border-2 border-court-chart bg-court-uv p-3">
-              <p className="font-display uppercase tracking-[0.06em] text-court-chart text-sm">Partial Nansen evidence</p>
-              <p className="mt-1 font-mono text-xs text-court-ice leading-relaxed">
-                Some Nansen endpoints were unavailable for this wallet. Missing data is never shown as fact. Failed sources: {meta.failed_sources?.join(", ") || "—"}.
-              </p>
-            </div>
-          )}
-          {meta && (
-            <div className="space-y-1">
-              <p className="font-mono text-xs text-court-mute leading-relaxed">
-                Evidence window (PnL · DEX · Transactions): {fmtDate(meta.evidence_date_range?.from)} – {fmtDate(meta.evidence_date_range?.to)} ({meta.window_days} days).
-              </p>
-              <p className="font-mono text-xs text-court-mute leading-relaxed">
-                Current balance: point-in-time snapshot as of {fmtDate(meta.freshness)} (no date range).
-              </p>
-            </div>
-          )}
-          {metricEntries.length > 0 && (
-            <div>
-              <p className="font-mono text-xs uppercase tracking-[0.14em] text-court-mute mb-2">Technical Metrics</p>
-              <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
-                {metricEntries.map(([k, v]) => (
-                  <div key={k} className="flex items-baseline justify-between gap-3 font-mono text-sm">
-                    <dt className="text-court-mute">{k.replace(/_/g, " ")}</dt>
-                    <dd className="text-court-ice text-right">{formatMetric(k, v)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
-          {sources.length > 0 && (
-            <div>
-              <p className="font-mono text-xs uppercase tracking-[0.14em] text-court-mute mb-2">Sources Consulted</p>
-              <ul className="font-mono text-sm text-court-ice space-y-1">
-                {sources.map((s, i) => (
-                  <li key={i} className="truncate">{s}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+        <div id={snapshotId} className="mt-4 space-y-5">
+          {/* All saved exhibits — full descriptions, provenance, values, original order */}
+          <div className="grid sm:grid-cols-3 gap-4">
+            {items.map((it, i) => (
+              <div key={i} className="border-2 border-court-ice bg-court-navy p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-display uppercase tracking-[0.08em] text-court-chart text-sm">
+                    Exhibit {EXHIBIT[i % EXHIBIT.length]}
+                  </span>
+                  <span className="font-mono text-xs uppercase tracking-[0.1em] text-court-mute">{it.tag}</span>
+                </div>
+                <p className="font-mono text-xs uppercase tracking-[0.1em] text-court-mute mb-1">{it.label}</p>
+                <p className="font-display text-2xl text-court-ice leading-none mb-2">{it.value}</p>
+                <p className="font-mono text-base text-court-ice leading-relaxed">{it.detail}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Provenance + technical metrics + sources */}
+          <div className="border-2 border-court-mute bg-court-navy p-4 space-y-4">
+            {meta?.partial && (
+              <div className="border-2 border-court-chart bg-court-uv p-3">
+                <p className="font-display uppercase tracking-[0.06em] text-court-chart text-sm">Partial Nansen evidence</p>
+                <p className="mt-1 font-mono text-xs text-court-ice leading-relaxed">
+                  Some Nansen endpoints were unavailable for this wallet. Missing data is never shown as fact. Failed sources: {meta.failed_sources?.join(", ") || "—"}.
+                </p>
+              </div>
+            )}
+            {meta && (
+              <div className="space-y-1">
+                <p className="font-mono text-xs text-court-mute leading-relaxed">
+                  Evidence window (PnL · DEX · Transactions): {fmtDate(meta.evidence_date_range?.from)} – {fmtDate(meta.evidence_date_range?.to)} ({meta.window_days} days).
+                </p>
+                <p className="font-mono text-xs text-court-mute leading-relaxed">
+                  Current balance: point-in-time snapshot as of {fmtDate(meta.freshness)} (no date range).
+                </p>
+              </div>
+            )}
+            {metricEntries.length > 0 && (
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-court-mute mb-2">Technical Metrics</p>
+                <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                  {metricEntries.map(([k, v]) => (
+                    <div key={k} className="flex items-baseline justify-between gap-3 font-mono text-sm">
+                      <dt className="text-court-mute">{k.replace(/_/g, " ")}</dt>
+                      <dd className="text-court-ice text-right">{formatMetric(k, v)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+            {sources.length > 0 && (
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-court-mute mb-2">Sources Consulted</p>
+                <ul className="font-mono text-sm text-court-ice space-y-1">
+                  {sources.map((s, i) => (
+                    <li key={i} className="truncate">{s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </section>

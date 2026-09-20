@@ -26,4 +26,11 @@ export const SHARE_EVENTS = {
   SUMMONS_SERVED: "summons_served",
   COURT_RECEIPT_DOWNLOADED: "court_receipt_downloaded",
   COURT_RECEIPT_SHARED: "court_receipt_shared",
+  HALL_CATEGORY_SEE_ALL: "hall_category_see_all",
+  HALL_CATEGORY_LOAD_MORE: "hall_category_load_more",
+  HALL_HONOR_CASE_OPENED: "hall_honor_case_opened",
+  DAILY_AWARD_OPENED: "daily_award_opened",
+  DAILY_AWARD_SHARED: "daily_award_shared",
+  EVIDENCE_SNAPSHOT_EXPANDED: "evidence_snapshot_expanded",
+  EVIDENCE_SNAPSHOT_COLLAPSED: "evidence_snapshot_collapsed",
 };

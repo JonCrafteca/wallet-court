@@ -10,6 +10,7 @@ import CourtLayout from '@/components/walletcourt/CourtLayout';
 import Home from '@/pages/Home';
 import Case from '@/pages/Case';
 import Hall from '@/pages/Hall';
+import HallCategory from '@/pages/HallCategory';
 import About from '@/pages/About';
 import Challenge from '@/pages/Challenge';
 import Wallet from '@/pages/Wallet';
@@ -34,6 +35,10 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/case/:slug" element={<Case />} />
               <Route path="/hall" element={<Hall />} />
+              <Route path="/hall/most-severe" element={<HallCategory />} />
+              <Route path="/hall/highest-confidence" element={<HallCategory />} />
+              <Route path="/hall/recent" element={<HallCategory />} />
+              <Route path="/hall/honor" element={<HallCategory />} />
               <Route path="/about" element={<About />} />
               <Route path="/challenge/:sourceCaseSlug" element={<Challenge />} />
               <Route path="/wallet/:claimSlug" element={<Wallet />} />
