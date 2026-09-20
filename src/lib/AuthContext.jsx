@@ -17,7 +17,24 @@ export const AuthProvider = ({ children }) => {
     checkAppState();
   }, []);
 
+  // Safety timeout: if the initial auth check hasn't settled within 8 seconds,
+  // force-settle to a stable logged-out state. This prevents isLoadingAuth from
+  // staying true forever if getPublicSettings() or me() hangs (network stall,
+  // unreachable API, etc.) — which would permanently hide the Sign In control.
+  const AUTH_SETTLE_TIMEOUT_MS = 8000;
+
+  const settleLoggedOut = () => {
+    setIsLoadingAuth(false);
+    setIsAuthenticated(false);
+    setAuthChecked(true);
+  };
+
   const checkAppState = async () => {
+    const timeoutId = setTimeout(() => {
+      console.warn('Auth check timed out — settling to logged-out state.');
+      settleLoggedOut();
+    }, AUTH_SETTLE_TIMEOUT_MS);
+
     try {
       setIsLoadingPublicSettings(true);
       setAuthError(null);
@@ -30,9 +47,7 @@ export const AuthProvider = ({ children }) => {
         if (appParams.token) {
           await checkUserAuth();
         } else {
-          setIsLoadingAuth(false);
-          setIsAuthenticated(false);
-          setAuthChecked(true);
+          settleLoggedOut();
         }
         setIsLoadingPublicSettings(false);
       } catch (appError) {
@@ -64,7 +79,10 @@ export const AuthProvider = ({ children }) => {
           });
         }
         setIsLoadingPublicSettings(false);
-        setIsLoadingAuth(false);
+        // CRITICAL: settle ALL three auth state fields so ProtectedRoute's
+        // useEffect doesn't re-call checkUserAuth (which would re-set
+        // isLoadingAuth=true and re-hide Sign In).
+        settleLoggedOut();
       }
     } catch (error) {
       console.error('Unexpected error:', error);
@@ -73,7 +91,9 @@ export const AuthProvider = ({ children }) => {
         message: error.message || 'An unexpected error occurred'
       });
       setIsLoadingPublicSettings(false);
-      setIsLoadingAuth(false);
+      settleLoggedOut();
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -88,17 +108,18 @@ export const AuthProvider = ({ children }) => {
       setAuthChecked(true);
     } catch (error) {
       console.error('User auth check failed:', error);
-      setIsLoadingAuth(false);
-      setIsAuthenticated(false);
-      setAuthChecked(true);
-      
-      // If user auth fails, it might be an expired token
-      if (error.status === 401 || error.status === 403) {
+      // A 401/403 from me() means the token is stale or absent — this is a
+      // normal logged-out state, not an error that should block navigation.
+      // Only set authError for non-auth failures (network, 500, etc.) so
+      // ProtectedRoute doesn't redirect logged-out users to an error page
+      // when they're simply browsing public pages.
+      if (error.status !== 401 && error.status !== 403) {
         setAuthError({
-          type: 'auth_required',
-          message: 'Authentication required'
+          type: 'unknown',
+          message: error.message || 'Authentication check failed'
         });
       }
+      settleLoggedOut();
     }
   };
 
