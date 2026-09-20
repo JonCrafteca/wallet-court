@@ -78,7 +78,8 @@ describe("Nansen source audit — no bypass of approved transport", () => {
     const callers = [
       "functions" + path.sep + "analyzeWalletWithNansen" + path.sep + "entry.ts",
       "functions" + path.sep + "enrichCasesWithLabels" + path.sep + "entry.ts",
-      "functions" + path.sep + "adminProviderHealthCheck" + path.sep + "entry.ts"
+      "functions" + path.sep + "adminProviderHealthCheck" + path.sep + "entry.ts",
+      "functions" + path.sep + "discoverCalibrationCandidates" + path.sep + "entry.ts"
     ];
     for (const rel of callers) {
       const f = files.find((x) => x.endsWith(rel));
