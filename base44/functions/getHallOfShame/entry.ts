@@ -58,7 +58,9 @@ export default async function (req) {
         category,
         title: CATEGORY_TITLES[category],
         route: CATEGORY_ROUTES[category],
-        items: page.map((t) => sanitizeForHall(t, countMap)),
+        items: page.map((t) =>
+          category === "honor" ? sanitizeForHonor(t) : sanitizeForHall(t, countMap)
+        ),
         total: eligible.length,
         offset,
         limit,
