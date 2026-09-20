@@ -658,8 +658,9 @@ export const PROOF_METHODOLOGY = [
   "No historical backfill: existing WalletTrial records cannot prove how many physical requests occurred and are not counted. Only records created after instrumentation count toward the verified total.",
   "Records are append-only and written server-side with the service role; public/client-side entity operations are blocked by row-level security.",
   "Telemetry persistence failure does not change the wallet verdict and does not create a record; the verified count stays conservative.",
-  "Forbidden data is never stored: full or normalized wallet addresses, API keys, authorization headers, request/response bodies, query-string wallet values, user/owner IDs, IP addresses, cookies, management tokens, and raw evidence."
-];
+  "Forbidden data is never stored: full or normalized wallet addresses, API keys, authorization headers, request/response bodies, query-string wallet values, user/owner IDs, IP addresses, cookies, management tokens, and raw evidence.",
+  "The sha256_digest is an integrity checksum over the canonical (sorted-key) JSON of the exported snapshot, excluding the digest field itself. It is NOT a digital signature and does not prove that Nansen independently verified the calls."
+  ];
 
 export interface ProofPayload {
   application: string;
@@ -682,21 +683,21 @@ export interface ProofPayload {
   audit_rows: Record<string, any>[];
   methodology: string[];
   no_historical_backfill: boolean;
-  checksum_algorithm: string;
-  checksum: string;
+  sha256_digest: string;
 }
 
-// Deterministic FNV-1a 32-bit hash over canonical (sorted-key) JSON. Synchronous
-// and available in every runtime (no crypto.subtle async dependency). Used only
-// as a tamper-evidence digest of the exported payload, not as a security hash.
-export function fnv1aHex(input: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  // Force unsigned 32-bit.
-  return (h >>> 0).toString(16).padStart(8, "0");
+// SHA-256 digest using runtime-native Web Crypto (crypto.subtle). Available in
+// Node 18+, Deno, and browsers. Returns lowercase hexadecimal. This is an
+// integrity checksum for the exported snapshot — NOT a digital signature and
+// NOT proof that Nansen independently verified the calls.
+export async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const subtle = (typeof crypto !== "undefined" && crypto.subtle)
+    ? crypto.subtle
+    : (globalThis as any).crypto?.subtle;
+  if (!subtle) throw new Error("SHA-256 unavailable: crypto.subtle not found in runtime.");
+  const buf = await subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export function canonicalJson(value: any): string {
@@ -713,20 +714,23 @@ function sortKeys(value: any): any {
   return value;
 }
 
-export function computeProofChecksum(payload: Omit<ProofPayload, "checksum" | "checksum_algorithm">): string {
-  return fnv1aHex(canonicalJson(payload));
+// Compute the SHA-256 integrity digest over the canonical JSON of the proof
+// payload, excluding the sha256_digest field itself. The caller passes the
+// payload without the digest; this function returns the digest to attach.
+export async function computeProofDigest(payload: Omit<ProofPayload, "sha256_digest">): Promise<string> {
+  return sha256Hex(canonicalJson(payload));
 }
 
-export function buildProofPayload(args: {
+export async function buildProofPayload(args: {
   records: AuditRecordLike[];
   generatedAt?: string;
   target?: number;
   now?: () => Date;
-}): ProofPayload {
+}): Promise<ProofPayload> {
   const generatedAt = args.generatedAt || (args.now ? args.now() : new Date()).toISOString();
   const stats = aggregateStats(args.records, { target: args.target, now: args.now });
   const auditRows = args.records.map(sanitizeAuditRowForExport);
-  const partial: Omit<ProofPayload, "checksum" | "checksum_algorithm"> = {
+  const partial: Omit<ProofPayload, "sha256_digest"> = {
     application: "Wallet Court",
     generated_at: generatedAt,
     verified_tracking_start: stats.tracking_start,
@@ -748,8 +752,8 @@ export function buildProofPayload(args: {
     methodology: PROOF_METHODOLOGY,
     no_historical_backfill: true
   };
-  const checksum = computeProofChecksum(partial);
-  return { ...partial, checksum_algorithm: "fnv1a-32", checksum };
+  const sha256_digest = await computeProofDigest(partial);
+  return { ...partial, sha256_digest };
 }
 
 // CSV exporter. Header row + one sanitized row per audit record. Totals are

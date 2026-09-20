@@ -90,4 +90,18 @@ describe("Nansen source audit — no bypass of approved transport", () => {
       expect(/\bfetch\s*\(/.test(content)).toBe(false);
     }
   });
+
+  it("no production code calls NansenApiCallAudit.update or .delete (append-only ledger regression)", () => {
+    const offenders: string[] = [];
+    const forbidden = [".update(", ".delete(", ".updateMany(", ".deleteMany(", ".bulkUpdate("];
+    for (const f of files) {
+      const content = stripComments(fs.readFileSync(f, "utf8"));
+      for (const m of forbidden) {
+        if (content.includes("NansenApiCallAudit" + m)) {
+          offenders.push(path.relative(ROOT, f) + " → NansenApiCallAudit" + m);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

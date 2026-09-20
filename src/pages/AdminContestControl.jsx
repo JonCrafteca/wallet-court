@@ -210,7 +210,7 @@ export default function AdminContestControl() {
           </button>
         </div>
         <p className="mt-3 font-mono text-xs text-court-mute leading-relaxed">
-          Exports contain sanitized audit rows, aggregate totals, methodology, and a deterministic checksum. Never includes wallet addresses, secrets, user IDs, or raw evidence.
+          Exports contain sanitized audit rows, aggregate totals, methodology, and a deterministic SHA-256 integrity digest. Never includes wallet addresses, secrets, user IDs, or raw evidence.
         </p>
       </div>
 

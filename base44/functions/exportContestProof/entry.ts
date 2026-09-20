@@ -38,7 +38,7 @@ export default async function (req) {
       return Response.json({ format, filename, content: csv, generated_at: generatedAt });
     }
 
-    const proof = buildProofPayload({ records: all, generatedAt, target: CONTEST_TARGET });
+    const proof = await buildProofPayload({ records: all, generatedAt, target: CONTEST_TARGET });
     return Response.json({ format, filename, content: proof, generated_at: generatedAt });
   } catch (error) {
     return Response.json({ error: error.message || "Proof export failed." }, { status: 500 });

@@ -18,8 +18,8 @@ import {
   buildProofPayload,
   proofToCsv,
   proofFilename,
-  computeProofChecksum,
-  fnv1aHex,
+  computeProofDigest,
+  sha256Hex,
   canonicalJson,
   sanitizeAuditRowForExport,
   CONTEST_TARGET,
@@ -332,13 +332,13 @@ describe("historical backfill exclusion", () => {
 // ---- Proof payload + CSV + checksum ----
 
 describe("proof payload + CSV agreement", () => {
-  it("JSON and CSV agree on totals", () => {
+  it("JSON and CSV agree on totals", async () => {
     const recs = [
       mkRecord({ outcome: AUDIT_OUTCOMES.SUCCESS }),
       mkRecord({ outcome: AUDIT_OUTCOMES.RATE_LIMITED }),
       mkRecord({ outcome: AUDIT_OUTCOMES.PROVIDER_ERROR })
     ];
-    const proof = buildProofPayload({ records: recs, generatedAt: "2026-09-20T12:00:00Z" });
+    const proof = await buildProofPayload({ records: recs, generatedAt: "2026-09-20T12:00:00Z" });
     const csv = proofToCsv(recs);
     const csvRows = csv.trim().split("\n").length - 1; // minus header
     expect(proof.total_tracked_physical_requests).toBe(3);
@@ -351,19 +351,19 @@ describe("proof payload + CSV agreement", () => {
     expect(proof.no_historical_backfill).toBe(true);
     expect(proof.methodology.length).toBeGreaterThan(0);
   });
-  it("checksum is deterministic and changes when data changes", () => {
+  it("sha256_digest is deterministic and changes when data changes", async () => {
     const recs = [mkRecord({ call_id: "nca_x", occurred_at: "2026-09-20T12:00:00Z" })];
-    const p1 = buildProofPayload({ records: recs, generatedAt: "2026-09-20T12:00:00Z" });
-    const p2 = buildProofPayload({ records: recs, generatedAt: "2026-09-20T12:00:00Z" });
-    expect(p1.checksum).toBe(p2.checksum);
-    expect(p1.checksum).toMatch(/^[0-9a-f]{8}$/);
+    const p1 = await buildProofPayload({ records: recs, generatedAt: "2026-09-20T12:00:00Z" });
+    const p2 = await buildProofPayload({ records: recs, generatedAt: "2026-09-20T12:00:00Z" });
+    expect(p1.sha256_digest).toBe(p2.sha256_digest);
+    expect(p1.sha256_digest).toMatch(/^[0-9a-f]{64}$/);
     const recs2 = [mkRecord({ call_id: "nca_y", occurred_at: "2026-09-20T12:00:00Z" })];
-    const p3 = buildProofPayload({ records: recs2, generatedAt: "2026-09-20T12:00:00Z" });
-    expect(p3.checksum).not.toBe(p1.checksum);
+    const p3 = await buildProofPayload({ records: recs2, generatedAt: "2026-09-20T12:00:00Z" });
+    expect(p3.sha256_digest).not.toBe(p1.sha256_digest);
   });
-  it("fnv1a + canonicalJson are deterministic", () => {
-    expect(fnv1aHex("")).toBe("811c9dc5");
-    expect(fnv1aHex("a")).toBe(fnv1aHex("a"));
+  it("sha256 + canonicalJson are deterministic", async () => {
+    expect(await sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    expect(await sha256Hex("a")).toBe(await sha256Hex("a"));
     expect(canonicalJson({ b: 1, a: 2 })).toBe(canonicalJson({ a: 2, b: 1 }));
   });
   it("proofFilename formats date", () => {
