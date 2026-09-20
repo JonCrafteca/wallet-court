@@ -1,0 +1,97 @@
+{
+  "name": "Summons",
+  "type": "object",
+  "properties": {
+    "summons_id": {
+      "type": "string",
+      "description": "Permanent public ID for the summons. Format: smn_XXXXXXXX (cryptographically random, collision-checked)."
+    },
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the WalletTrial this summons pertains to."
+    },
+    "normalized_target_handle": {
+      "type": "string",
+      "description": "Lowercased, sanitized X handle of the intended defendant. Null for anonymous defendants."
+    },
+    "display_handle": {
+      "type": "string",
+      "description": "Original-casing X handle for display. Null for anonymous defendants."
+    },
+    "creator_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the authenticated creator. Null for anonymous submissions. Set server-side from session auth \u2014 never trusted from a client-supplied value."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "anonymous_defendant",
+        "summons_ready",
+        "share_opened",
+        "summons_served_self_reported"
+      ],
+      "default": "anonymous_defendant",
+      "description": "Truthful summons state. anonymous_defendant = no handle provided; summons_ready = handle entered and summons prepared; share_opened = X composer or share sheet opened (publication NOT confirmed); summons_served_self_reported = user explicitly confirmed posting (self-reported, not verified by Wallet Court)."
+    },
+    "share_method": {
+      "type": "string",
+      "enum": [
+        "none",
+        "x_intent",
+        "web_share"
+      ],
+      "default": "none",
+      "description": "Method used to share the summons. none = not yet shared; x_intent = X Web Intent composer opened; web_share = native Web Share sheet invoked."
+    },
+    "confirmed_post_url": {
+      "type": "string",
+      "description": "X post URL if genuinely confirmed by the user. Null otherwise. Self-reported \u2014 Wallet Court does not verify publication."
+    },
+    "abuse_status": {
+      "type": "string",
+      "enum": [
+        "clean",
+        "flagged",
+        "blocked"
+      ],
+      "default": "clean",
+      "description": "Moderation/abuse status. Internal-only; never exposed publicly."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "summons_id",
+    "case_slug",
+    "status",
+    "created_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

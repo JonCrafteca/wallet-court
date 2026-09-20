@@ -21,4 +21,9 @@ export const SHARE_EVENTS = {
   CHALLENGE_CREATED: "challenge_created",
   CHALLENGE_ACCEPTED: "challenge_accepted",
   CHALLENGE_COMPLETED: "challenge_completed",
+  SUMMONS_CREATED: "summons_created",
+  SUMMONS_SHARED: "summons_shared",
+  SUMMONS_SERVED: "summons_served",
+  COURT_RECEIPT_DOWNLOADED: "court_receipt_downloaded",
+  COURT_RECEIPT_SHARED: "court_receipt_shared",
 };

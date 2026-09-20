@@ -5,7 +5,8 @@ export default function AccountOverview({ counts }) {
     { label: "Case Dismissals", value: counts.dismissals, color: "text-court-mute" },
     { label: "Mistrials", value: counts.mistrials, color: "text-court-red" },
     { label: "Verified Wallets", value: counts.verified_wallets, color: "text-court-chart" },
-    { label: "Official Defenses", value: counts.defenses, color: "text-court-ice" }
+    { label: "Official Defenses", value: counts.defenses, color: "text-court-ice" },
+    { label: "Summons", value: counts.summons || 0, color: "text-court-chart" }
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

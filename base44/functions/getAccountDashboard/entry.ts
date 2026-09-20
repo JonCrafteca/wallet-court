@@ -14,8 +14,10 @@ import {
   sanitizeTrialForAccount,
   sanitizeClaimForAccount,
   sanitizeDefenseForAccount,
+  sanitizeSummonsForAccount,
   computeDashboardCounts
 } from "../../shared/accountDashboard.ts";
+import { findCaseBySlug } from "../../shared/caseUtils.ts";
 
 export default async function (req) {
   try {
@@ -52,14 +54,33 @@ export default async function (req) {
       200
     );
 
-    const counts = computeDashboardCounts(trials, claims, defenses);
+    // My Summons — summons created by this user, newest first.
+    const summonsRecords = await base44.asServiceRole.entities.Summons.filter(
+      { creator_user_id: user.id },
+      "-created_at",
+      100
+    );
+
+    // Fetch trial data for each summons's case_slug (cached to avoid duplicates)
+    const trialCache = {};
+    const summonsList = [];
+    for (const s of (summonsRecords || [])) {
+      if (!trialCache[s.case_slug]) {
+        trialCache[s.case_slug] = await findCaseBySlug(base44, s.case_slug);
+      }
+      const trial = trialCache[s.case_slug];
+      summonsList.push(sanitizeSummonsForAccount(s, trial));
+    }
+
+    const counts = computeDashboardCounts(trials, claims, defenses, summonsRecords);
 
     return Response.json({
       user: { email: user.email || null, full_name: user.full_name || null },
       counts,
       trials: (trials || []).map(sanitizeTrialForAccount).filter(Boolean),
       wallets: (claims || []).map(sanitizeClaimForAccount).filter(Boolean),
-      defenses: (defenses || []).map(sanitizeDefenseForAccount).filter(Boolean)
+      defenses: (defenses || []).map(sanitizeDefenseForAccount).filter(Boolean),
+      summons: summonsList.filter(Boolean)
     });
   } catch (error) {
     return Response.json({ error: error.message || "Could not load account dashboard." }, { status: 500 });

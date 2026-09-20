@@ -7,6 +7,7 @@
 
 import { shortAddr } from "./caseUtils.ts";
 import { sanitizeDefenseForOwner } from "./walletClaim.ts";
+import { sanitizeSummonsForOwner } from "./summons.ts";
 
 // Resolve the active case outcome, mirroring src/lib/caseOutcome.js. Backend
 // records may predate N2.3 (no case_outcome field) — infer from data_mode.
@@ -68,13 +69,21 @@ export function sanitizeDefenseForAccount(defense) {
   };
 }
 
-// Compute dashboard counts from raw trial, claim, and defense arrays.
+// Sanitize a summons for the owner's account view (My Court Summons section).
+// Includes case info for linking. Never exposes creator_user_id, abuse_status,
+// or confirmed_post_url.
+export function sanitizeSummonsForAccount(summons, trial) {
+  return sanitizeSummonsForOwner(summons, trial);
+}
+
+// Compute dashboard counts from raw trial, claim, defense, and summons arrays.
 // verdicts includes demo verdicts (they produce a verdict display).
 // dismissals = dismissed_no_evidence. mistrials = mistrial_insufficient_evidence.
-export function computeDashboardCounts(trials, wallets, defenses) {
+export function computeDashboardCounts(trials, wallets, defenses, summons) {
   const trialList = trials || [];
   const walletList = wallets || [];
   const defenseList = defenses || [];
+  const summonsList = summons || [];
 
   let verdicts = 0, dismissals = 0, mistrials = 0;
   for (const t of trialList) {
@@ -90,6 +99,7 @@ export function computeDashboardCounts(trials, wallets, defenses) {
     dismissals,
     mistrials,
     verified_wallets: walletList.filter((w) => w.status === "active").length,
-    defenses: defenseList.length
+    defenses: defenseList.length,
+    summons: summonsList.length
   };
 }

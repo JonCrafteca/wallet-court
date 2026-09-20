@@ -7,10 +7,12 @@ import SentenceRuling from "./SentenceRuling";
 import ClaimWalletSection from "./ClaimWalletSection";
 import CaseDismissed from "./CaseDismissed";
 import CaseMistrial from "./CaseMistrial";
+import SummonsSection from "./SummonsSection";
+import CourtReceiptPreview from "./CourtReceiptPreview";
 import { getCaseOutcome } from "@/lib/caseOutcome";
 import { displayAddressShort } from "@/lib/wallet";
 
-export default function VerdictReveal({ trial, onReset }) {
+export default function VerdictReveal({ trial, onReset, subjectType, proposedHandle }) {
   // Evidence-sufficiency gate (N2.3): branch the public presentation on outcome.
   const outcome = getCaseOutcome(trial);
   if (outcome === "dismissed_no_evidence") return <CaseDismissed trial={trial} onReset={onReset} />;
@@ -66,19 +68,29 @@ export default function VerdictReveal({ trial, onReset }) {
         <SentenceRuling trial={trial} />
       </div>
 
-      {/* 5. Actions */}
+      {/* 5. Serve the Defendant + Identity Panel */}
+      <div className="mt-10">
+        <SummonsSection trial={trial} proposedHandle={proposedHandle} />
+      </div>
+
+      {/* 6. Court Receipt */}
+      <div className="mt-10">
+        <CourtReceiptPreview trial={trial} />
+      </div>
+
+      {/* 7. Actions */}
       <div className="mt-10">
         <ShareActions trial={trial} onReset={onReset} />
       </div>
 
-      {/* 6. Wallet ownership / Rap Sheet — hidden on demo cases */}
+      {/* 8. Wallet ownership / Rap Sheet — hidden on demo cases */}
       {isLive && (
         <div className="mt-10">
           <ClaimWalletSection trial={trial} />
         </div>
       )}
 
-      {/* 7. ShoutIt Public Gallery */}
+      {/* 9. ShoutIt Public Gallery */}
       <div className="mt-12">
         <ShoutItGallery />
       </div>

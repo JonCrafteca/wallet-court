@@ -1,5 +1,6 @@
 import { Gavel, AlertTriangle, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
+import TrialSubjectSelector from "./TrialSubjectSelector";
 
 const DEMO_ADDRESS = "0x71c000000000000000000000000000000000c4f1";
 
@@ -9,7 +10,7 @@ const CHYRON = [
   "The court accepts Ethereum, Base, Solana, and extremely poor judgment.",
 ];
 
-export default function IntakeStage({ network, setNetwork, networks, address, setAddress, onSubmit, error }) {
+export default function IntakeStage({ network, setNetwork, networks, address, setAddress, onSubmit, error, subjectType, setSubjectType, proposedHandle, setProposedHandle }) {
   return (
     <section className="mx-auto max-w-3xl px-4 pt-10 sm:pt-16 pb-24">
       {/* Hero */}
@@ -39,6 +40,9 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
           </div>
 
           <div className="p-5 sm:p-7 space-y-6">
+            {/* Subject selector */}
+            <TrialSubjectSelector value={subjectType} onChange={setSubjectType} />
+
             {/* Network selector */}
             <div>
               <label className="block font-mono text-xs uppercase tracking-[0.16em] text-court-mute mb-2">
@@ -85,6 +89,33 @@ export default function IntakeStage({ network, setNetwork, networks, address, se
                 <p className="mt-2 font-mono text-base text-court-mute">Solana addresses are base58, 32–44 characters.</p>
               )}
             </div>
+
+            {/* Optional X handle for "Someone Else" */}
+            {subjectType === "someone_else" && (
+              <div>
+                <label htmlFor="proposed-handle" className="block font-mono text-xs uppercase tracking-[0.16em] text-court-mute mb-2">
+                  Know the defendant's X handle? <span className="text-court-chart">(optional)</span>
+                </label>
+                <div className="flex items-center border-2 border-court-ice bg-court-navy focus-within:border-court-chart transition-colors">
+                  <span className="px-3 text-court-chart font-mono text-base select-none border-r border-court-mute">@</span>
+                  <input
+                    id="proposed-handle"
+                    type="text"
+                    value={proposedHandle}
+                    onChange={(e) => setProposedHandle(e.target.value)}
+                    placeholder="theirhandle"
+                    spellCheck={false}
+                    autoComplete="off"
+                    maxLength={50}
+                    aria-label="Defendant's X handle (optional)"
+                    className="w-full bg-transparent py-3 pr-3 font-mono text-base text-court-ice placeholder:text-court-mute focus:outline-none"
+                  />
+                </div>
+                <p className="mt-2 font-mono text-sm text-court-mute leading-relaxed">
+                  We'll use this only to prepare the summons. It does not prove who owns the wallet.
+                </p>
+              </div>
+            )}
 
             {/* Chyron annotations */}
             <div className="border-l-4 border-court-red pl-4 space-y-1.5">

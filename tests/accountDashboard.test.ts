@@ -181,7 +181,7 @@ describe("accountDashboard — verdict, dismissal, and mistrial counts", () => {
       { case_outcome: "mistrial_insufficient_evidence", data_mode: "live" },
       { case_outcome: "demo", data_mode: "demo" }
     ];
-    const counts = computeDashboardCounts(trials, [], []);
+    const counts = computeDashboardCounts(trials, [], [], []);
     expect(counts.trials).toBe(5);
     expect(counts.verdicts).toBe(3); // 2 verdicts + 1 demo
     expect(counts.dismissals).toBe(1);
@@ -194,7 +194,7 @@ describe("accountDashboard — verdict, dismissal, and mistrial counts", () => {
       { case_outcome: "dismissed_no_evidence", data_mode: "live" },
       { case_outcome: "mistrial_insufficient_evidence", data_mode: "live" }
     ];
-    const counts = computeDashboardCounts(trials, [], []);
+    const counts = computeDashboardCounts(trials, [], [], []);
     expect(counts.verdicts).toBe(1);
     expect(counts.dismissals).toBe(1);
     expect(counts.mistrials).toBe(1);
@@ -206,7 +206,7 @@ describe("accountDashboard — verdict, dismissal, and mistrial counts", () => {
       { status: "active" },
       { status: "revoked" }
     ];
-    expect(computeDashboardCounts([], claims, []).verified_wallets).toBe(2);
+    expect(computeDashboardCounts([], claims, [], []).verified_wallets).toBe(2);
   });
 
   it("counts all defenses regardless of status", () => {
@@ -216,18 +216,18 @@ describe("accountDashboard — verdict, dismissal, and mistrial counts", () => {
       { moderation_status: "rejected" },
       { moderation_status: "hidden" }
     ];
-    expect(computeDashboardCounts([], [], defenses).defenses).toBe(4);
+    expect(computeDashboardCounts([], [], defenses, []).defenses).toBe(4);
   });
 
   it("handles empty arrays", () => {
-    expect(computeDashboardCounts([], [], [])).toEqual({
+    expect(computeDashboardCounts([], [], [], [])).toEqual({
       trials: 0, verdicts: 0, dismissals: 0, mistrials: 0,
-      verified_wallets: 0, defenses: 0
+      verified_wallets: 0, defenses: 0, summons: 0
     });
   });
 
   it("handles null arrays", () => {
-    expect(computeDashboardCounts(null, null, null).trials).toBe(0);
+    expect(computeDashboardCounts(null, null, null, null).trials).toBe(0);
   });
 
   it("infers outcome for pre-N2.3 records (no case_outcome)", () => {
@@ -235,7 +235,7 @@ describe("accountDashboard — verdict, dismissal, and mistrial counts", () => {
       { data_mode: "live" },
       { data_mode: "demo" }
     ];
-    const counts = computeDashboardCounts(trials, [], []);
+    const counts = computeDashboardCounts(trials, [], [], []);
     expect(counts.verdicts).toBe(2);
   });
 });

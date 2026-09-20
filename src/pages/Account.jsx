@@ -5,6 +5,7 @@ import AccountOverview from "@/components/walletcourt/AccountOverview";
 import AccountTrials from "@/components/walletcourt/AccountTrials";
 import AccountWallets from "@/components/walletcourt/AccountWallets";
 import AccountDefenses from "@/components/walletcourt/AccountDefenses";
+import AccountSummons from "@/components/walletcourt/AccountSummons";
 import { Loader2, AlertTriangle, LogOut, Scale, RotateCw } from "lucide-react";
 
 export default function Account() {
@@ -85,6 +86,7 @@ export default function Account() {
 
       <AccountOverview counts={data.counts} />
       <AccountTrials trials={data.trials} />
+      <AccountSummons summons={data.summons} />
       <AccountWallets wallets={data.wallets} />
       <AccountDefenses defenses={data.defenses} />
     </div>

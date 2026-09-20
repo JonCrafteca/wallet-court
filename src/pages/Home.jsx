@@ -18,6 +18,8 @@ export default function Home() {
   const [status, setStatus] = useState("idle"); // idle | loading | done | recess
   const [trial, setTrial] = useState(null);
   const [recess, setRecess] = useState(null);
+  const [subjectType, setSubjectType] = useState("anonymous");
+  const [proposedHandle, setProposedHandle] = useState("");
 
   async function runAnalysis(addr, net) {
     const [res] = await Promise.all([
@@ -90,7 +92,7 @@ export default function Home() {
   }
 
   if (status === "done" && trial) {
-    return <VerdictReveal trial={trial} onReset={handleReset} />;
+    return <VerdictReveal trial={trial} onReset={handleReset} subjectType={subjectType} proposedHandle={proposedHandle} />;
   }
 
   if (status === "recess" && recess) {
@@ -114,6 +116,10 @@ export default function Home() {
         setAddress={setAddress}
         onSubmit={handleSubmit}
         error={error}
+        subjectType={subjectType}
+        setSubjectType={setSubjectType}
+        proposedHandle={proposedHandle}
+        setProposedHandle={setProposedHandle}
       />
       <LoadingStage visible={status === "loading"} />
     </div>
