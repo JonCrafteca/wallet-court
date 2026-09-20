@@ -4,6 +4,7 @@ import IntakeStage from "@/components/walletcourt/IntakeStage";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import CourtRecess from "@/components/walletcourt/CourtRecess";
+import { validateWalletForChain } from "@/lib/walletValidation";
 
 const NETWORKS = [
   { id: "ethereum", label: "Ethereum" },
@@ -40,6 +41,14 @@ export default function Home() {
     setError("");
     if (!address.trim()) {
       setError("A wallet address is required for the summons.");
+      return;
+    }
+    // Frontend validation: immediate feedback before any request. The backend
+    // is authoritative, but this prevents a round-trip for obvious mismatches
+    // (e.g. an EVM 0x address with Solana selected).
+    const validation = validateWalletForChain(network, address.trim());
+    if (!validation.ok) {
+      setError(validation.message);
       return;
     }
     setStatus("loading");

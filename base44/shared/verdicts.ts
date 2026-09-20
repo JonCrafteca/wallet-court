@@ -8,14 +8,18 @@ export const MANDATORY_DEMO_ADDRESS = "0x71c000000000000000000000000000000000c4f
 
 export const NETWORKS = ["ethereum", "base", "solana"];
 
+import { isValidSolanaAddress, isValidEvmAddress } from "./walletValidation.ts";
+
 export function validateAddress(network, address) {
   if (!address || typeof address !== "string") return false;
   const a = address.trim();
   if (network === "solana") {
-    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a);
+    // Strict: must be valid Base58 decoding to exactly 32 bytes — not just a
+    // loose regex on string length. An EVM-style 0x… address is rejected.
+    return isValidSolanaAddress(a);
   }
   // ethereum + base share the 0x-prefixed 20-byte hex format
-  return /^0x[a-fA-F0-9]{40}$/.test(a);
+  return isValidEvmAddress(a);
 }
 
 export function normalizeAddress(network, address) {

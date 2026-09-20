@@ -20,6 +20,7 @@ import {
   NETWORKS,
   MANDATORY_DEMO_ADDRESS
 } from "../../shared/verdicts.ts";
+import { validateWalletForChain } from "../../shared/walletValidation.ts";
 import {
   computeSeverityConfidence,
   buildLiveVerdictPayload
@@ -68,11 +69,19 @@ export default async function (req) {
     if (!wallet_address || !network) {
       return Response.json({ error: "wallet_address and network are required." }, { status: 400 });
     }
-    if (!NETWORKS.includes(network)) {
-      return Response.json({ error: "Unsupported network." }, { status: 400 });
-    }
-    if (!validateAddress(network, wallet_address)) {
-      return Response.json({ error: "That does not look like a valid address for the selected network." }, { status: 422 });
+
+    // Chain-specific validation BEFORE any Nansen call, trial creation, demo
+    // fallback, dismissal, verdict, usage record, or analytics event. Invalid
+    // input consumes zero Nansen calls and creates zero trials/cases/verdicts.
+    // Returns a structured 400 with code, chain, message, and suggested_chain.
+    const validation = validateWalletForChain(network, wallet_address);
+    if (!validation.ok) {
+      return Response.json({
+        error: validation.message,
+        code: validation.code,
+        chain: validation.chain || null,
+        suggested_chain: validation.suggestedChain || null,
+      }, { status: 400 });
     }
 
     // Pre-flight: unsupported_chain is a request-validation error, NOT a Nansen

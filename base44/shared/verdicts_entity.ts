@@ -17,7 +17,7 @@ function num(v) {
 }
 
 // ---- CEX / EXCHANGE ----
-const CEX_POOL = [
+export const CEX_POOL = [
   {
     code: "hot_wallet_cold_personality",
     display_name: "Hot Wallet, Cold Personality",
@@ -53,7 +53,7 @@ const CEX_POOL = [
 ];
 
 // ---- MARKET MAKER ----
-const MM_POOL = [
+export const MM_POOL = [
   {
     code: "spread_goblin",
     display_name: "Spread Goblin",
@@ -89,7 +89,7 @@ const MM_POOL = [
 ];
 
 // ---- MEV / BOT ----
-const MEV_POOL = [
+export const MEV_POOL = [
   {
     code: "mempool_menace",
     display_name: "Mempool Menace",
@@ -125,7 +125,7 @@ const MEV_POOL = [
 ];
 
 // ---- PROTOCOL / TREASURY ----
-const PROTOCOL_POOL = [
+export const PROTOCOL_POOL = [
   {
     code: "treasury_main_character",
     display_name: "Treasury With Main Character Energy",
@@ -161,7 +161,7 @@ const PROTOCOL_POOL = [
 ];
 
 // ---- FUND / INSTITUTION ----
-const FUND_POOL = [
+export const FUND_POOL = [
   {
     code: "institutional_grade_degeneracy",
     display_name: "Institutional-Grade Degeneracy",

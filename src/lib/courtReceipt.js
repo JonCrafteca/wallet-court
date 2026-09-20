@@ -100,6 +100,43 @@ function wrapTextTruncate(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   return lines;
 }
 
+// Wrap text to max width, max lines — measure only, does NOT draw.
+// Returns the lines array so the caller can calculate the required height
+// before positioning and drawing the box.
+function wrapTextMeasure(ctx, text, maxWidth, maxLines) {
+  if (!text) return [];
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const lines = [];
+  let line = "";
+  let wordIdx = 0;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = w;
+      wordIdx = i;
+      if (lines.length >= maxLines) break;
+    } else {
+      line = test;
+      wordIdx = i + 1;
+    }
+  }
+  if (lines.length < maxLines && line) lines.push(line);
+  if (wordIdx < words.length && lines.length >= maxLines) {
+    let last = lines[lines.length - 1];
+    const ellipsis = "…";
+    while (last && ctx.measureText(last + ellipsis).width > maxWidth && last.includes(" ")) {
+      last = last.split(" ").slice(0, -1).join(" ");
+    }
+    if (last) {
+      lines[lines.length - 1] = last + (ctx.measureText(last + ellipsis).width <= maxWidth ? ellipsis : "");
+    }
+  }
+  return lines;
+}
+
 function bestRoastExcerpt(roast, maxSentences = 2) {
   if (!roast) return "";
   const sentences = String(roast).split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -266,13 +303,51 @@ function drawLandscapeReceipt(ctx, trial, W, H, s, isLive, isDemo) {
   ctx.fillStyle = COLORS.ice;
   ctx.font = `500 ${18 * s}px "JetBrains Mono", monospace`;
   const roastExcerpt = bestRoastExcerpt(trial.roast, 2);
-  wrapTextTruncate(ctx, roastExcerpt, 36 * s, roastY, W - 72 * s, 26 * s, 2);
+  const roastLines = wrapTextTruncate(ctx, roastExcerpt, 36 * s, roastY, W - 72 * s, 26 * s, 2);
+  const roastEndY = roastY + roastLines.length * 26 * s;
 
-  // 7. Sentencing box (complete visible border, not covered by footer)
-  const sentenceBoxY = 508 * s;
-  const sentenceBoxH = 72 * s;
+  // 7. Sentencing box — dynamic position after roast, dynamic height from
+  // wrapped lines, font reduction within readable limits. The box never
+  // crosses the footer border.
+  const sentenceGap = 12 * s;
+  const footerTopY = H - 80 * s;
+  const safeGap = 8 * s;
+  const sentenceBoxY = roastEndY + sentenceGap;
+  const maxBoxBottom = footerTopY - safeGap;
+  const maxBoxHeight = Math.max(0, maxBoxBottom - sentenceBoxY);
   const sentenceBoxW = W - 72 * s;
-  const sentencePad = 16 * s;
+  const sentencePad = 12 * s;
+  const sentenceTextWidth = sentenceBoxW - sentencePad * 2;
+  const sentenceLabelH = 20 * s;
+
+  const sentenceText = sentenceExcerpt(trial.sentence, 2);
+  let sentenceFontPx = 17;
+  let sentenceLineH = 24 * s;
+  let sentenceLines = [];
+  if (sentenceText) {
+    for (let fp = 17; fp >= 12; fp--) {
+      const lh = Math.round(fp * 1.4) * s;
+      ctx.font = `500 ${fp * s}px "JetBrains Mono", monospace`;
+      const lines = wrapTextMeasure(ctx, sentenceText, sentenceTextWidth, 2);
+      const requiredH = sentencePad + sentenceLabelH + sentencePad + lines.length * lh + sentencePad;
+      if (requiredH <= maxBoxHeight) {
+        sentenceFontPx = fp;
+        sentenceLineH = lh;
+        sentenceLines = lines;
+        break;
+      }
+      if (fp === 12) {
+        sentenceFontPx = fp;
+        sentenceLineH = lh;
+        sentenceLines = lines;
+      }
+    }
+  }
+
+  const sentenceBoxH = Math.min(
+    sentencePad + sentenceLabelH + sentencePad + sentenceLines.length * sentenceLineH + sentencePad,
+    maxBoxHeight
+  );
 
   ctx.fillStyle = COLORS.navy;
   ctx.fillRect(36 * s, sentenceBoxY, sentenceBoxW, sentenceBoxH);
@@ -282,21 +357,15 @@ function drawLandscapeReceipt(ctx, trial, W, H, s, isLive, isDemo) {
 
   ctx.fillStyle = COLORS.chart;
   ctx.font = `600 ${13 * s}px Oswald, sans-serif`;
-  ctx.fillText("THE COURT SENTENCES YOU TO…", 36 * s + sentencePad, sentenceBoxY + 24 * s);
+  ctx.fillText("THE COURT SENTENCES YOU TO…", 36 * s + sentencePad, sentenceBoxY + sentencePad + 16 * s);
 
-  const sentenceText = sentenceExcerpt(trial.sentence, 2);
-  if (sentenceText) {
+  if (sentenceText && sentenceLines.length > 0) {
     ctx.fillStyle = COLORS.ice;
-    ctx.font = `500 ${17 * s}px "JetBrains Mono", monospace`;
-    wrapTextTruncate(
-      ctx,
-      sentenceText,
-      36 * s + sentencePad,
-      sentenceBoxY + 52 * s,
-      sentenceBoxW - sentencePad * 2,
-      24 * s,
-      2
-    );
+    ctx.font = `500 ${sentenceFontPx * s}px "JetBrains Mono", monospace`;
+    const textStartY = sentenceBoxY + sentencePad + sentenceLabelH + sentencePad;
+    sentenceLines.forEach((line, i) => {
+      ctx.fillText(line, 36 * s + sentencePad, textStartY + i * sentenceLineH + sentenceLineH * 0.8);
+    });
   }
 
   // 8. Footer (domain + case ref, not full URL)

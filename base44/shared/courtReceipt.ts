@@ -99,6 +99,108 @@ export const PORTRAIT_LAYOUT = {
   footer: { y: 1230, h: 120 },
 };
 
+// Layout result for the sentence box after fitting.
+export interface SentenceBoxLayout {
+  lines: string[];
+  fontPx: number;
+  lineHeight: number;
+  boxHeight: number;
+  textStartY: number; // Y offset within the box where text begins
+}
+
+// Fit sentence text into a box with dynamic height. Reduces font size from
+// initialFontPx down to minFontPx (inclusive, 1px steps) until the wrapped
+// text fits within maxBoxHeight. If it still doesn't fit at minFontPx, the
+// box height is capped at maxBoxHeight (text is truncated by
+// wrapTextTruncatePure's ellipsis logic). The complete sentence remains
+// visible for all currently permitted sentence lengths at a readable size.
+//
+// measureFn(text, fontPx) returns the rendered width of text at the given
+// font size — in the canvas renderer this is ctx.measureText(text).width
+// after setting ctx.font; in tests it is a deterministic mock.
+export function fitSentenceBox(
+  text: string,
+  measureFn: (text: string, fontPx: number) => number,
+  maxWidth: number,
+  maxBoxHeight: number,
+  options: {
+    labelHeight: number;
+    padding: number;
+    initialFontPx: number;
+    minFontPx: number;
+    lineHeightMultiplier: number;
+    maxLines: number;
+  }
+): SentenceBoxLayout {
+  const { labelHeight, padding, initialFontPx, minFontPx, lineHeightMultiplier, maxLines } = options;
+
+  let fontPx = initialFontPx;
+  while (fontPx >= minFontPx) {
+    const lineHeight = Math.round(fontPx * lineHeightMultiplier);
+    const lines = wrapTextTruncatePure(text, (t) => measureFn(t, fontPx), maxWidth, maxLines);
+    const textHeight = lines.length * lineHeight;
+    const requiredHeight = padding + labelHeight + padding + textHeight + padding;
+    if (requiredHeight <= maxBoxHeight) {
+      return { lines, fontPx, lineHeight, boxHeight: requiredHeight, textStartY: padding + labelHeight + padding };
+    }
+    fontPx -= 1;
+  }
+
+  // Force fit at min font size — cap box height at maxBoxHeight.
+  const lineHeight = Math.round(minFontPx * lineHeightMultiplier);
+  const lines = wrapTextTruncatePure(text, (t) => measureFn(t, minFontPx), maxWidth, maxLines);
+  const textHeight = lines.length * lineHeight;
+  const requiredHeight = padding + labelHeight + padding + textHeight + padding;
+  const boxHeight = Math.min(requiredHeight, maxBoxHeight);
+  return { lines, fontPx: minFontPx, lineHeight, boxHeight, textStartY: padding + labelHeight + padding };
+}
+
+// Calculate the roast text bounds: wrapped lines and the Y coordinate where
+// the roast block ends (startY + lines * lineHeight).
+export function calculateRoastBounds(
+  text: string,
+  measureFn: (text: string) => number,
+  maxWidth: number,
+  startY: number,
+  maxLines: number,
+  lineHeight: number
+): { lines: string[]; endY: number } {
+  const lines = wrapTextTruncatePure(text, measureFn, maxWidth, maxLines);
+  return { lines, endY: startY + lines.length * lineHeight };
+}
+
+// Calculate the sentence box start Y and the maximum available height,
+// given the roast end Y, the gap before the sentence box, the footer Y,
+// and the safe gap that must separate the sentence box from the footer.
+export function calculateSentenceBoxBounds(
+  roastEndY: number,
+  gapBeforeSentence: number,
+  footerY: number,
+  safeGap: number
+): { boxStartY: number; maxBoxHeight: number } {
+  const boxStartY = roastEndY + gapBeforeSentence;
+  const maxBoxBottom = footerY - safeGap;
+  const maxBoxHeight = Math.max(0, maxBoxBottom - boxStartY);
+  return { boxStartY, maxBoxHeight };
+}
+
+// Verify that a sentence box layout fits within its bounds: the box bottom
+// (boxStartY + boxHeight) must not exceed the footer minus the safe gap, and
+// the text (boxStartY + textStartY + lines * lineHeight) must not exceed the
+// box bottom. Returns true if everything is within bounds.
+export function sentenceBoxFits(
+  layout: SentenceBoxLayout,
+  boxStartY: number,
+  footerY: number,
+  safeGap: number
+): boolean {
+  const boxBottom = boxStartY + layout.boxHeight;
+  if (boxBottom > footerY - safeGap) return false;
+  const textBottom = boxStartY + layout.textStartY + layout.lines.length * layout.lineHeight;
+  if (textBottom > boxBottom) return false;
+  return true;
+}
+
 // Wrap text into lines using a measure function (for canvas-independent testing).
 // Returns the lines array. Truncates with ellipsis if exceeding maxLines.
 export function wrapTextTruncatePure(text, measureFn, maxWidth, maxLines) {
