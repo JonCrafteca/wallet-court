@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Share2, Loader2, Image as ImageIcon, AlertTriangle } from "lucide-react";
+import { Download, Share2, Loader2, Image as ImageIcon, AlertTriangle, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   drawCourtReceipt,
   downloadCourtReceipt,
   getCourtReceiptBlob,
   canShareFiles,
+  isMobileDevice,
   RECEIPT_SIZES,
 } from "@/lib/courtReceipt";
 import { buildCaseUrl, xIntentUrl } from "@/lib/courtDispatch";
@@ -21,11 +22,12 @@ export default function CourtReceiptPreview({ trial }) {
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState("");
   const [shareNotice, setShareNotice] = useState("");
+  const [popupBlocked, setPopupBlocked] = useState(false);
+  const [pendingXUrl, setPendingXUrl] = useState(null);
 
   const caseUrl = buildCaseUrl(trial.public_slug);
   const size = RECEIPT_SIZES[orientation];
 
-  // Render preview
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -37,7 +39,7 @@ export default function CourtReceiptPreview({ trial }) {
         canvas.width = size.w;
         canvas.height = size.h;
         await drawCourtReceipt(canvas, trial, orientation);
-      } catch (e) {
+      } catch {
         if (alive) setError("Could not render the receipt preview. Try again.");
       } finally {
         if (alive) setRendering(false);
@@ -77,50 +79,89 @@ export default function CourtReceiptPreview({ trial }) {
     setSharing(true);
     setError("");
     setShareNotice("");
-    try {
-      const postText = buildVerdictSharePost(trial.verdict_name, trial.severity_score, caseUrl);
-      const truncated = truncateForX(postText, X_CHAR_LIMIT);
+    setPopupBlocked(false);
+    setPendingXUrl(null);
 
-      if (canShareFiles()) {
-        // Mobile: share the PNG + text + URL via Web Share
-        try {
-          const blob = await getCourtReceiptBlob(trial, orientation);
-          const file = new File([blob], `wallet-court-receipt-${trial.public_slug}-${orientation}.png`, { type: "image/png" });
-          await navigator.share({
-            title: "Wallet Court Verdict",
-            text: truncated,
-            url: caseUrl,
-            files: [file],
-          });
-          trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "web_share" });
-          setShareNotice("Share sheet opened.");
-        } catch (e) {
-          if (e?.name === "AbortError") {
-            // user cancelled — not an error
-          } else {
-            // Fallback to desktop flow
-            await desktopFallback(truncated);
-          }
+    const postText = buildVerdictSharePost(trial.verdict_name, trial.severity_score, caseUrl);
+    const truncated = truncateForX(postText, X_CHAR_LIMIT);
+    const xUrl = xIntentUrl(truncated);
+
+    // Desktop browsers: ALWAYS use download + X Web Intent, even if
+    // navigator.share exists (macOS Chrome/Safari have it but open a generic
+    // share sheet without X). Open X synchronously from the user click
+    // BEFORE any async operation so popup blockers don't block it.
+    if (!isMobileDevice()) {
+      // Open X FIRST (synchronous from click — avoids popup blocker)
+      const xWin = window.open(xUrl, "_blank", "noopener,noreferrer");
+
+      try {
+        await downloadCourtReceipt(trial, orientation);
+        trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
+        trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
+
+        if (!xWin || xWin.closed) {
+          // Popup was blocked — show fallback link, keep downloaded receipt
+          setPopupBlocked(true);
+          setPendingXUrl(xUrl);
+          setShareNotice("Receipt downloaded. X was blocked by your browser — click below to open the composer.");
+        } else {
+          setShareNotice("Receipt downloaded. X opened—attach the downloaded receipt and post.");
         }
+      } catch {
+        setError("Could not download the receipt. Try again.");
+      } finally {
+        setSharing(false);
+      }
+      return;
+    }
+
+    // Mobile browsers: use Web Share with the PNG file only when genuinely
+    // mobile/touch + navigator.share + navigator.canShare({ files }).
+    try {
+      const blob = await getCourtReceiptBlob(trial, orientation);
+      const file = new File(
+        [blob],
+        `wallet-court-receipt-${trial.public_slug}-${orientation}.png`,
+        { type: "image/png" }
+      );
+
+      // Verify file sharing is actually supported before calling share
+      if (canShareFiles() && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: "Wallet Court Verdict",
+          text: truncated,
+          url: caseUrl,
+          files: [file],
+        });
+        trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "web_share" });
+        setShareNotice("Share sheet opened.");
       } else {
-        // Desktop: download + open X composer
-        await desktopFallback(truncated);
+        // File sharing not actually supported — fallback to download + X
+        await downloadCourtReceipt(trial, orientation);
+        trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
+        window.open(xUrl, "_blank", "noopener,noreferrer");
+        trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
+        setShareNotice("Receipt downloaded. X opened—attach the downloaded receipt and post.");
       }
     } catch (e) {
-      setError("Could not share the receipt. Try again.");
+      if (e?.name === "AbortError") {
+        // User cancelled — not an error, no alarming message
+        setShareNotice("");
+      } else {
+        // Other error (rejected, timeout, unsupported) — fallback
+        try {
+          await downloadCourtReceipt(trial, orientation);
+          trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
+          window.open(xUrl, "_blank", "noopener,noreferrer");
+          trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
+          setShareNotice("Receipt downloaded. X opened—attach the downloaded receipt and post.");
+        } catch {
+          setError("Could not share the receipt. Try downloading instead.");
+        }
+      }
     } finally {
       setSharing(false);
     }
-  }
-
-  async function desktopFallback(postText) {
-    // Download the receipt first
-    await downloadCourtReceipt(trial, orientation);
-    trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
-    // Open X composer with the post text
-    window.open(xIntentUrl(postText), "_blank", "noopener,noreferrer");
-    trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
-    setShareNotice("Receipt downloaded. X composer opened — attach the receipt image and post.");
   }
 
   return (
@@ -183,6 +224,23 @@ export default function CourtReceiptPreview({ trial }) {
       {shareNotice && (
         <div className="mb-3 border-2 border-court-chart bg-court-uv p-3">
           <p className="font-mono text-sm text-court-ice leading-relaxed">{shareNotice}</p>
+        </div>
+      )}
+
+      {/* Popup blocked fallback */}
+      {popupBlocked && pendingXUrl && (
+        <div className="mb-3 border-2 border-court-chart bg-court-navy p-3">
+          <p className="font-mono text-sm text-court-ice leading-relaxed mb-2">
+            Your browser blocked the X composer popup.
+          </p>
+          <a
+            href={pendingXUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.08em] text-sm px-4 py-2 border-2 border-court-navy hover:brightness-105 transition-all"
+          >
+            <ExternalLink className="h-4 w-4" /> Open X Composer
+          </a>
         </div>
       )}
 

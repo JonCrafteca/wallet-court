@@ -61,6 +61,44 @@ export function needsDemoMark(trial) {
   return trial?.data_mode === "demo";
 }
 
+// Compact case reference for receipt images: "CASE 21FGLZYEAD8M".
+// The X post carries the clickable URL; the image shows this compact ref.
+export function compactCaseRef(slug) {
+  if (!slug) return "";
+  const id = String(slug).replace(/^case-/, "").toUpperCase();
+  return `CASE ${id}`;
+}
+
+// Layout constants for the landscape receipt (1200×675). Used by tests to
+// verify sentencing/footer separation and that all elements fit within
+// the canvas. The canvas renderer in src/lib/courtReceipt.js uses the same
+// values.
+export const LANDSCAPE_LAYOUT = {
+  header: { y: 0, h: 80 },
+  stamp: { y: 140 },
+  verdict: { y: 240 },
+  network: { y: 290 },
+  stats: { y: 325, h: 70 },
+  roastLabel: { y: 420 },
+  roast: { y: 444, maxLines: 2, lineH: 26 },
+  sentencing: { y: 508, h: 72 },
+  footer: { y: 595, h: 80 },
+};
+
+// Layout constants for the portrait receipt (1080×1350). Used by tests to
+// verify content fills the canvas without a giant unused region.
+export const PORTRAIT_LAYOUT = {
+  header: { y: 0, h: 120 },
+  stamp: { y: 200 },
+  verdict: { y: 350 },
+  network: { y: 430 },
+  stats: { y: 480, h: 100 },
+  roastLabel: { y: 620 },
+  roast: { y: 656, maxLines: 4, lineH: 44 },
+  sentencing: { y: 870, h: 300 },
+  footer: { y: 1230, h: 120 },
+};
+
 // Wrap text into lines using a measure function (for canvas-independent testing).
 // Returns the lines array. Truncates with ellipsis if exceeding maxLines.
 export function wrapTextTruncatePure(text, measureFn, maxWidth, maxLines) {

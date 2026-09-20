@@ -1,14 +1,19 @@
 // Wallet Court — create a summons for a case. Auth is optional (anonymous
 // users may create summons). Validates the case exists and has a verdict
-// outcome, normalizes the X handle, enforces rate limits, prevents duplicates,
-// and returns a sanitized summons record. Never auto-posts or sends DMs.
+// outcome, normalizes the X handle, enforces rate limits, enforces the
+// single-active-intended-defendant rule, generates a management capability
+// token for anonymous creators, and returns a sanitized summons record.
+// Never auto-posts or sends DMs.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import {
   normalizeXHandleInput,
   generateSummonsId,
-  isDuplicateSummons,
   checkSummonsRateLimit,
   sanitizeSummonsPublic,
+  hasActiveIntendedDefendant,
+  findActiveIntendedDefendant,
+  generateManagementToken,
+  hashManagementToken,
   SUMMONS_RATE_LIMIT_WINDOW_MS,
 } from "../../shared/summons.ts";
 import { findCaseBySlug } from "../../shared/caseUtils.ts";
@@ -49,17 +54,21 @@ export default async function (req) {
       normalizedHandle = result.normalized;
     }
 
-    // Check for duplicate summons (same case + same handle)
+    // Single active intended-defendant rule: one per case.
+    // If a handle is provided, check for any existing active intended-defendant
+    // summons on this case (any handle, not just the same one).
     if (normalizedHandle) {
-      const existing = await base44.asServiceRole.entities.Summons.filter(
-        { case_slug, normalized_target_handle: normalizedHandle, abuse_status: "clean" },
+      const existingSummons = await base44.asServiceRole.entities.Summons.filter(
+        { case_slug, abuse_status: "clean" },
         "-created_at",
-        5
+        10
       );
-      if (isDuplicateSummons(existing, normalizedHandle)) {
+      const activeSummons = findActiveIntendedDefendant(existingSummons);
+      if (activeSummons) {
         return Response.json({
-          error: "A summons for this handle and case already exists.",
+          error: "A defendant has already been named for this case.",
           duplicate: true,
+          summons: sanitizeSummonsPublic(activeSummons),
         }, { status: 409 });
       }
     }
@@ -77,6 +86,14 @@ export default async function (req) {
       return Response.json({ error: rateLimit.error }, { status: 429 });
     }
 
+    // Generate management capability token for anonymous creators
+    let managementToken = null;
+    let managementTokenHash = null;
+    if (!user) {
+      managementToken = generateManagementToken();
+      managementTokenHash = await hashManagementToken(managementToken);
+    }
+
     // Create the summons
     const nowIso = new Date().toISOString();
     const summonsId = generateSummonsId();
@@ -88,15 +105,22 @@ export default async function (req) {
       normalized_target_handle: normalizedHandle,
       display_handle: displayHandle,
       creator_user_id: user?.id || null,
+      management_token_hash: managementTokenHash,
       status,
       share_method: "none",
       confirmed_post_url: null,
       abuse_status: "clean",
+      handle_history_json: null,
       created_at: nowIso,
       updated_at: nowIso,
     });
 
-    return Response.json({ summons: sanitizeSummonsPublic(summons) });
+    const response = { summons: sanitizeSummonsPublic(summons) };
+    // Return the raw management token exactly once for anonymous creators
+    if (managementToken) {
+      response.management_token = managementToken;
+    }
+    return Response.json(response);
   } catch (error) {
     return Response.json({ error: error.message || "Could not create summons." }, { status: 500 });
   }

@@ -10,6 +10,15 @@
 // - Public responses never expose creator_user_id, abuse_status, or internal IDs.
 
 import { sanitizeHandle, validateHandle } from "./handles.ts";
+import {
+  generateManagementToken,
+  hashManagementToken,
+  verifyManagementToken,
+  checkCapabilityRateLimit,
+} from "./summonsCapability.ts";
+
+// Re-export capability functions for backend functions that import from summons.ts
+export { generateManagementToken, hashManagementToken, verifyManagementToken, checkCapabilityRateLimit };
 
 export const SUMMONS_ID_PREFIX = "smn_";
 export const SUMMONS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -246,4 +255,43 @@ export function isValidStatusTransition(currentStatus, newStatus) {
   };
   const allowed = transitions[currentStatus] || [];
   return allowed.includes(newStatus);
+}
+
+// Check if a case already has an active intended-defendant summons.
+// "Active" = not blocked by admin and has a non-null normalized_target_handle.
+// A case may have at most one active intended-defendant summons.
+export function hasActiveIntendedDefendant(existing: any[]): boolean {
+  if (!existing || existing.length === 0) return false;
+  return existing.some(
+    (s) => s.normalized_target_handle && s.abuse_status !== "blocked"
+  );
+}
+
+// Find the active intended-defendant summons from a list (or null).
+export function findActiveIntendedDefendant(existing: any[]): any | null {
+  if (!existing || existing.length === 0) return null;
+  return existing.find(
+    (s) => s.normalized_target_handle && s.abuse_status !== "blocked"
+  ) || null;
+}
+
+// Check if a summons's handle can be edited (must not be served).
+export function canEditHandle(summons: any): boolean {
+  return !!summons && summons.status !== "summons_served_self_reported";
+}
+
+// Append a history entry to the handle_history_json field.
+// Returns the new JSON string. Entries are immutable once recorded.
+export function appendHandleHistory(
+  historyJson: string | null,
+  entry: { action: string; from?: string | null; to?: string | null; reason?: string | null; at: string; by: string }
+): string {
+  let history: any[] = [];
+  try {
+    history = historyJson ? JSON.parse(historyJson) : [];
+  } catch {
+    history = [];
+  }
+  history.push(entry);
+  return JSON.stringify(history);
 }

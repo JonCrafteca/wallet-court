@@ -14,6 +14,10 @@ import {
   isDuplicateSummons,
   checkSummonsRateLimit,
   isValidStatusTransition,
+  hasActiveIntendedDefendant,
+  findActiveIntendedDefendant,
+  canEditHandle,
+  appendHandleHistory,
   SUMMONS_ID_PREFIX,
   SUMMONS_RATE_LIMIT_MAX_USER,
   SUMMONS_RATE_LIMIT_MAX_HANDLE,
@@ -394,5 +398,172 @@ describe("summons — status transitions", () => {
 
   it("blocks anonymous_defendant → summons_served_self_reported (must share first)", () => {
     expect(isValidStatusTransition("anonymous_defendant", "summons_served_self_reported")).toBe(false);
+  });
+});
+
+describe("summons — single active intended defendant per case", () => {
+  it("returns false when no summons exist", () => {
+    expect(hasActiveIntendedDefendant([])).toBe(false);
+    expect(hasActiveIntendedDefendant(null)).toBe(false);
+  });
+
+  it("returns false when only anonymous defendant summons exist (no handle)", () => {
+    const existing = [
+      { normalized_target_handle: null, abuse_status: "clean" },
+    ];
+    expect(hasActiveIntendedDefendant(existing)).toBe(false);
+  });
+
+  it("returns true when an active intended defendant exists", () => {
+    const existing = [
+      { normalized_target_handle: "vitalik", abuse_status: "clean" },
+    ];
+    expect(hasActiveIntendedDefendant(existing)).toBe(true);
+  });
+
+  it("returns true even when the active summons has a different handle", () => {
+    const existing = [
+      { normalized_target_handle: "satoshi", abuse_status: "clean" },
+    ];
+    // A case may have at most one active intended-defendant summons —
+    // any handle, not just the same one.
+    expect(hasActiveIntendedDefendant(existing)).toBe(true);
+  });
+
+  it("returns false when the only intended defendant is blocked", () => {
+    const existing = [
+      { normalized_target_handle: "vitalik", abuse_status: "blocked" },
+    ];
+    expect(hasActiveIntendedDefendant(existing)).toBe(false);
+  });
+
+  it("returns true when one is active and one is blocked", () => {
+    const existing = [
+      { normalized_target_handle: "vitalik", abuse_status: "blocked" },
+      { normalized_target_handle: "satoshi", abuse_status: "clean" },
+    ];
+    expect(hasActiveIntendedDefendant(existing)).toBe(true);
+  });
+
+  it("findActiveIntendedDefendant returns the active summons", () => {
+    const existing = [
+      { normalized_target_handle: "vitalik", abuse_status: "blocked" },
+      { normalized_target_handle: "satoshi", abuse_status: "clean", summons_id: "smn_abc" },
+    ];
+    const active = findActiveIntendedDefendant(existing);
+    expect(active).not.toBeNull();
+    expect(active.summons_id).toBe("smn_abc");
+  });
+
+  it("findActiveIntendedDefendant returns null when none active", () => {
+    const existing = [
+      { normalized_target_handle: "vitalik", abuse_status: "blocked" },
+    ];
+    expect(findActiveIntendedDefendant(existing)).toBeNull();
+  });
+
+  it("one case never has multiple active intended defendants", () => {
+    // The createSummons function checks hasActiveIntendedDefendant before
+    // creating. If an active one exists, it returns 409. This test verifies
+    // the helper correctly detects the existing active summons.
+    const existing = [
+      { normalized_target_handle: "vitalik", abuse_status: "clean" },
+    ];
+    // A new creation attempt should be blocked because there's already an active one
+    expect(hasActiveIntendedDefendant(existing)).toBe(true);
+  });
+});
+
+describe("summons — handle editing", () => {
+  it("canEditHandle returns true for non-served summons", () => {
+    expect(canEditHandle({ status: "summons_ready" })).toBe(true);
+    expect(canEditHandle({ status: "share_opened" })).toBe(true);
+    expect(canEditHandle({ status: "anonymous_defendant" })).toBe(true);
+  });
+
+  it("canEditHandle returns false for served summons", () => {
+    expect(canEditHandle({ status: "summons_served_self_reported" })).toBe(false);
+  });
+
+  it("canEditHandle returns false for null summons", () => {
+    expect(canEditHandle(null)).toBe(false);
+  });
+
+  it("appendHandleHistory creates a new history array from null", () => {
+    const entry = { action: "handle_changed", from: "old", to: "new", at: "2024-01-01", by: "user1" };
+    const result = appendHandleHistory(null, entry);
+    const parsed = JSON.parse(result);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].action).toBe("handle_changed");
+    expect(parsed[0].from).toBe("old");
+    expect(parsed[0].to).toBe("new");
+  });
+
+  it("appendHandleHistory appends to existing history", () => {
+    const existing = JSON.stringify([{ action: "handle_changed", from: null, to: "old", at: "2024-01-01", by: "user1" }]);
+    const entry = { action: "handle_changed", from: "old", to: "new", at: "2024-01-02", by: "user1" };
+    const result = appendHandleHistory(existing, entry);
+    const parsed = JSON.parse(result);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[1].to).toBe("new");
+  });
+
+  it("appendHandleHistory handles malformed JSON gracefully", () => {
+    const entry = { action: "deactivated", from: "old", to: null, reason: "abuse", at: "2024-01-01", by: "admin" };
+    const result = appendHandleHistory("not json", entry);
+    const parsed = JSON.parse(result);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].action).toBe("deactivated");
+  });
+
+  it("appendHandleHistory records deactivation entries", () => {
+    const entry = { action: "deactivated", from: "vitalik", to: null, reason: "incorrect defendant", at: "2024-01-01", by: "admin1" };
+    const result = appendHandleHistory(null, entry);
+    const parsed = JSON.parse(result);
+    expect(parsed[0].action).toBe("deactivated");
+    expect(parsed[0].reason).toBe("incorrect defendant");
+  });
+});
+
+describe("summons — verified ownership overrides intended defendant", () => {
+  it("verified wallet owner overrides summons_served state", () => {
+    const r = resolveIdentityState({
+      summons: { status: "summons_served_self_reported", display_handle: "vitalik" },
+      claimStatus: { claimed: true },
+      defenseStatus: null,
+    });
+    expect(r.state).toBe("verified_wallet_owner");
+    // The unverified intended handle is NOT presented as the owner
+    expect(r.state).not.toBe("summons_served");
+  });
+
+  it("official defense filed overrides summons and claim", () => {
+    const r = resolveIdentityState({
+      summons: { status: "summons_ready", display_handle: "vitalik" },
+      claimStatus: { claimed: true, official_defense: { text: "I object" } },
+      defenseStatus: null,
+    });
+    expect(r.state).toBe("official_defense_filed");
+  });
+
+  it("unverified intended handle never grants ownership", () => {
+    const r = resolveIdentityState({
+      summons: { status: "summons_ready", display_handle: "vitalik" },
+      claimStatus: null,
+      defenseStatus: null,
+    });
+    expect(r.state).toBe("summons_ready");
+    expect(r.state).not.toBe("verified_wallet_owner");
+  });
+
+  it("unverified intended handle is not presented as owner even when served", () => {
+    const r = resolveIdentityState({
+      summons: { status: "summons_served_self_reported", display_handle: "vitalik" },
+      claimStatus: null,
+      defenseStatus: null,
+    });
+    // The state is "summons_served" (self-reported), NOT "verified_wallet_owner"
+    expect(r.state).toBe("summons_served");
+    expect(r.label).toContain("Self-reported");
   });
 });

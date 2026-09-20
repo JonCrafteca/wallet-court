@@ -22,6 +22,10 @@
       "type": "string",
       "description": "Base44 user id of the authenticated creator. Null for anonymous submissions. Set server-side from session auth \u2014 never trusted from a client-supplied value."
     },
+    "management_token_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of the anonymous management capability token. Null for authenticated-created summons. The raw token is never stored \u2014 only returned once at creation time to the creating browser. Allows anonymous creators to update their own summons status and edit the handle without login."
+    },
     "status": {
       "type": "string",
       "enum": [
@@ -55,7 +59,11 @@
         "blocked"
       ],
       "default": "clean",
-      "description": "Moderation/abuse status. Internal-only; never exposed publicly."
+      "description": "Moderation/abuse status. blocked = deactivated by admin. Internal-only; never exposed publicly."
+    },
+    "handle_history_json": {
+      "type": "string",
+      "description": "JSON array of immutable history entries recording handle changes and deactivations. Admin-only; never exposed publicly or in My Court. Each entry: { action, from, to, reason, at, by }."
     },
     "created_at": {
       "type": "string",

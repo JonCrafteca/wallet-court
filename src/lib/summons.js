@@ -10,12 +10,21 @@ export async function createSummons({ case_slug, display_handle }) {
   return res?.data;
 }
 
-export async function updateSummonsStatus({ summons_id, status, share_method, confirmed_post_url }) {
+export async function updateSummonsStatus({
+  summons_id,
+  status,
+  share_method,
+  confirmed_post_url,
+  display_handle,
+  management_token,
+}) {
   const res = await base44.functions.invoke("updateSummonsStatus", {
     summons_id,
-    status,
+    status: status || null,
     share_method: share_method || null,
     confirmed_post_url: confirmed_post_url || null,
+    display_handle: display_handle || null,
+    management_token: management_token || null,
   });
   return res?.data;
 }

@@ -3,6 +3,7 @@
 // page — so the card has its own controlled Electric Court TV layout.
 
 import { displayAddressShort } from "@/lib/wallet";
+import { drawStampCanvas } from "@/lib/notGuiltyStamp";
 
 const COLORS = {
   cobalt: "#2457FF",
@@ -111,7 +112,6 @@ export async function drawVerdictCard(canvas, trial) {
 
   const isLive = trial.data_mode === "live";
   const isOnePump = trial.verdict_code === "one_pump_chump";
-  const competent = trial.verdict_code === "suspiciously_competent";
 
   // Top brand bar
   ctx.fillStyle = COLORS.navy;
@@ -158,23 +158,9 @@ export async function drawVerdictCard(canvas, trial) {
   ctx.fillText(badgeText, W - bw / 2 - 40 * s, 47 * s);
   ctx.textAlign = "left";
 
-  // Stamp
-  const stampText = competent ? "CASE DISMISSED" : "GUILTY";
-  ctx.save();
-  ctx.translate(150 * s, 190 * s);
-  ctx.rotate(-0.1);
-  ctx.font = `700 ${30 * s}px Anton, sans-serif`;
-  const sw = ctx.measureText(stampText).width + 48 * s;
-  ctx.strokeStyle = competent ? COLORS.chart : COLORS.red;
-  ctx.lineWidth = 4 * s;
-  ctx.strokeRect(-sw / 2, -22 * s, sw, 44 * s);
-  ctx.fillStyle = competent ? COLORS.chart : COLORS.red;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(stampText, 0, 0);
-  ctx.restore();
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
+  // Canonical stamp (NOT GUILTY or GUILTY) — uses the shared drawStampCanvas
+  // so the treatment matches VerdictStamp and Court Receipt exactly.
+  drawStampCanvas(ctx, 150 * s, 190 * s, trial.verdict_code, s, 30);
 
   // Verdict name (largest element)
   ctx.fillStyle = COLORS.ice;
