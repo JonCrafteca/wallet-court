@@ -28,7 +28,10 @@ export default function CaseDismissed({ trial, onReset }) {
         >
           Case Dismissed
         </motion.div>
-        <p className="mt-6 font-display uppercase tracking-[0.16em] text-court-ice text-lg sm:text-2xl">
+        <p className="mt-6 font-display uppercase tracking-[0.16em] text-court-chart text-xl sm:text-3xl">
+          Insufficient Evidence
+        </p>
+        <p className="mt-3 font-mono text-sm text-court-mute leading-relaxed">
           No Receipts. No Conviction.
         </p>
       </div>

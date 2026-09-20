@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 
 export default function VerdictStamp({ trial }) {
   const competent = trial.verdict_code === "suspiciously_competent";
-  const text = competent ? "Case Dismissed" : "Guilty";
+  const text = competent ? "Not Guilty" : "Guilty";
   const tone = competent
     ? "border-court-chart text-court-chart"
     : "border-court-red text-court-red";

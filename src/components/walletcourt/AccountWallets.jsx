@@ -15,7 +15,7 @@ export default function AccountWallets({ wallets }) {
         <div className="border-2 border-court-ice bg-court-navy p-6 text-center">
           <ShieldCheck className="h-8 w-8 text-court-mute mx-auto mb-3" />
           <p className="font-mono text-sm text-court-ice">
-            No verified wallets yet. Claim a wallet from any live case to start its Rap Sheet.
+            No verified wallets yet. Verify ownership from any live case to start a Rap Sheet.
           </p>
         </div>
       </section>

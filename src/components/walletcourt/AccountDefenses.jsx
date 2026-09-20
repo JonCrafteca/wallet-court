@@ -16,7 +16,7 @@ export default function AccountDefenses({ defenses }) {
         <div className="border-2 border-court-ice bg-court-navy p-6 text-center">
           <FileText className="h-8 w-8 text-court-mute mx-auto mb-3" />
           <p className="font-mono text-sm text-court-ice">
-            No official defenses filed. Claim a wallet and submit a defense from its Rap Sheet.
+            No official defenses filed. Verify ownership of a wallet and submit a defense from its Rap Sheet.
           </p>
         </div>
       </section>

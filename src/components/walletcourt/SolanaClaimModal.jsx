@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
-import { BrowserProvider, JsonRpcSigner } from "ethers";
 import {
   Dialog,
   DialogContent,
@@ -20,10 +18,9 @@ import {
 import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
-import { reownReady } from "@/lib/reown";
 import { createClaimNonce, verifyClaim } from "@/lib/walletClaim";
 import { trackClaim, CLAIM_EVENTS } from "@/lib/claimAnalytics";
-import SolanaClaimModal from "./SolanaClaimModal";
+import { connectSolana, signSolanaMessage, isSolanaWalletAvailable } from "@/lib/solanaWallet";
 
 const STEPS = ["signin", "connect", "sign", "claimed"];
 
@@ -31,14 +28,11 @@ function shortOf(addr) {
   return addr && addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr || "";
 }
 
-// EVM inner component — uses Reown AppKit hooks, only mounted when Reown is
-// configured. Solana cases bypass this entirely via SolanaClaimModal.
-function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
+// Solana ownership verification modal. Uses direct browser wallet injection
+// (window.solana — Phantom, Solflare, etc.) instead of Reown AppKit, which is
+// EVM-only. The backend verifies the Ed25519 signature with crypto.subtle.
+export default function SolanaClaimModal({ trial, open, onOpenChange, onClaimed }) {
   const { isAuthenticated } = useAuth();
-  const { open: openAppKit } = useAppKit();
-  const { address, isConnected } = useAppKitAccount();
-  const { walletProvider } = useAppKitProvider("eip155");
-
   const [step, setStep] = useState("connect");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -46,8 +40,7 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
   const [result, setResult] = useState(null);
 
   const caseShort = trial.address_short || shortOf(trial.normalized_wallet_address || trial.wallet_address);
-  const connectedShort = address ? shortOf(address).toLowerCase() : "";
-  const matchesCase = !!(caseShort && connectedShort && connectedShort === caseShort.toLowerCase());
+  const walletAvailable = isSolanaWalletAvailable();
 
   useEffect(() => {
     if (open) {
@@ -61,19 +54,18 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open || !isAuthenticated || step !== "connect") return;
-    if (isConnected && address && matchesCase) {
-      trackClaim(CLAIM_EVENTS.WALLET_CONNECTED, { network: trial.network });
-      requestNonce();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, address, open, step]);
-
-  async function requestNonce() {
+  async function connectAndRequestNonce() {
     setBusy(true);
     setError("");
     try {
+      const address = await connectSolana();
+      const normalized = trial.normalized_wallet_address || trial.wallet_address;
+      if (address !== normalized) {
+        setError(`Wrong wallet. This case belongs to ${caseShort}. Switch wallets to continue.`);
+        setBusy(false);
+        return;
+      }
+      trackClaim(CLAIM_EVENTS.WALLET_CONNECTED, { network: trial.network });
       const data = await createClaimNonce(trial.public_slug);
       if (data?.error) {
         setError(data.error);
@@ -84,17 +76,13 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
       setStep("sign");
       trackClaim(CLAIM_EVENTS.SIGNATURE_REQUESTED, { network: trial.network });
     } catch (e) {
-      setError(e?.message || "Could not start verification.");
+      if (e?.code === 4001 || e?.message?.includes("reject")) {
+        setError("Connection was cancelled. Your case is still here — try again when ready.");
+      } else {
+        setError(e?.message || "Could not connect to Solana wallet.");
+      }
     } finally {
       setBusy(false);
-    }
-  }
-
-  function connectWallet() {
-    try {
-      openAppKit();
-    } catch {
-      setError("Wallet connection is not available right now.");
     }
   }
 
@@ -102,12 +90,9 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
     setBusy(true);
     setError("");
     try {
-      if (!walletProvider || !address) throw new Error("Wallet not connected.");
-      const provider = new BrowserProvider(walletProvider);
-      const signer = new JsonRpcSigner(provider, address);
       let signature;
       try {
-        signature = await signer.signMessage(message);
+        signature = await signSolanaMessage(message);
       } catch {
         setError("Signing was cancelled. Your case is still here — try again when ready.");
         setBusy(false);
@@ -132,8 +117,6 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
     }
   }
 
-  const wrongDefendant = isConnected && address && !matchesCase;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-court-navy text-court-ice border-2 border-court-ice max-w-lg max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden">
@@ -142,7 +125,7 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
             Verify Ownership
           </DialogTitle>
           <DialogDescription className="font-mono text-sm text-court-mute">
-            Sign a free message to prove this wallet is yours.
+            Sign a free message to prove this Solana wallet is yours.
           </DialogDescription>
         </DialogHeader>
 
@@ -181,24 +164,24 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
           {step === "connect" && (
             <div className="space-y-3">
               <p className="font-mono text-sm text-court-ice leading-relaxed">
-                Connect the EVM wallet that matches this case:{" "}
+                Connect the Solana wallet that matches this case:{" "}
                 <span className="text-court-chart">{trial.network} · {caseShort}</span>
               </p>
-              {wrongDefendant && (
+              {!walletAvailable && (
                 <div role="alert" className="border-2 border-court-red bg-court-navy p-3 space-y-1">
-                  <p className="font-display uppercase tracking-[0.06em] text-court-red text-base">Wrong Defendant</p>
+                  <p className="font-display uppercase tracking-[0.06em] text-court-red text-base">No Solana Wallet Found</p>
                   <p className="font-mono text-sm text-court-ice leading-relaxed">
-                    You connected <span className="text-court-chart">{shortOf(address)}</span>, but this case belongs to <span className="text-court-chart">{caseShort}</span>. Switch wallets to continue.
+                    Install Phantom or another Solana wallet extension, then refresh this page.
                   </p>
                 </div>
               )}
               <button
                 type="button"
-                onClick={connectWallet}
-                disabled={busy}
+                onClick={connectAndRequestNonce}
+                disabled={busy || !walletAvailable}
                 className="w-full inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.1em] text-base px-4 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:brightness-105 transition-all disabled:opacity-60"
               >
-                <WalletIcon className="h-5 w-5 text-court-navy" /> {isConnected ? "Switch Wallet" : "Connect the Accused"}
+                <WalletIcon className="h-5 w-5 text-court-navy" /> Connect Solana Wallet
               </button>
               {busy && <p className="font-mono text-sm text-court-mute">Requesting verification session…</p>}
             </div>
@@ -249,41 +232,5 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function SetupDisabledDialog({ trial, open, onOpenChange }) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-court-navy text-court-ice border-2 border-court-ice max-w-lg p-0 gap-0 flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0 px-5 pt-5 pb-4 border-b-2 border-court-ice">
-          <DialogTitle className="font-display uppercase tracking-[0.06em] text-court-ice text-2xl">
-            Verify Ownership
-          </DialogTitle>
-        </DialogHeader>
-        <div className="px-5 py-5">
-          <div className="border-2 border-court-red bg-court-navy p-4 font-mono text-sm text-court-ice leading-relaxed">
-            <p className="text-court-red font-display uppercase tracking-[0.06em] mb-1">Wallet Verification Temporarily Unavailable</p>
-            <p>
-              Wallet verification is temporarily unavailable. Please try again later. The rest of Wallet Court still works.
-            </p>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export default function ClaimModal({ trial, open, onOpenChange, onClaimed }) {
-  // Solana uses direct browser wallet injection (window.solana), not Reown.
-  if (trial.network === "solana") {
-    return <SolanaClaimModal trial={trial} open={open} onOpenChange={onOpenChange} onClaimed={onClaimed} />;
-  }
-  // EVM uses Reown AppKit.
-  if (!reownReady) {
-    return <SetupDisabledDialog trial={trial} open={open} onOpenChange={onOpenChange} />;
-  }
-  return (
-    <ClaimModalInner trial={trial} open={open} onOpenChange={onOpenChange} onClaimed={onClaimed} />
   );
 }

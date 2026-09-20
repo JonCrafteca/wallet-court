@@ -17,6 +17,7 @@ export default function AccountTrials({ trials }) {
         <div className="border-2 border-court-ice bg-court-navy p-6 text-center">
           <Gavel className="h-8 w-8 text-court-mute mx-auto mb-3" />
           <p className="font-mono text-sm text-court-ice mb-4">No cases on the docket yet.</p>
+          <p className="font-mono text-xs text-court-mute mb-4">Anyone can put a public wallet on trial — no ownership required.</p>
           <Link
             to="/"
             className="inline-flex items-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.08em] text-sm px-4 py-2.5 border-2 border-court-navy hover:brightness-105 transition-all"
