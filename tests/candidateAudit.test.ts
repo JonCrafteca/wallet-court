@@ -80,7 +80,9 @@ describe("Candidate Discovery — source audit", () => {
     expect(f).toBeTruthy();
     const content = stripComments(fs.readFileSync(f!, "utf8"));
     const authIdx = content.indexOf('base44.auth.me()');
-    const firstQueryIdx = content.indexOf('asServiceRole');
+    // Delegates to store modules (getCandidateById, updateCandidateStatus) which use asServiceRole.
+    // Auth must appear before the first store CALL (not import).
+    const firstQueryIdx = content.indexOf('getCandidateById(base44');
     expect(authIdx).toBeGreaterThan(-1);
     expect(firstQueryIdx).toBeGreaterThan(-1);
     expect(authIdx).toBeLessThan(firstQueryIdx);
