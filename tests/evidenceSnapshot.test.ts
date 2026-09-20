@@ -140,13 +140,13 @@ describe("Evidence Snapshot — formatting", () => {
   it("formats holding seconds as duration", () => {
     const metrics = JSON.stringify({ avg_holding_seconds: 252 });
     const snapshot = selectSnapshotMetrics(metrics, "one_pump_chump");
-    expect(snapshot[1].value).toBe("4m"); // 252s ≈ 4m
+    expect(snapshot[0].value).toBe("4m"); // 252s ≈ 4m
   });
 
   it("formats token age in days", () => {
     const metrics = JSON.stringify({ avg_token_bought_age_days: 120 });
     const snapshot = selectSnapshotMetrics(metrics, "suspiciously_competent");
-    expect(snapshot[4].value).toBe("120 days");
+    expect(snapshot[0].value).toBe("120 days");
   });
 
   it("includes optional context line for key metrics", () => {

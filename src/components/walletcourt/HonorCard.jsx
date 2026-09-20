@@ -3,6 +3,7 @@ import { ArrowRight, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { shortClassLabel } from "@/lib/walletClass";
 import { NOT_GUILTY_STYLE } from "@/lib/verdictStamp";
+import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
 
 // Honor card with canonical NOT GUILTY stamp. Uses the exact global lime
 // background, dark navy text/border, offset shadow, and rotation from
@@ -12,6 +13,7 @@ export default function HonorCard({ c, onShare }) {
   return (
     <Link
       to={`/case/${c.slug}`}
+      onClick={() => trackShare(SHARE_EVENTS.HALL_HONOR_CASE_OPENED, { case_slug: c.slug })}
       className="group flex flex-col h-full border-2 border-court-chart bg-court-navy p-5 hover:bg-court-uv transition-colors"
     >
       <div className="flex items-center justify-between mb-3">

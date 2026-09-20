@@ -129,10 +129,10 @@ describe("Most Severe — eligibility and ordering", () => {
 describe("Highest Confidence — eligibility and ordering", () => {
   it("includes live verdicts (guilty and not-guilty), excludes demo/dismissed/mistrial", () => {
     const records = [
-      makeTrial({ slug: "live-g", verdict_code: "one_pump_chump", confidence: 90, data_mode: "live" }),
-      makeTrial({ slug: "live-ng", verdict_code: "suspiciously_competent", confidence: 95, data_mode: "live" }),
-      makeTrial({ slug: "demo", confidence: 99, data_mode: "demo" }),
-      makeTrial({ slug: "dismissed", case_outcome: "dismissed_no_evidence", confidence: 99 }),
+      makeTrial({ slug: "live-g", verdict_code: "one_pump_chump", confidence: 90, data_mode: "live", addr: "0xg001" }),
+      makeTrial({ slug: "live-ng", verdict_code: "suspiciously_competent", confidence: 95, data_mode: "live", addr: "0xng01" }),
+      makeTrial({ slug: "demo", confidence: 99, data_mode: "demo", addr: "0xdemo1" }),
+      makeTrial({ slug: "dismissed", case_outcome: "dismissed_no_evidence", confidence: 99, addr: "0xdis01" }),
     ];
     const result = eligibleHighestConfidence(records);
     expect(result).toHaveLength(2);
@@ -153,9 +153,9 @@ describe("Highest Confidence — eligibility and ordering", () => {
 describe("Recent Cases — eligibility and ordering", () => {
   it("includes completed verdicts (live + demo), excludes dismissed/mistrial", () => {
     const records = [
-      makeTrial({ slug: "live", data_mode: "live", analyzed_at: "2026-09-19T00:00:00Z" }),
-      makeTrial({ slug: "demo", data_mode: "demo", analyzed_at: "2026-09-18T00:00:00Z" }),
-      makeTrial({ slug: "dismissed", case_outcome: "dismissed_no_evidence", analyzed_at: "2026-09-20T00:00:00Z" }),
+      makeTrial({ slug: "live", data_mode: "live", analyzed_at: "2026-09-19T00:00:00Z", addr: "0xlive1" }),
+      makeTrial({ slug: "demo", data_mode: "demo", analyzed_at: "2026-09-18T00:00:00Z", addr: "0xdemo1" }),
+      makeTrial({ slug: "dismissed", case_outcome: "dismissed_no_evidence", analyzed_at: "2026-09-20T00:00:00Z", addr: "0xdis01" }),
     ];
     const result = eligibleRecent(records);
     expect(result).toHaveLength(2);
@@ -214,8 +214,8 @@ describe("Hall of Honor — eligibility", () => {
 describe("Daily awards — cohort selection", () => {
   it("selects from previous UTC day cohort first", () => {
     const records = [
-      makeTrial({ slug: "yesterday", verdict_code: "suspiciously_competent", confidence: 85, analyzed_at: YESTERDAY, data_mode: "live" }),
-      makeTrial({ slug: "two-days", verdict_code: "suspiciously_competent", confidence: 95, analyzed_at: TWO_DAYS_AGO, data_mode: "live" }),
+      makeTrial({ slug: "yesterday", verdict_code: "suspiciously_competent", confidence: 85, analyzed_at: YESTERDAY, data_mode: "live", addr: "0xyest1" }),
+      makeTrial({ slug: "two-days", verdict_code: "suspiciously_competent", confidence: 95, analyzed_at: TWO_DAYS_AGO, data_mode: "live", addr: "0xtwod1" }),
     ];
     const bag = selectBagOfTheDay(records, NOW);
     expect(bag.winner?.public_slug).toBe("yesterday");
@@ -243,8 +243,8 @@ describe("Daily awards — cohort selection", () => {
 
   it("excludes cases from the current UTC day", () => {
     const records = [
-      makeTrial({ slug: "today", verdict_code: "suspiciously_competent", confidence: 99, analyzed_at: TODAY_MORNING, data_mode: "live" }),
-      makeTrial({ slug: "yesterday", verdict_code: "suspiciously_competent", confidence: 80, analyzed_at: YESTERDAY, data_mode: "live" }),
+      makeTrial({ slug: "today", verdict_code: "suspiciously_competent", confidence: 99, analyzed_at: TODAY_MORNING, data_mode: "live", addr: "0xtod01" }),
+      makeTrial({ slug: "yesterday", verdict_code: "suspiciously_competent", confidence: 80, analyzed_at: YESTERDAY, data_mode: "live", addr: "0xyest1" }),
     ];
     const bag = selectBagOfTheDay(records, NOW);
     expect(bag.winner?.public_slug).toBe("yesterday");
