@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { shortClassLabel } from "@/lib/walletClass";
+import { shortClassLabel, hasMeaningfulClass } from "@/lib/walletClass";
 import { NOT_GUILTY_STYLE } from "@/lib/verdictStamp";
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
 
@@ -27,9 +27,11 @@ export default function HonorCard({ c, onShare }) {
         >
           {NOT_GUILTY_STYLE.label}
         </span>
-        <span className="font-mono text-xs uppercase tracking-[0.1em] text-court-chart border-2 border-court-chart/60 px-2 py-0.5">
-          {shortClassLabel(c.wallet_class)}
-        </span>
+        {hasMeaningfulClass(c.wallet_class) && (
+          <span className="font-mono text-xs uppercase tracking-[0.1em] text-court-chart border-2 border-court-chart/60 px-2 py-0.5">
+            {shortClassLabel(c.wallet_class)}
+          </span>
+        )}
       </div>
 
       <p className="font-display uppercase text-court-ice text-xl leading-tight mb-2">{c.verdict_name}</p>

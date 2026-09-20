@@ -29,6 +29,15 @@ export const CATEGORY_ROUTES = {
   honor: "/hall/honor",
 };
 
+// Reverse mapping: URL slug → category key. Shared so frontend and backend
+// agree on route resolution. Unknown slugs are absent (falsy).
+export const CATEGORY_SLUG_TO_KEY = {
+  "most-severe": "most_severe",
+  "highest-confidence": "highest_confidence",
+  "recent": "recent",
+  "honor": "honor",
+};
+
 function num(v) {
   if (v === null || v === undefined || v === "") return null;
   const n = typeof v === "number" ? v : parseFloat(v);
@@ -141,7 +150,8 @@ export function eligibleHighestConfidence(records) {
   return sortHighestConfidence(dedupBest(eligible, (t) => num(t.confidence_score) || 0));
 }
 export function eligibleRecent(records) {
-  const eligible = records.filter((t) => isCompletedVerdict(t));
+  // Public completed live verdicts only (no demo, no dismissed/mistrial).
+  const eligible = records.filter((t) => isLiveVerdict(t));
   return sortRecent(dedupBest(eligible, (t) => ts(t)));
 }
 export function eligibleHonor(records) {

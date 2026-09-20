@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { shortClassLabel } from "@/lib/walletClass";
+import { shortClassLabel, hasMeaningfulClass } from "@/lib/walletClass";
 
 // Reusable case card for Hall sections and category views. Displays only
 // sanitized public fields — never full addresses or private data.
@@ -30,9 +30,11 @@ export default function CaseCard({ c, rank }) {
       </div>
 
       <p className="font-mono text-sm text-court-ice mb-2">{c.address_short}</p>
-      <span className="inline-block self-start font-mono text-xs uppercase tracking-[0.1em] text-court-chart border border-court-chart/60 px-2 py-0.5 mb-3">
-        {shortClassLabel(c.wallet_class)}
-      </span>
+      {hasMeaningfulClass(c.wallet_class) && (
+        <span className="inline-block self-start font-mono text-xs uppercase tracking-[0.1em] text-court-chart border border-court-chart/60 px-2 py-0.5 mb-3">
+          {shortClassLabel(c.wallet_class)}
+        </span>
+      )}
       <p className="font-display uppercase text-court-ice text-xl leading-tight mb-4">{c.verdict_name}</p>
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-sm text-court-mute">

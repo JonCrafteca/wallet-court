@@ -35,12 +35,14 @@ function awardPostText(awardType, verdictName, score, caseUrl) {
 function AwardCard({ award, type, onOpenCase }) {
   if (!award) {
     return (
-      <div className="border-2 border-dashed border-court-mute bg-court-navy p-5 text-center">
-        <p className="font-display uppercase tracking-[0.06em] text-court-mute text-lg mb-1">
+      <div className="border-2 border-dashed border-court-mute bg-court-navy px-4 py-3 text-center">
+        <p className="font-display uppercase tracking-[0.06em] text-court-mute text-sm mb-0.5">
           {type === "bag" ? "🏆 Bag of the Day" : "🗑️ Dump of the Day"}
         </p>
-        <p className="font-mono text-sm text-court-mute leading-relaxed">
-          No qualifying {type === "bag" ? "performance" : "guilty"} case completed yet today.
+        <p className="font-mono text-xs text-court-mute leading-relaxed">
+          {type === "bag"
+            ? "No qualifying performance has cleared the court's evidence threshold yet."
+            : "No qualifying guilty case has cleared the court's evidence threshold yet."}
         </p>
       </div>
     );

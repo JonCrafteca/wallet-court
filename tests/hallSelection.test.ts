@@ -151,14 +151,14 @@ describe("Highest Confidence — eligibility and ordering", () => {
 });
 
 describe("Recent Cases — eligibility and ordering", () => {
-  it("includes completed verdicts (live + demo), excludes dismissed/mistrial", () => {
+  it("includes only live verdicts, excludes demo/dismissed/mistrial", () => {
     const records = [
       makeTrial({ slug: "live", data_mode: "live", analyzed_at: "2026-09-19T00:00:00Z", addr: "0xlive1" }),
       makeTrial({ slug: "demo", data_mode: "demo", analyzed_at: "2026-09-18T00:00:00Z", addr: "0xdemo1" }),
       makeTrial({ slug: "dismissed", case_outcome: "dismissed_no_evidence", analyzed_at: "2026-09-20T00:00:00Z", addr: "0xdis01" }),
     ];
     const result = eligibleRecent(records);
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
     expect(result[0].public_slug).toBe("live"); // newest first
   });
 

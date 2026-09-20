@@ -184,9 +184,9 @@ export function eligibleHighestConfidence(records: any[]): any[] {
 }
 
 export function eligibleRecent(records: any[]): any[] {
-  // Public completed cases allowed in the Hall (verdicts + demo, not
-  // dismissed/mistrial). Demo cases are clearly labeled.
-  const eligible = records.filter((t) => isCompletedVerdict(t));
+  // Public completed live verdicts only (no demo, no dismissed/mistrial).
+  // Demo cases are fixtures and must never appear in public Hall rankings.
+  const eligible = records.filter((t) => isLiveVerdict(t));
   return sortRecent(dedupBest(eligible, (t) => ts(t)));
 }
 
@@ -233,6 +233,15 @@ export const CATEGORY_ROUTES: Record<HallCategory, string> = {
   highest_confidence: "/hall/highest-confidence",
   recent: "/hall/recent",
   honor: "/hall/honor",
+};
+
+// Reverse mapping: URL slug → category key. Shared so frontend and backend
+// agree on route resolution. Unknown slugs are absent (falsy).
+export const CATEGORY_SLUG_TO_KEY: Record<string, HallCategory> = {
+  "most-severe": "most_severe",
+  "highest-confidence": "highest_confidence",
+  "recent": "recent",
+  "honor": "honor",
 };
 
 // ---- Daily awards ----

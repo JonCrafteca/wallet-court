@@ -27,6 +27,15 @@ export function publicClassLabel(code) {
   return PUBLIC_CLASS_LABELS[code] || PUBLIC_CLASS_LABELS.unknown;
 }
 
+// A wallet class is "meaningful" if it carries a real Nansen classification.
+// "unknown", "unclassified", null, undefined, and blank are NOT meaningful —
+// rendering a badge for them would show a useless "Unclassified" label.
+export function hasMeaningfulClass(code) {
+  if (!code) return false;
+  const c = String(code).trim().toLowerCase();
+  return c !== "" && c !== "unknown" && c !== "unclassified";
+}
+
 // Compact label for Hall cards.
 export function shortClassLabel(code) {
   const map = {

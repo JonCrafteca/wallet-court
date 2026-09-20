@@ -5,16 +5,8 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
 import CaseCard from "@/components/walletcourt/CaseCard";
 import HonorCard from "@/components/walletcourt/HonorCard";
-import { CATEGORY_TITLES } from "@/lib/hallSelection";
+import { CATEGORY_TITLES, CATEGORY_SLUG_TO_KEY as SLUG_TO_KEY } from "@/lib/hallSelection";
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
-
-const CATEGORY_SLUGS = ["most-severe", "highest-confidence", "recent", "honor"];
-const SLUG_TO_KEY = {
-  "most-severe": "most_severe",
-  "highest-confidence": "highest_confidence",
-  "recent": "recent",
-  "honor": "honor",
-};
 
 const PAGE_SIZE = 12;
 
