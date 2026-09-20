@@ -491,6 +491,29 @@ export function validateBatchSize(size: any): { ok: boolean; value: number; reas
   return { ok: true, value: n, reason: "" };
 }
 
+// ---- Batch progress display (pure, testable) ----
+
+export interface BatchProgressState {
+  done: number;
+  total: number;
+  current: any | null;
+  isComplete: boolean;
+}
+
+// Format the batch progress banner. Never shows a numerator greater than total.
+// While processing: "Processing X of Y". After completion: "Batch complete: X of Y".
+// Empty/null state: show=false.
+export function formatBatchProgress(state: BatchProgressState | null): { label: string; show: boolean } {
+  if (!state) return { label: "", show: false };
+  if (state.isComplete) {
+    return { label: `Batch complete: ${Math.min(state.done, state.total)} of ${state.total}`, show: true };
+  }
+  if (state.current) {
+    return { label: `Processing ${Math.min(state.done + 1, state.total)} of ${state.total}`, show: true };
+  }
+  return { label: "", show: false };
+}
+
 // ---- Coverage recommendations ----
 
 export function coverageRecommendation(stats: CoverageStats): string[] {

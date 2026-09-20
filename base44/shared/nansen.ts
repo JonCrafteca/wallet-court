@@ -43,6 +43,12 @@ export const NANSEN_ENDPOINTS = [
 // by the admin label-only backfill (enrichCasesWithLabels).
 export const LABELS_EP = { key: "address_labels", path: "/api/v1/profiler/address/labels", required: false, needsDateRange: false, dateFmt: null, paginated: true };
 
+// The Smart Money PnL Leaderboard endpoint, used only by admin Candidate
+// Discovery (calibration_discovery workflow). Does NOT require a token address.
+// Supports ethereum, base, and solana. Returns ranked wallets by PnL over a
+// selectable timeframe (1, 7, 30, 90, 180 days).
+export const DISCOVERY_EP = { key: "pnl_leaderboard", path: "/api/v1/smart-money/pnl-leaderboard" };
+
 // Fetch Address Labels for a single wallet (admin-triggered only). Returns the
 // safe wallet class, raw labels, and the call result (for usage logging). Never
 // called by fetchNansenEvidence or any automatic path.

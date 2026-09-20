@@ -4,6 +4,8 @@ import { base44 } from "@/api/base44Client";
 import { Loader2, RefreshCw, AlertTriangle, Lock, Unlock, ArrowLeft, ExternalLink } from "lucide-react";
 import CalibrationImportForm from "@/components/walletcourt/CalibrationImportForm";
 import CalibrationBatchControls from "@/components/walletcourt/CalibrationBatchControls";
+import CalibrationSingleWalletForm from "@/components/walletcourt/CalibrationSingleWalletForm";
+import CandidateDiscovery from "@/components/walletcourt/CandidateDiscovery";
 
 // Admin-only Calibration Docket dashboard.
 export default function AdminCalibrationDocket() {
@@ -126,15 +128,29 @@ export default function AdminCalibrationDocket() {
         </div>
       )}
 
-      {/* Import + Batch side by side */}
-      <div className="grid lg:grid-cols-2 gap-4 mb-6">
-        <CalibrationImportForm onImported={load} />
+      {/* Single-wallet form (default) + Batch controls */}
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <CalibrationSingleWalletForm onImported={load} />
         <CalibrationBatchControls
           verifiedTotal={data?.verified_total || 0}
           target={data?.target || 1000}
           ceiling={data?.ceiling || 1020}
           pendingCount={pendingCount}
           onBatchComplete={load}
+        />
+      </div>
+
+      {/* Bulk CSV import (collapsed by default) */}
+      <div className="mb-6">
+        <CalibrationImportForm onImported={load} />
+      </div>
+
+      {/* Candidate Discovery */}
+      <div className="mb-6">
+        <CandidateDiscovery
+          verifiedTotal={data?.verified_total || 0}
+          target={data?.target || 1000}
+          onCandidatesQueued={load}
         />
       </div>
 

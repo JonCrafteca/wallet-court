@@ -1,0 +1,138 @@
+{
+  "name": "CalibrationCandidate",
+  "type": "object",
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "description": "Permanent unique ID. Format: cand_<random>."
+    },
+    "wallet_address": {
+      "type": "string",
+      "description": "Full wallet address as returned by Nansen. Required internally to create a docket item on approval. NEVER exposed in dashboard responses, logs, exports, or analytics."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) address. NEVER exposed publicly."
+    },
+    "wallet_fingerprint": {
+      "type": "string",
+      "description": "Irreversible SHA-256 fingerprint of network + ':' + normalized_wallet_address. Safe to expose for dedup display."
+    },
+    "address_short": {
+      "type": "string",
+      "description": "Abbreviated address (0x1234\u2026abcd or first4\u2026last4) for safe display."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base",
+        "solana"
+      ],
+      "description": "Chain the candidate was discovered on."
+    },
+    "source_endpoint": {
+      "type": "string",
+      "description": "Sanitized Nansen endpoint key that produced this candidate. Always 'pnl_leaderboard'."
+    },
+    "source_query_fingerprint": {
+      "type": "string",
+      "description": "SHA-256 fingerprint of the discovery query parameters (network, cohort, timeframe, etc.) for provenance tracking."
+    },
+    "discovery_correlation_id": {
+      "type": "string",
+      "description": "Correlation ID shared by all physical Nansen requests for the discovery action that found this candidate."
+    },
+    "discovered_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the candidate was discovered and stored."
+    },
+    "wallet_class": {
+      "type": "string",
+      "description": "Machine wallet class code derived from Nansen address_label screening. One of: cex_exchange, market_maker, mev_bot, protocol_treasury, fund_institution, trader_individual, unknown. Never stores raw labels or personal names."
+    },
+    "ranking_metrics_json": {
+      "type": "string",
+      "description": "JSON object of safe performance metrics from the leaderboard (total_pnl_usd, realized_pnl_usd, win_rate, n_trades, n_tokens, etc.). No identifying information."
+    },
+    "cohort": {
+      "type": "string",
+      "enum": [
+        "top_performers",
+        "bottom_performers",
+        "high_activity",
+        "lower_activity"
+      ],
+      "description": "Discovery cohort that produced this candidate."
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "discovered",
+        "approved",
+        "rejected",
+        "queued",
+        "skipped"
+      ],
+      "default": "discovered",
+      "description": "Admin review state. discovered = newly found; approved = admin selected for queueing; rejected = admin declined; queued = docket item created; skipped = admin deferred."
+    },
+    "skip_reason": {
+      "type": "string",
+      "description": "Safe reason set when the candidate is rejected or skipped. Null when discovered or approved."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "Optimistic-concurrency CAS token. Incremented on every review-status transition."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "wallet_address",
+    "normalized_wallet_address",
+    "wallet_fingerprint",
+    "address_short",
+    "network",
+    "source_endpoint",
+    "source_query_fingerprint",
+    "discovery_correlation_id",
+    "discovered_at",
+    "wallet_class",
+    "cohort",
+    "review_status",
+    "version",
+    "created_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

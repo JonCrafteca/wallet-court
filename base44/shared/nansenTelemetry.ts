@@ -38,11 +38,13 @@ export type AuditOutcome = typeof AUDIT_OUTCOMES[keyof typeof AUDIT_OUTCOMES];
 // Endpoint keys that may be persisted. Anything else is redacted to "unknown"
 // so a caller typo can never leak a raw path or query string.
 const ALLOWED_ENDPOINT_KEYS = new Set([
-  "pnl_summary", "dex_trades", "current_balance", "transactions", "address_labels"
+  "pnl_summary", "dex_trades", "current_balance", "transactions", "address_labels",
+  "pnl_leaderboard"
 ]);
 const ALLOWED_NETWORKS = new Set(["ethereum", "base", "solana"]);
 const ALLOWED_WORKFLOWS = new Set([
-  "trial_analysis", "label_enrichment", "admin_health_check", "admin_verification"
+  "trial_analysis", "label_enrichment", "admin_health_check", "admin_verification",
+  "calibration_discovery"
 ]);
 const ALLOWED_ENVIRONMENTS = new Set(["production", "preview", "development"]);
 

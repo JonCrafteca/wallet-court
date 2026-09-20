@@ -38,13 +38,13 @@ export default function CalibrationBatchControls({ verifiedTotal, target, ceilin
         return;
       }
 
-      setProgress({ done: 0, total: claimed.length, current: claimed[0], results: [] });
+      setProgress({ done: 0, total: claimed.length, current: claimed[0], results: [], isComplete: false });
       const results = [];
 
       for (let i = 0; i < claimed.length; i++) {
         if (stopRef.current) break;
         const item = claimed[i];
-        setProgress((p) => ({ ...p, current: item, done: i }));
+        setProgress((p) => ({ ...p, current: item, done: i, isComplete: false }));
         const delayMs = i === 0 ? 0 : 2000;
         try {
           const res = await base44.functions.invoke("processCalibrationWallet", {
@@ -65,6 +65,16 @@ export default function CalibrationBatchControls({ verifiedTotal, target, ceilin
           break;
         }
       }
+
+      // Mark batch as complete — current is null so "Processing" never shows
+      // after the last wallet finishes. isComplete drives the "Batch complete"
+      // banner. done is clamped to total so the numerator never exceeds total.
+      setProgress((p) => ({
+        ...p,
+        current: null,
+        isComplete: true,
+        done: Math.min(p.done, p.total)
+      }));
 
       if (onBatchComplete) onBatchComplete();
     } catch (e) {
@@ -108,10 +118,24 @@ export default function CalibrationBatchControls({ verifiedTotal, target, ceilin
         </div>
       </div>
 
-      {progress?.current && (
+      {progress && !progress.isComplete && progress.current && (
         <div className="mb-3 border-2 border-court-chart/40 p-3">
           <p className="font-mono text-sm text-court-chart">
-            Processing {progress.done + 1} of {progress.total}: {progress.current.address_short} on {progress.current.network}
+            Processing {Math.min(progress.done + 1, progress.total)} of {progress.total}: {progress.current.address_short} on {progress.current.network}
+          </p>
+          {progress.results.map((r, i) => (
+            <p key={i} className={cn("font-mono text-xs mt-1", r.status === "completed" ? "text-court-chart" : r.status === "failed" ? "text-court-red" : "text-court-mute")}>
+              {r.item.address_short}: {r.status}
+              {r.data?.verdict_name ? ` → ${r.data.verdict_name}` : ""}
+              {r.data?.physical_calls_used != null ? ` (${r.data.physical_calls_used} calls)` : ""}
+            </p>
+          ))}
+        </div>
+      )}
+      {progress && progress.isComplete && (
+        <div className="mb-3 border-2 border-court-chart/40 p-3">
+          <p className="font-mono text-sm text-court-chart">
+            Batch complete: {progress.done} of {progress.total}
           </p>
           {progress.results.map((r, i) => (
             <p key={i} className={cn("font-mono text-xs mt-1", r.status === "completed" ? "text-court-chart" : r.status === "failed" ? "text-court-red" : "text-court-mute")}>
