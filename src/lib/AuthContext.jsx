@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
 
@@ -12,9 +12,16 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [appPublicSettings, setAppPublicSettings] = useState(null); // Contains only { id, public_settings }
+  const timeoutRef = useRef(null);
 
   useEffect(() => {
     checkAppState();
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
   }, []);
 
   // Safety timeout: if the initial auth check hasn't settled within 8 seconds,
@@ -30,7 +37,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const checkAppState = async () => {
-    const timeoutId = setTimeout(() => {
+    timeoutRef.current = setTimeout(() => {
       console.warn('Auth check timed out — settling to logged-out state.');
       settleLoggedOut();
     }, AUTH_SETTLE_TIMEOUT_MS);
@@ -93,7 +100,10 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingPublicSettings(false);
       settleLoggedOut();
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
     }
   };
 
