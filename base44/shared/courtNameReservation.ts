@@ -1,20 +1,20 @@
-// Wallet Court — atomic Court Name acquisition with deterministic conflict
-// resolution. Pure, unit-testable: takes a ClaimDataAccess interface so the
-// logic can be tested with a mock that simulates CAS semantics without the
-// Base44 platform runtime.
+// Wallet Court — genuinely atomic Court Name reservation via a single CAS
+// registry record. The normalized name is the reservation key inside a JSON
+// map on one singleton registry record. Two concurrent requests for the same
+// normalized name compete for the same database resource (the registry's
+// version field). Exactly one CAS updateMany succeeds; the other fails
+// without ever applying the name to its claim.
 //
-// Atomicity strategy:
-// 1. CAS update (updateMany with court_name_version guard) — only one
-//    concurrent request can set the name on a given claim.
-// 2. Post-update conflict check — find other active claims with the same
-//    normalized name.
-// 3. Deterministic resolution — sort all claims with the name by verified_at
-//    ascending, then by id ascending. The first is the winner.
-// 4. Loser reverts its own claim via a second CAS update.
+// Atomicity strategy (reservation-time exclusivity):
+// 1. Reserve the normalized name in the singleton registry via CAS
+//    (updateMany with version guard). Only one concurrent request can
+//    increment the version and set the name. The loser's CAS fails.
+// 2. Only after the reservation succeeds, update the claim with the name.
+// 3. If the claim update fails, release the newly reserved name safely.
+// 4. After the claim update succeeds, release the old name from the registry.
 //
-// This guarantees: after all concurrent requests complete, exactly one claim
-// holds the name and no duplicates remain. Each request only modifies its
-// own claim — no cross-claim writes.
+// No post-hoc duplicate search, deterministic winner selection, cleanup, or
+// loser rollback. The loser never applies the name to its claim.
 
 import {
   validateCourtName,
@@ -23,17 +23,53 @@ import {
 
 export const COURT_NAME_TAKEN = "That Court Name is already taken.";
 export const COURT_NAME_CONFLICT = "Court Name is being updated. Please try again.";
+export const REGISTRY_UNAVAILABLE = "Name registry is unavailable. Please try again later.";
 
-export function courtNameWinner(claims) {
-  if (!claims || claims.length === 0) return null;
-  const sorted = [...claims].sort((a, b) => {
-    const va = Date.parse(a.verified_at || 0) || 0;
-    const vb = Date.parse(b.verified_at || 0) || 0;
-    if (va !== vb) return va - vb;
-    // Tiebreak by id — deterministic and stable across all observers.
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
-  return sorted[0];
+const MAX_REGISTRY_RETRIES = 5;
+
+// Reserve a normalized name in the singleton registry via CAS. Returns
+// { ok: true } on success, { ok: false, error } on failure. The name is
+// the reservation key — case-insensitive variations compete for the same key.
+export async function reserveName(da, normalized, claim_slug) {
+  for (let i = 0; i < MAX_REGISTRY_RETRIES; i++) {
+    const reg = await da.getRegistry();
+    if (!reg) return { ok: false, error: REGISTRY_UNAVAILABLE };
+    const names = JSON.parse(reg.names_json || "{}");
+    // If the name is already reserved by THIS claim, it's already ours.
+    if (names[normalized] === claim_slug) return { ok: true };
+    // If the name is reserved by another claim, it's taken.
+    if (names[normalized]) return { ok: false, error: COURT_NAME_TAKEN };
+    // Try to reserve: CAS update with version guard. Only one concurrent
+    // request can match the current version and increment it.
+    const newNames = { ...names, [normalized]: claim_slug };
+    const result = await da.casUpdateRegistry(reg.id, reg.version, {
+      names_json: JSON.stringify(newNames),
+      version: reg.version + 1,
+    });
+    if (result.updated) return { ok: true };
+    // Version changed — another request modified the registry. Retry.
+  }
+  return { ok: false, error: REGISTRY_UNAVAILABLE };
+}
+
+// Release a normalized name from the registry. Only removes the name if it
+// is still mapped to the given claim_slug. Safe to call multiple times.
+export async function releaseName(da, normalized, claim_slug) {
+  if (!normalized) return;
+  for (let i = 0; i < MAX_REGISTRY_RETRIES; i++) {
+    const reg = await da.getRegistry();
+    if (!reg) return;
+    const names = JSON.parse(reg.names_json || "{}");
+    if (names[normalized] !== claim_slug) return; // Not our reservation
+    const newNames = { ...names };
+    delete newNames[normalized];
+    const result = await da.casUpdateRegistry(reg.id, reg.version, {
+      names_json: JSON.stringify(newNames),
+      version: reg.version + 1,
+    });
+    if (result.updated) return;
+    // Version changed — retry
+  }
 }
 
 export async function setCourtNameAtomically(
@@ -56,6 +92,7 @@ export async function setCourtNameAtomically(
       return { ok: true, claim };
     }
     const nowIso = new Date().toISOString();
+    const oldNormalized = claim.court_name_normalized || null;
     const result = await da.casUpdateClaim(claim.id, currentVersion, {
       court_name: null,
       court_name_normalized: null,
@@ -69,6 +106,10 @@ export async function setCourtNameAtomically(
       changed_at: nowIso,
       changed_by_user_id: userId,
     });
+    // Release the old name from the registry
+    if (oldNormalized) {
+      await releaseName(da, oldNormalized, claim_slug);
+    }
     const updated = await da.getClaim(claim_slug);
     return { ok: true, claim: updated };
   }
@@ -86,18 +127,33 @@ export async function setCourtNameAtomically(
   const cd = checkCourtNameCooldown(claim.court_name_changed_at);
   if (!cd.ok) return { ok: false, error: cd.error, status: 429 };
 
-  // 6. CAS update — atomically set the name and bump the version
   const nowIso = new Date().toISOString();
+  const oldNormalized = claim.court_name_normalized || null;
+
+  // 6. Reserve the new name in the registry BEFORE updating the claim.
+  // Two concurrent requests for the same name compete for the same
+  // registry version. Exactly one succeeds.
+  const reserveResult = await reserveName(da, v.normalized, claim_slug);
+  if (!reserveResult.ok) {
+    return { ok: false, error: reserveResult.error, status: 409 };
+  }
+
+  // 7. Update the claim with the new name (CAS)
   const casResult = await da.casUpdateClaim(claim.id, currentVersion, {
     court_name: v.value,
     court_name_normalized: v.normalized,
     court_name_changed_at: nowIso,
     court_name_version: currentVersion + 1,
   });
-  if (!casResult.updated)
-    return { ok: false, error: COURT_NAME_CONFLICT, status: 409 };
 
-  // 7. Immutable history record (append-only, never updated)
+  if (!casResult.updated) {
+    // Claim update failed — safely release the newly reserved name.
+    // The existing name on the claim is untouched.
+    await releaseName(da, v.normalized, claim_slug);
+    return { ok: false, error: COURT_NAME_CONFLICT, status: 409 };
+  }
+
+  // 8. Immutable history record (append-only, never updated)
   await da.createHistoryRecord({
     claim_slug,
     court_name: v.value,
@@ -106,34 +162,11 @@ export async function setCourtNameAtomically(
     changed_by_user_id: userId,
   });
 
-  // 8. Conflict check — find other active claims with the same name
-  const conflicts = await da.findActiveByName(v.normalized, claim.id);
-  if (conflicts.length === 0) {
-    const updated = await da.getClaim(claim_slug);
-    return { ok: true, claim: updated };
+  // 9. Release the old name from the registry (only after claim update succeeds)
+  if (oldNormalized) {
+    await releaseName(da, oldNormalized, claim_slug);
   }
 
-  // 9. Deterministic resolution — all observers agree on the winner
-  const thisClaimUpdated = {
-    ...claim,
-    court_name: v.value,
-    court_name_normalized: v.normalized,
-    court_name_version: currentVersion + 1,
-  };
-  const winner = courtNameWinner([thisClaimUpdated, ...conflicts]);
-
-  // 10. Loser reverts its own claim via a second CAS
-  if (winner.id !== claim.id) {
-    await da.casUpdateClaim(claim.id, currentVersion + 1, {
-      court_name: claim.court_name || null,
-      court_name_normalized: claim.court_name_normalized || null,
-      court_name_changed_at: claim.court_name_changed_at || null,
-      court_name_version: currentVersion + 2,
-    });
-    return { ok: false, error: COURT_NAME_TAKEN, status: 409 };
-  }
-
-  // 11. Winner keeps the name
   const updated = await da.getClaim(claim_slug);
   return { ok: true, claim: updated };
 }

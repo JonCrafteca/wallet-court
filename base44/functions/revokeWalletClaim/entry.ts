@@ -9,7 +9,8 @@ import {
 } from "../../shared/walletClaim.ts";
 import { verifySolanaSignature } from "../../shared/solanaVerify.ts";
 import { acquireValidNonce, validateNonceFields } from "../../shared/nonceLifecycle.ts";
-import { makeNonceDataAccess } from "../../shared/claimDataAccess.ts";
+import { makeNonceDataAccess, makeClaimDataAccess } from "../../shared/claimDataAccess.ts";
+import { releaseName } from "../../shared/courtNameReservation.ts";
 
 export default async function (req) {
   try {
@@ -69,6 +70,11 @@ export default async function (req) {
     }
 
     await base44.asServiceRole.entities.WalletClaim.update(claim.id, { status: "revoked" });
+    // Release the Court Name from the registry so it becomes available again.
+    if (claim.court_name_normalized) {
+      const da = makeClaimDataAccess(base44);
+      await releaseName(da, claim.court_name_normalized, claim.claim_slug);
+    }
     return Response.json({ status: "revoked" });
   } catch (error) {
     return Response.json({ error: error.message || "Revocation failed." }, { status: 500 });

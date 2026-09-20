@@ -25,7 +25,6 @@ import {
 } from "../base44/shared/nonceLifecycle.ts";
 import {
   setCourtNameAtomically,
-  courtNameWinner,
 } from "../base44/shared/courtNameReservation.ts";
 import {
   validateAdminOverride,
@@ -122,6 +121,7 @@ class MockNonceDataAccess {
 class MockClaimDataAccess {
   claims = new Map();
   history = [];
+  registry = { id: "reg_main", registry_key: "main", version: 0, names_json: "{}" };
 
   async getClaim(claim_slug) {
     for (const claim of this.claims.values()) {
@@ -145,18 +145,15 @@ class MockClaimDataAccess {
     return { updated: true };
   }
 
-  async findActiveByName(normalized, excludeId) {
-    const results = [];
-    for (const claim of this.claims.values()) {
-      if (
-        claim.status === "active" &&
-        claim.court_name_normalized === normalized &&
-        claim.id !== excludeId
-      ) {
-        results.push({ ...claim });
-      }
-    }
-    return results;
+  async getRegistry() {
+    return { ...this.registry };
+  }
+
+  async casUpdateRegistry(id, expectedVersion, updates) {
+    if (this.registry.id !== id) return { updated: false };
+    if (this.registry.version !== expectedVersion) return { updated: false };
+    Object.assign(this.registry, updates);
+    return { updated: true };
   }
 
   async createHistoryRecord(record) {

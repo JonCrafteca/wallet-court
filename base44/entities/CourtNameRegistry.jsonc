@@ -1,0 +1,46 @@
+{
+  "name": "CourtNameRegistry",
+  "type": "object",
+  "properties": {
+    "registry_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every name reservation or release. Used as a compare-and-set guard so two concurrent requests for the same normalized name cannot both succeed."
+    },
+    "names_json": {
+      "type": "string",
+      "description": "JSON map of normalized Court Name to claim_slug. Active reservations only. The normalized name is the reservation key \u2014 case-insensitive variations compete for the same key."
+    }
+  },
+  "required": [
+    "registry_key",
+    "version",
+    "names_json"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

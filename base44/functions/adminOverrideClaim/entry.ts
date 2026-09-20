@@ -4,6 +4,8 @@
 // deleted.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { validateAdminOverride, snapshotClaim } from "../../shared/claimAudit.ts";
+import { makeClaimDataAccess } from "../../shared/claimDataAccess.ts";
+import { releaseName } from "../../shared/courtNameReservation.ts";
 
 export default async function (req) {
   try {
@@ -36,6 +38,11 @@ export default async function (req) {
         court_name_normalized: null,
         profile_visibility: "private",
       });
+      // Release the Court Name from the registry so it becomes available again.
+      if (claim.court_name_normalized) {
+        const da = makeClaimDataAccess(base44);
+        await releaseName(da, claim.court_name_normalized, claim.claim_slug);
+      }
     }
 
     const updated = await base44.asServiceRole.entities.WalletClaim.filter(

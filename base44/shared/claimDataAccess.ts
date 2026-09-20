@@ -83,13 +83,33 @@ export function makeClaimDataAccess(base44) {
       );
       return { updated: !!(result && result.updated === 1) };
     },
-    async findActiveByName(normalized, excludeId) {
-      const results = await base44.asServiceRole.entities.WalletClaim.filter(
-        { court_name_normalized: normalized, status: "active" },
-        "-verified_at",
-        20
+    async getRegistry() {
+      const results = await base44.asServiceRole.entities.CourtNameRegistry.filter(
+        { registry_key: "main" }, "created_date", 1
       );
-      return (results || []).filter((c) => c.id !== excludeId);
+      if (results && results.length > 0) return results[0];
+      // Registry doesn't exist yet — create it (one-time initialization).
+      // If two concurrent creates succeed, the filter above always returns
+      // the earliest by created_date, so duplicates are harmless.
+      try {
+        await base44.asServiceRole.entities.CourtNameRegistry.create({
+          registry_key: "main",
+          version: 0,
+          names_json: "{}",
+        });
+      } catch {}
+      // Always re-read to get the earliest record (handles concurrent creates)
+      const retry = await base44.asServiceRole.entities.CourtNameRegistry.filter(
+        { registry_key: "main" }, "created_date", 1
+      );
+      return retry && retry[0];
+    },
+    async casUpdateRegistry(id, expectedVersion, updates) {
+      const result = await base44.asServiceRole.entities.CourtNameRegistry.updateMany(
+        { id, version: expectedVersion },
+        { $set: updates }
+      );
+      return { updated: !!(result && result.updated === 1) };
     },
     async createHistoryRecord(record) {
       await base44.asServiceRole.entities.CourtNameHistory.create(record);

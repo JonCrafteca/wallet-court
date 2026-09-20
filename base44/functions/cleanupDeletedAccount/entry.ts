@@ -10,6 +10,8 @@ import {
   buildCleanupUpdates,
   buildCleanupAuditRecord,
 } from "../../shared/claimAudit.ts";
+import { makeClaimDataAccess } from "../../shared/claimDataAccess.ts";
+import { releaseName } from "../../shared/courtNameReservation.ts";
 
 export default async function (req) {
   try {
@@ -27,6 +29,7 @@ export default async function (req) {
     let claimsRevoked = 0;
     let handlesHidden = 0;
     let defensesHidden = 0;
+    const da = makeClaimDataAccess(base44);
 
     // Revoke all active claims and clear public identity
     const claims = await base44.asServiceRole.entities.WalletClaim.filter(
@@ -36,6 +39,10 @@ export default async function (req) {
       const beforeState = snapshotClaim(claim);
       const updates = buildCleanupUpdates();
       await base44.asServiceRole.entities.WalletClaim.update(claim.id, updates);
+      // Release the Court Name from the registry so it becomes available again.
+      if (claim.court_name_normalized) {
+        await releaseName(da, claim.court_name_normalized, claim.claim_slug);
+      }
       const afterState = JSON.stringify({
         claim_slug: claim.claim_slug,
         ...updates,
