@@ -25,6 +25,7 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { secrets, waitUntil } from "base44:runtime";
 import { callEndpoint, CHAIN_BY_NETWORK, logUsage } from "../../shared/nansen.ts";
+import { newCorrelationId, detectEnvironment } from "../../shared/nansenTelemetry.ts";
 import {
   classifyRecessType,
   computeRetryAfterMs,
@@ -132,7 +133,19 @@ export default async function (req) {
     // ---- One lightweight probe (lease holder only) ----
     const ep = { key: "current_balance", path: "/api/v1/profiler/address/current-balance", required: false, needsDateRange: false, dateFmt: null, paginated: true };
     const body = { address: MANDATORY_DEMO_ADDRESS, chain: CHAIN_BY_NETWORK.ethereum, pagination: { page: 1, per_page: 1 }, hide_spam_token: true };
-    const r = await callEndpoint(apiKey, ep, body, 20000);
+    const healthTelemetryCtx = {
+      workflow: "admin_health_check",
+      network: "ethereum",
+      caseSlug: null,
+      correlationId: newCorrelationId(),
+      environment: detectEnvironment(),
+      persistAudit: (rec) => waitUntil(
+        base44.asServiceRole.entities.NansenApiCallAudit.create(rec).catch((e) =>
+          console.error("[nansen-telemetry] audit write failed:", e?.message)
+        )
+      )
+    };
+    const r = await callEndpoint(apiKey, ep, body, 20000, healthTelemetryCtx);
     r.chain = CHAIN_BY_NETWORK.ethereum;
     waitUntil(logUsage(base44, "admin-health-check", "live", [r]).catch(() => {}));
 

@@ -1,0 +1,122 @@
+{
+  "name": "NansenApiCallAudit",
+  "type": "object",
+  "properties": {
+    "call_id": {
+      "type": "string",
+      "description": "Globally unique identifier for this physical outbound request, generated before the request is sent. Format: nca_<random>."
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when the physical request was issued."
+    },
+    "endpoint_key": {
+      "type": "string",
+      "description": "Sanitized endpoint name. One of: pnl_summary, dex_trades, current_balance, transactions, address_labels, unknown. Never the full URL or path with query parameters."
+    },
+    "workflow": {
+      "type": "string",
+      "description": "Sanitized workflow that initiated the call. One of: trial_analysis, label_enrichment, admin_health_check, admin_verification, unknown."
+    },
+    "network": {
+      "type": "string",
+      "description": "Chain the call was made for. One of: ethereum, base, solana, unknown."
+    },
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the WalletTrial this call belongs to, when applicable. Null for administrative calls not tied to a case."
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "Groups all physical attempts belonging to one logical analysis or administrative action. Retries share the same correlation_id."
+    },
+    "attempt_number": {
+      "type": "number",
+      "description": "1-based attempt index within the correlation. A retry is a distinct physical request and receives its own record with an incremented attempt number."
+    },
+    "response_status": {
+      "type": "number",
+      "description": "HTTP status code returned by Nansen. Null when the request never received a response (network error or timeout)."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "client_error",
+        "provider_error",
+        "rate_limited",
+        "timeout",
+        "network_error"
+      ],
+      "description": "Classified outcome of the physical request."
+    },
+    "latency_ms": {
+      "type": "number",
+      "description": "Measured round-trip latency in milliseconds for this physical attempt. Null only if unmeasurable."
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "production",
+        "preview",
+        "development"
+      ],
+      "description": "Deployment environment in which the call was made."
+    },
+    "data_mode": {
+      "type": "string",
+      "enum": [
+        "live"
+      ],
+      "description": "Always live. A record exists only when a real outbound provider request physically occurred. Demo/mock responses, cache hits, and validation failures never produce a record."
+    },
+    "provider_request_id": {
+      "type": "string",
+      "description": "Request identifier returned by Nansen headers, when safely provided. Never an authorization header or secret."
+    },
+    "credits_consumed": {
+      "type": "number",
+      "description": "Credits cost for this call, only when supplied by a documented Nansen response header or field. Null when not reported."
+    },
+    "telemetry_version": {
+      "type": "number",
+      "description": "Schema version of this audit record. Incremented on incompatible changes to the audit shape."
+    }
+  },
+  "required": [
+    "call_id",
+    "occurred_at",
+    "endpoint_key",
+    "workflow",
+    "network",
+    "correlation_id",
+    "attempt_number",
+    "outcome",
+    "environment",
+    "data_mode",
+    "telemetry_version"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

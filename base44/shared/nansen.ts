@@ -11,6 +11,17 @@ import { normalizeWalletClass } from "./walletClass.ts";
 // for backward compatibility with existing importers (analyzeWalletWithNansen).
 export { assessRecess } from "./recessAssessment.ts";
 
+// Contest Control telemetry: the single instrumented transport for outbound
+// Nansen requests. Every physical HTTP attempt routes through
+// callEndpointWithRetry → callNansenWithTelemetry, which writes one
+// NansenApiCallAudit record per attempt. No raw fetch() to Nansen exists
+// outside this wiring.
+import {
+  callEndpointWithRetry,
+  detectEnvironment,
+  newCorrelationId
+} from "./nansenTelemetry.ts";
+
 export const NANSEN_BASE = "https://api.nansen.ai";
 
 // The four current Nansen profiler POST endpoints. required endpoints must both
@@ -35,9 +46,9 @@ export const LABELS_EP = { key: "address_labels", path: "/api/v1/profiler/addres
 // Fetch Address Labels for a single wallet (admin-triggered only). Returns the
 // safe wallet class, raw labels, and the call result (for usage logging). Never
 // called by fetchNansenEvidence or any automatic path.
-export async function fetchAddressLabels(apiKey, network, address, timeoutMs = 20000) {
+export async function fetchAddressLabels(apiKey, network, address, timeoutMs = 20000, telemetryCtx) {
   const chain = CHAIN_BY_NETWORK[network];
-  const r = await callEndpoint(apiKey, LABELS_EP, { address, chain, pagination: { page: 1, per_page: 1000 } }, timeoutMs);
+  const r = await callEndpoint(apiKey, LABELS_EP, { address, chain, pagination: { page: 1, per_page: 1000 } }, timeoutMs, telemetryCtx);
   r.chain = chain;
   if (!r.ok) return { ok: false, walletClass: "unknown", rawLabels: [], callResult: r };
   const data = (r.json && (r.json.data || r.json.labels)) || [];
@@ -71,95 +82,34 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-function numHeader(h, names) {
-  for (const n of names) {
-    const v = h.get(n);
-    if (v != null && v !== "") {
-      const p = parseFloat(v);
-      if (Number.isFinite(p)) return p;
-    }
-  }
-  return null;
-}
-
-function strHeader(h, names) {
-  for (const n of names) {
-    const v = h.get(n);
-    if (v != null && v !== "") return v;
-  }
-  return null;
-}
-
-function parseRetryAfter(v) {
-  if (!v) return 0;
-  const s = parseInt(v, 10);
-  if (Number.isFinite(s) && s >= 0) return Math.min(s, 30) * 1000;
-  const d = Date.parse(v);
-  if (Number.isFinite(d)) return Math.max(0, Math.min(30000, d - Date.now()));
-  return 0;
-}
-
-function categorize(status, err) {
-  if (status === 401) return ERR.AUTH;
-  if (status === 402 || status === 403) return ERR.PLAN_CREDIT;
-  if (status === 429) return ERR.RATE_LIMIT;
-  if (status === 0) return err && /timeout|abort/i.test(err.message || "") ? ERR.TIMEOUT : ERR.NETWORK;
-  return ERR.UNKNOWN;
-}
+// Header parsing, retry-after parsing, and status categorization now live in
+// ./nansenTelemetry.ts (pure, unit-tested) and are imported below.
 
 // Call one endpoint with up to 2 attempts, honoring Retry-After on 429.
-export async function callEndpoint(apiKey, ep, body, timeoutMs) {
+//
+// Delegates the retry loop to callEndpointWithRetry (pure, unit-tested). Each
+// physical HTTP attempt is routed through callNansenWithTelemetry, which
+// writes exactly one NansenApiCallAudit record per attempt (a retry is a
+// distinct physical request → its own record + attempt_number, sharing the
+// correlation_id). When telemetryCtx is omitted, no audit record is written.
+// The return shape is preserved exactly so verdict behavior is unchanged.
+export async function callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx) {
   const url = NANSEN_BASE + ep.path;
-  const headers = { apikey: apiKey, "Content-Type": "application/json", Accept: "application/json" };
-  const calledAt = new Date().toISOString();
-  let attempt = 0;
-  let last = null;
-  while (attempt < 2) {
-    attempt++;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res;
-    try {
-      res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: ctrl.signal });
-    } catch (e) {
-      clearTimeout(timer);
-      return { key: ep.key, ok: false, status: 0, errorCategory: categorize(0, e), calledAt, json: null,
-        requestId: null, creditsCost: null, creditsUsed: null, creditsRemaining: null, rateLimitRemaining: null };
-    }
-    clearTimeout(timer);
-    last = res;
-    if (res.status === 429 && attempt < 2) {
-      const ra = parseRetryAfter(res.headers.get("retry-after"));
-      if (ra > 0) await sleep(ra);
-      continue;
-    }
-    let json = null;
-    let malformed = false;
-    if (res.ok) {
-      try { json = await res.json(); } catch { malformed = true; }
-    }
-    const h = res.headers;
-    return {
-      key: ep.key,
-      ok: res.ok && !malformed,
-      status: res.status,
-      errorCategory: res.ok ? (malformed ? ERR.MALFORMED : null) : categorize(res.status, null),
-      calledAt,
-      json,
-      requestId: strHeader(h, ["x-request-id", "request-id", "x-correlation-id", "x-nansen-request-id"]),
-      creditsCost: numHeader(h, ["x-credits-cost", "x-credit-cost", "credits-cost"]),
-      creditsUsed: numHeader(h, ["x-credits-used", "credits-used", "x-credits-spent"]),
-      creditsRemaining: numHeader(h, ["x-credits-remaining", "credits-remaining", "x-credits-left"]),
-      rateLimitRemaining: strHeader(h, ["x-ratelimit-remaining", "ratelimit-remaining"])
-    };
-  }
-  // Retries exhausted on 429.
-  const h = last && last.headers;
-  return { key: ep.key, ok: false, status: 429, errorCategory: ERR.RATE_LIMIT, calledAt, json: null,
-    requestId: strHeader(h, ["x-request-id", "request-id"]) || null,
-    creditsCost: null, creditsUsed: null,
-    creditsRemaining: numHeader(h, ["x-credits-remaining", "credits-remaining"]),
-    rateLimitRemaining: strHeader(h, ["x-ratelimit-remaining", "retry-after"]) || null };
+  return callEndpointWithRetry({
+    url,
+    ep,
+    apiKey,
+    body,
+    timeoutMs,
+    telemetryCtx: telemetryCtx || {
+      workflow: "unknown",
+      network: "unknown",
+      caseSlug: null,
+      correlationId: "corr_unknown",
+      environment: detectEnvironment()
+    },
+    persistAudit: telemetryCtx ? telemetryCtx.persistAudit : undefined
+  });
 }
 
 // Run tasks with a bounded concurrency limit, preserving input order.
@@ -314,6 +264,24 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   const dateFromDay = dateFromIso.slice(0, 10);
   const dateToDay = dateToIso.slice(0, 10);
 
+  // One correlation_id groups all physical attempts for this analysis. Retries
+  // share it; each attempt gets its own NansenApiCallAudit record.
+  const correlationId = newCorrelationId();
+  const telemetryCtx = {
+    workflow: "trial_analysis",
+    network,
+    caseSlug: caseSlug || null,
+    correlationId,
+    environment: detectEnvironment(),
+    persistAudit: base44
+      ? (rec) => waitUntil(
+          base44.asServiceRole.entities.NansenApiCallAudit.create(rec).catch((e) =>
+            console.error("[nansen-telemetry] audit write failed:", e?.message)
+          )
+        )
+      : undefined
+  };
+
   const tasks = NANSEN_ENDPOINTS.map((ep) => async () => {
     const body = { address, chain };
     if (ep.needsDateRange) {
@@ -323,7 +291,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     }
     if (ep.paginated) body.pagination = { page: 1, per_page: ep.key === "current_balance" ? 1000 : 100 };
     if (ep.key === "current_balance" || ep.key === "transactions") body.hide_spam_token = true;
-    const r = await callEndpoint(apiKey, ep, body, timeoutMs);
+    const r = await callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx);
     r.chain = chain;
     return r;
   });

@@ -15,6 +15,7 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { secrets, waitUntil } from "base44:runtime";
 import { logUsage, fetchAddressLabels } from "../../shared/nansen.ts";
+import { newCorrelationId, detectEnvironment } from "../../shared/nansenTelemetry.ts";
 import { walletClassEvidence } from "../../shared/walletClass.ts";
 import { recomputeVerdictFromLabels } from "../../shared/verdicts_entity.ts";
 import { computeSeverityConfidence } from "../../shared/verdicts_live.ts";
@@ -122,7 +123,19 @@ export default async function (req) {
         continue;
       }
       const t = c._trial;
-      const lr = await fetchAddressLabels(apiKey, c.network, c.normalized_wallet_address, 20000);
+      const labelTelemetryCtx = {
+        workflow: "label_enrichment",
+        network: c.network,
+        caseSlug: c.case_slug,
+        correlationId: newCorrelationId(),
+        environment: detectEnvironment(),
+        persistAudit: (rec) => waitUntil(
+          base44.asServiceRole.entities.NansenApiCallAudit.create(rec).catch((e) =>
+            console.error("[nansen-telemetry] audit write failed:", e?.message)
+          )
+        )
+      };
+      const lr = await fetchAddressLabels(apiKey, c.network, c.normalized_wallet_address, 20000, labelTelemetryCtx);
       logUsage(base44, c.case_slug, "live", [lr.callResult]);
 
       if (!lr.ok) {
