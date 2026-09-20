@@ -7,11 +7,15 @@
 // Never returns full wallet addresses, roasts, evidence, metrics, or any
 // internal/private record. Public app (no auth), so the service role reads.
 // Zero Nansen calls — reads only saved WalletTrial records.
+//
+// REQUEST PARSING: The Base44 runtime delivers req as a Web API Request whose
+// body is a ReadableStream. We must `await req.json()` to get the parsed JSON
+// (NOT req.body, which is the unread stream). The parsed body is then
+// validated by the shared parseHallRequest parser.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import {
   HALL_CATEGORIES,
   SUMMARY_LIMIT,
-  CATEGORY_PAGE_SIZE,
   CATEGORY_TITLES,
   CATEGORY_ROUTES,
   getEligibleForCategory,
@@ -21,17 +25,29 @@ import {
   sanitizeForHonor,
   keyOf,
 } from "../../shared/hallSelection.ts";
-
-const VALID_CATEGORIES = new Set(HALL_CATEGORIES);
+import { parseHallRequest } from "../../shared/hallRequest.ts";
 
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
-    const body = req.body || {};
-    const view = body.view || "summary"; // "summary" | "category"
-    const category = body.category || null;
-    const offset = Math.max(0, parseInt(body.offset) || 0);
-    const limit = Math.min(48, Math.max(1, parseInt(body.limit) || CATEGORY_PAGE_SIZE));
+
+    // Parse the Web API Request body (ReadableStream → JSON object).
+    let body: any = {};
+    try {
+      body = await req.json() || {};
+    } catch {
+      // allow empty body — defaults to summary
+    }
+
+    const parsed = parseHallRequest(body);
+    if (parsed.error) {
+      return Response.json(
+        { error: parsed.error, view: parsed.view },
+        { status: parsed.errorStatus || 400 }
+      );
+    }
+
+    const { view, category, offset, limit } = parsed;
 
     // Fetch completed cases (capped at 500 for safety; never the full collection).
     const records = await base44.asServiceRole.entities.WalletTrial.filter(
@@ -41,16 +57,13 @@ export default async function (req) {
     );
 
     // Trial count per wallet (without exposing the full address).
-    const countMap = {};
+    const countMap: Record<string, number> = {};
     for (const t of records || []) {
       const k = keyOf(t);
       if (k) countMap[k] = (countMap[k] || 0) + 1;
     }
 
     if (view === "category") {
-      if (!VALID_CATEGORIES.has(category)) {
-        return Response.json({ error: "Invalid category." }, { status: 400 });
-      }
       const eligible = getEligibleForCategory(records || [], category);
       const page = eligible.slice(offset, offset + limit);
       return Response.json({
@@ -58,7 +71,7 @@ export default async function (req) {
         category,
         title: CATEGORY_TITLES[category],
         route: CATEGORY_ROUTES[category],
-        items: page.map((t) =>
+        items: page.map((t: any) =>
           category === "honor" ? sanitizeForHonor(t) : sanitizeForHall(t, countMap)
         ),
         total: eligible.length,
@@ -69,10 +82,10 @@ export default async function (req) {
     }
 
     // Summary view: max 3 per section + honor + daily awards
-    const sections = {};
+    const sections: Record<string, any[]> = {};
     for (const cat of HALL_CATEGORIES) {
       const eligible = getEligibleForCategory(records || [], cat);
-      sections[cat] = eligible.slice(0, SUMMARY_LIMIT).map((t) =>
+      sections[cat] = eligible.slice(0, SUMMARY_LIMIT).map((t: any) =>
         cat === "honor" ? sanitizeForHonor(t) : sanitizeForHall(t, countMap)
       );
     }

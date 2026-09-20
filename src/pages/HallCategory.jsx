@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
 import CaseCard from "@/components/walletcourt/CaseCard";
 import HonorCard from "@/components/walletcourt/HonorCard";
 import { CATEGORY_TITLES, CATEGORY_SLUG_TO_KEY as SLUG_TO_KEY } from "@/lib/hallSelection";
+import { classifyHallCategoryResponse } from "@/lib/hallResponse";
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
 
 const PAGE_SIZE = 12;
@@ -33,16 +34,20 @@ export default function HallCategory() {
         offset: off,
         limit: PAGE_SIZE,
       });
-      if (res?.data?.error) {
-        setError(res.data.error);
+      const result = classifyHallCategoryResponse(res?.data);
+
+      if (result.status === "error") {
+        console.warn("[HallCategory] Response error", { category: catKey, error: result.error });
+        setError(result.error);
         setStatus("error");
         return;
       }
-      const newItems = res.data.items || [];
-      setItems((prev) => append ? [...prev, ...newItems] : newItems);
-      setTotal(res.data.total || 0);
-      setOffset(res.data.offset || 0);
-      setHasMore(!!res.data.has_more);
+
+      // Valid category response — "items" or "empty" (intentional empty state)
+      setItems((prev) => append ? [...prev, ...result.items] : result.items);
+      setTotal(result.total);
+      setOffset(result.offset);
+      setHasMore(result.has_more);
       setStatus("done");
     } catch (e) {
       setError(e?.message || "The docket could not be loaded.");
