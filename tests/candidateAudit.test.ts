@@ -92,8 +92,9 @@ describe("Candidate Discovery — source audit", () => {
     const content = stripComments(fs.readFileSync(f!, "utf8"));
     const authIdx = content.indexOf('base44.auth.me()');
     // getCalibrationCandidates delegates to store modules (getCandidates, getVerifiedTotal)
-    // which use asServiceRole internally. Auth must appear before the first store call.
-    const firstQueryIdx = content.indexOf('getCandidates');
+    // which use asServiceRole internally. Auth must appear before the first store CALL
+    // (not the import). Search for the call pattern "getCandidates(base44".
+    const firstQueryIdx = content.indexOf('getCandidates(base44');
     expect(authIdx).toBeGreaterThan(-1);
     expect(firstQueryIdx).toBeGreaterThan(-1);
     expect(authIdx).toBeLessThan(firstQueryIdx);
