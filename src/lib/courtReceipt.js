@@ -485,13 +485,51 @@ function drawPortraitReceipt(ctx, trial, W, H, s, isLive, isDemo) {
   ctx.fillStyle = COLORS.ice;
   ctx.font = `500 ${24 * s}px "JetBrains Mono", monospace`;
   const roastExcerpt = bestRoastExcerpt(trial.roast, 4);
-  wrapTextTruncate(ctx, roastExcerpt, 40 * s, roastY, W - 80 * s, 44 * s, 4);
+  const roastLines = wrapTextTruncate(ctx, roastExcerpt, 40 * s, roastY, W - 80 * s, 44 * s, 4);
+  const roastEndY = roastY + roastLines.length * 44 * s;
 
-  // 7. THE COURT SENTENCES YOU TO… block
-  const sentenceBoxY = 870 * s;
-  const sentenceBoxH = 300 * s;
+  // 7. THE COURT SENTENCES YOU TO… block — dynamic position after roast,
+  // dynamic height from wrapped lines, font reduction within readable limits.
+  // The box never crosses the footer border.
+  const sentenceGap = 20 * s;
+  const footerTopY = H - 120 * s;
+  const safeGap = 12 * s;
+  const sentenceBoxY = roastEndY + sentenceGap;
+  const maxBoxBottom = footerTopY - safeGap;
+  const maxBoxHeight = Math.max(0, maxBoxBottom - sentenceBoxY);
   const sentenceBoxW = W - 80 * s;
   const sentencePad = 20 * s;
+  const sentenceTextWidth = sentenceBoxW - sentencePad * 2;
+  const sentenceLabelH = 28 * s;
+
+  const sentenceText = sentenceExcerpt(trial.sentence, 3);
+  let sentenceFontPx = 24;
+  let sentenceLineH = 34 * s;
+  let sentenceLines = [];
+  if (sentenceText) {
+    for (let fp = 24; fp >= 14; fp--) {
+      const lh = Math.round(fp * 1.4) * s;
+      ctx.font = `500 ${fp * s}px "JetBrains Mono", monospace`;
+      const lines = wrapTextMeasure(ctx, sentenceText, sentenceTextWidth, 3);
+      const requiredH = sentencePad + sentenceLabelH + sentencePad + lines.length * lh + sentencePad;
+      if (requiredH <= maxBoxHeight) {
+        sentenceFontPx = fp;
+        sentenceLineH = lh;
+        sentenceLines = lines;
+        break;
+      }
+      if (fp === 14) {
+        sentenceFontPx = fp;
+        sentenceLineH = lh;
+        sentenceLines = lines;
+      }
+    }
+  }
+
+  const sentenceBoxH = Math.min(
+    sentencePad + sentenceLabelH + sentencePad + sentenceLines.length * sentenceLineH + sentencePad,
+    maxBoxHeight
+  );
 
   ctx.fillStyle = COLORS.navy;
   ctx.fillRect(40 * s, sentenceBoxY, sentenceBoxW, sentenceBoxH);
@@ -501,21 +539,15 @@ function drawPortraitReceipt(ctx, trial, W, H, s, isLive, isDemo) {
 
   ctx.fillStyle = COLORS.chart;
   ctx.font = `600 ${20 * s}px Oswald, sans-serif`;
-  ctx.fillText("THE COURT SENTENCES YOU TO…", 40 * s + sentencePad, sentenceBoxY + 36 * s);
+  ctx.fillText("THE COURT SENTENCES YOU TO…", 40 * s + sentencePad, sentenceBoxY + sentencePad + 22 * s);
 
-  const sentenceText = sentenceExcerpt(trial.sentence, 3);
-  if (sentenceText) {
+  if (sentenceText && sentenceLines.length > 0) {
     ctx.fillStyle = COLORS.ice;
-    ctx.font = `500 ${24 * s}px "JetBrains Mono", monospace`;
-    wrapTextTruncate(
-      ctx,
-      sentenceText,
-      40 * s + sentencePad,
-      sentenceBoxY + 84 * s,
-      sentenceBoxW - sentencePad * 2,
-      46 * s,
-      3
-    );
+    ctx.font = `500 ${sentenceFontPx * s}px "JetBrains Mono", monospace`;
+    const textStartY = sentenceBoxY + sentencePad + sentenceLabelH + sentencePad;
+    sentenceLines.forEach((line, i) => {
+      ctx.fillText(line, 40 * s + sentencePad, textStartY + i * sentenceLineH + sentenceLineH * 0.8);
+    });
   }
 
   // 8. Compact branded footer

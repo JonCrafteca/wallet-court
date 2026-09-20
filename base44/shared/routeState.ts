@@ -7,7 +7,7 @@
 export interface NavItem {
   to: string;
   label: string;
-  type: "link" | "button";
+  type: "link" | "button" | "badge";
   end?: boolean;
   authRequired?: boolean;
 }
@@ -31,7 +31,7 @@ export function getNavItems(opts: { isAuthenticated: boolean; isLoadingAuth: boo
   }
 
   // DEMO badge is always shown (not auth-dependent).
-  items.push({ to: "", label: "Demo", type: "badge" } as NavItem);
+  items.push({ to: "", label: "Demo", type: "badge" });
 
   if (!isLoadingAuth) {
     if (isAuthenticated) {

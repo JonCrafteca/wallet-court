@@ -10,6 +10,7 @@ import {
   xIntentUrl,
 } from "@/lib/courtDispatch";
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
+import { validateWalletForChain } from "@/lib/walletValidation";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 
 const NETWORKS = [
@@ -100,6 +101,11 @@ export default function Challenge() {
     setFormError("");
     if (!address.trim()) {
       setFormError("A wallet address is required.");
+      return;
+    }
+    const validation = validateWalletForChain(network, address.trim());
+    if (!validation.ok) {
+      setFormError(validation.message);
       return;
     }
     setPhase("analyzing");

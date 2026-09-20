@@ -1,20 +1,80 @@
 import { useState } from "react";
 import { Outlet, NavLink, Link } from "react-router-dom";
-import { Menu, X, LogOut } from "lucide-react";
+import { Menu, X, LogOut, LogIn } from "lucide-react";
 import TickerTape from "./TickerTape";
 import ShoutItMark from "./ShoutItMark";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/AuthContext";
-
-const NAV = [
-  { to: "/", label: "Courtroom", end: true },
-  { to: "/hall", label: "The Hall" },
-  { to: "/about", label: "About" },
-];
+import { getNavItems } from "@/lib/routeState";
 
 export default function CourtLayout() {
   const [open, setOpen] = useState(false);
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, isLoadingAuth, logout } = useAuth();
+  const navItems = getNavItems({ isAuthenticated, isLoadingAuth });
+  // Safe internal returnTo for Sign In: current same-origin path, appended
+  // as a query param. authReturnTo.safeReturnTo() sanitizes it on the Login
+  // page side, rejecting external/protocol-relative/backslash URLs.
+  const currentPath = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/";
+  const signInTo = `/login?returnTo=${encodeURIComponent(currentPath)}`;
+
+  function renderNavItem(item, isMobile) {
+    if (item.type === "badge") {
+      return (
+        <span
+          key="demo-badge"
+          className={cn(
+            "inline-flex items-center gap-1.5 border-2 border-court-chart bg-court-navy px-2 py-1 text-xs uppercase tracking-[0.18em] text-court-chart",
+            isMobile ? "w-full justify-center" : "ml-2"
+          )}
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-court-chart animate-blink" />
+          {item.label}
+        </span>
+      );
+    }
+    if (item.type === "button") {
+      return (
+        <button
+          key={item.label}
+          type="button"
+          onClick={() => { logout(); setOpen(false); }}
+          className={cn(
+            "inline-flex items-center gap-1.5 border-2 border-court-ice text-court-ice font-display uppercase tracking-[0.08em] hover:bg-court-red hover:border-court-red transition-colors",
+            isMobile ? "w-full justify-center px-3 py-2.5 text-base" : "ml-2 px-2.5 py-1 text-xs"
+          )}
+        >
+          <LogOut className={isMobile ? "h-5 w-5" : "h-3.5 w-3.5"} /> {item.label}
+        </button>
+      );
+    }
+    // link
+    const to = item.label === "Sign In" ? signInTo : item.to;
+    const isAuthItem = item.authRequired || item.label === "Sign In";
+    return (
+      <NavLink
+        key={item.label}
+        to={to}
+        end={item.end}
+        onClick={() => isMobile && setOpen(false)}
+        className={({ isActive }) =>
+          cn(
+            "font-display uppercase tracking-[0.08em] border-2 transition-colors",
+            isMobile
+              ? "block px-3 py-2.5 text-base"
+              : cn("px-3 py-1.5 text-sm", isAuthItem && "ml-2"),
+            isActive
+              ? "bg-court-chart text-court-navy border-court-chart"
+              : isAuthItem
+                ? "text-court-ice border-court-ice hover:bg-court-uv"
+                : "text-court-ice border-transparent hover:border-court-ice"
+          )
+        }
+      >
+        {item.label === "Sign In" && !isMobile && <LogIn className="inline h-3.5 w-3.5 mr-1" />}
+        {item.label}
+      </NavLink>
+    );
+  }
 
   return (
     <div className="court-shell min-h-screen font-body relative overflow-x-hidden">
@@ -32,51 +92,7 @@ export default function CourtLayout() {
             </div>
 
             <nav className="hidden sm:flex items-center gap-1">
-              {NAV.map((n) => (
-                <NavLink
-                  key={n.to}
-                  to={n.to}
-                  end={n.end}
-                  className={({ isActive }) =>
-                    cn(
-                      "px-3 py-1.5 font-display uppercase tracking-[0.08em] text-sm border-2 transition-colors",
-                      isActive
-                        ? "bg-court-chart text-court-navy border-court-chart"
-                        : "text-court-ice border-transparent hover:border-court-ice"
-                    )
-                  }
-                >
-                  {n.label}
-                </NavLink>
-              ))}
-              {isAuthenticated && (
-                <NavLink
-                  to="/account"
-                  className={({ isActive }) =>
-                    cn(
-                      "ml-2 px-3 py-1.5 font-display uppercase tracking-[0.08em] text-sm border-2 transition-colors",
-                      isActive
-                        ? "bg-court-chart text-court-navy border-court-chart"
-                        : "text-court-ice border-court-ice hover:bg-court-uv"
-                    )
-                  }
-                >
-                  My Court
-                </NavLink>
-              )}
-              <span className="ml-2 inline-flex items-center gap-1.5 border-2 border-court-chart bg-court-navy px-2 py-1 text-xs uppercase tracking-[0.18em] text-court-chart">
-                <span className="h-1.5 w-1.5 rounded-full bg-court-chart animate-blink" />
-                Demo
-              </span>
-              {isAuthenticated && (
-                <button
-                  type="button"
-                  onClick={() => logout()}
-                  className="ml-2 inline-flex items-center gap-1.5 border-2 border-court-ice text-court-ice px-2.5 py-1 font-display uppercase tracking-[0.08em] text-xs hover:bg-court-red hover:border-court-red transition-colors"
-                >
-                  <LogOut className="h-3.5 w-3.5" /> Sign Out
-                </button>
-              )}
+              {navItems.map((item) => renderNavItem(item, false))}
             </nav>
 
             <button
@@ -92,49 +108,7 @@ export default function CourtLayout() {
 
           {open && (
             <nav className="sm:hidden border-t-2 border-court-ice bg-court-navy px-4 py-3 space-y-2">
-              {NAV.map((n) => (
-                <NavLink
-                  key={n.to}
-                  to={n.to}
-                  end={n.end}
-                  onClick={() => setOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      "block px-3 py-2.5 font-display uppercase tracking-[0.08em] text-base border-2",
-                      isActive
-                        ? "bg-court-chart text-court-navy border-court-chart"
-                        : "text-court-ice border-court-ice"
-                    )
-                  }
-                >
-                  {n.label}
-                </NavLink>
-              ))}
-              {isAuthenticated && (
-                <NavLink
-                  to="/account"
-                  onClick={() => setOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      "block px-3 py-2.5 font-display uppercase tracking-[0.08em] text-base border-2",
-                      isActive
-                        ? "bg-court-chart text-court-navy border-court-chart"
-                        : "text-court-ice border-court-ice"
-                    )
-                  }
-                >
-                  My Court
-                </NavLink>
-              )}
-              {isAuthenticated && (
-                <button
-                  type="button"
-                  onClick={() => { logout(); setOpen(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 font-display uppercase tracking-[0.08em] text-base border-2 text-court-ice border-court-ice hover:bg-court-red hover:border-court-red"
-                >
-                  <LogOut className="h-5 w-5" /> Sign Out
-                </button>
-              )}
+              {navItems.map((item) => renderNavItem(item, true))}
             </nav>
           )}
 
