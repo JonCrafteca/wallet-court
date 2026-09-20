@@ -13,8 +13,8 @@
 //    Never repeats the four performance calls.
 //  - Preserves permanent case slugs (updates in place).
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { secrets, waitUntil } from "base44:runtime";
-import { logUsage, fetchAddressLabels } from "../../shared/nansen.ts";
+import { waitUntil } from "base44:runtime";
+import { logUsage, fetchAddressLabels, getNansenApiKey } from "../../shared/nansen.ts";
 import { newCorrelationId, detectEnvironment } from "../../shared/nansenTelemetry.ts";
 import { walletClassEvidence } from "../../shared/walletClass.ts";
 import { recomputeVerdictFromLabels } from "../../shared/verdicts_entity.ts";
@@ -106,8 +106,8 @@ export default async function (req) {
     if (preview) return Response.json(planPayload);
 
     // RUN: call labels only for plan.to_call. One labels call per wallet.
-    const apiKey = secrets.get("NANSEN_API_KEY");
-    if (!apiKey || !apiKey.trim()) {
+    const apiKey = getNansenApiKey();
+    if (!apiKey) {
       return Response.json({ error: "NANSEN_API_KEY not configured.", results: [] }, { status: 503 });
     }
 

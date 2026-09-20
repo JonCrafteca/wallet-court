@@ -23,8 +23,8 @@
 // during the N2.4 implementation/test phase. No real Nansen probe is initiated
 // here. The admin UI exposes the action for later use.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { secrets, waitUntil } from "base44:runtime";
-import { callEndpoint, CHAIN_BY_NETWORK, logUsage } from "../../shared/nansen.ts";
+import { waitUntil } from "base44:runtime";
+import { callEndpoint, CHAIN_BY_NETWORK, logUsage, getNansenApiKey } from "../../shared/nansen.ts";
 import { newCorrelationId, detectEnvironment } from "../../shared/nansenTelemetry.ts";
 import {
   classifyRecessType,
@@ -50,8 +50,8 @@ export default async function (req) {
     if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
     if (user.role !== "admin") return Response.json({ error: "Admin access required." }, { status: 403 });
 
-    const apiKey = secrets.get("NANSEN_API_KEY");
-    if (!apiKey || !apiKey.trim()) {
+    const apiKey = getNansenApiKey();
+    if (!apiKey) {
       return Response.json({ error: "NANSEN_API_KEY not configured — cannot probe." }, { status: 503 });
     }
 

@@ -19,7 +19,7 @@ function listTsFiles(dir: string, acc: string[] = []): string[] {
 
 function stripComments(content: string): string {
   return content
-    .replace(/\/\/[\s\S]*?\*\//g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/\/\/.*$/gm, " ");
 }
 
@@ -206,5 +206,108 @@ describe("Candidate Discovery — source audit", () => {
     // Every entity operation should go through asServiceRole
     expect(content).toContain("asServiceRole");
     expect(content).not.toContain("base44.entities.CalibrationCandidate");
+  });
+
+  // ---- Credential resolution regression tests (Nansen API key) ----
+
+  it("nansen.ts defines getNansenApiKey using secrets.get('NANSEN_API_KEY')", () => {
+    const f = files.find((x) => x.endsWith(path.join("shared", "nansen.ts")));
+    expect(f).toBeTruthy();
+    const content = stripComments(fs.readFileSync(f!, "utf8"));
+    expect(content).toContain("export function getNansenApiKey");
+    expect(content).toContain('secrets.get("NANSEN_API_KEY")');
+    // Must NOT use property access (the bug that broke discovery)
+    expect(content).not.toContain("secrets?.NANSEN_API_KEY");
+    expect(content).not.toContain("secrets.NANSEN_API_KEY");
+    expect(content).not.toContain("process.env.NANSEN_API_KEY");
+  });
+
+  it("all Nansen-calling functions import getNansenApiKey from nansen.ts", () => {
+    const callers = [
+      "analyzeWalletWithNansen",
+      "discoverCalibrationCandidates",
+      "adminProviderHealthCheck",
+      "enrichCasesWithLabels"
+    ];
+    for (const fn of callers) {
+      const f = files.find((x) => x.endsWith(path.join("functions", fn, "entry.ts")));
+      expect(f, `missing ${fn}`).toBeTruthy();
+      const content = stripComments(fs.readFileSync(f!, "utf8"));
+      expect(content).toContain("getNansenApiKey");
+      // Must import it from the shared nansen module
+      expect(content).toContain("../../shared/nansen.ts");
+    }
+  });
+
+  it("no Nansen-calling function accesses secrets directly (one shared resolver)", () => {
+    const callers = [
+      "analyzeWalletWithNansen",
+      "discoverCalibrationCandidates",
+      "adminProviderHealthCheck",
+      "enrichCasesWithLabels"
+    ];
+    for (const fn of callers) {
+      const f = files.find((x) => x.endsWith(path.join("functions", fn, "entry.ts")));
+      expect(f, `missing ${fn}`).toBeTruthy();
+      const content = stripComments(fs.readFileSync(f!, "utf8"));
+      // No direct secrets import or access — must use getNansenApiKey
+      expect(content).not.toContain('import { secrets');
+      expect(content).not.toContain("secrets.get(");
+      expect(content).not.toContain("secrets?.NANSEN_API_KEY");
+      expect(content).not.toContain("secrets.NANSEN_API_KEY");
+      expect(content).not.toContain("process.env.NANSEN_API_KEY");
+    }
+  });
+
+  it("discoverCalibrationCandidates checks for missing key before any Nansen transport call", () => {
+    const f = files.find((x) => x.endsWith(path.join("functions", "discoverCalibrationCandidates", "entry.ts")));
+    expect(f).toBeTruthy();
+    const content = stripComments(fs.readFileSync(f!, "utf8"));
+    const keyIdx = content.indexOf("getNansenApiKey()");
+    const missingCheckIdx = content.indexOf("!apiKey");
+    const transportIdx = content.indexOf("callEndpointWithRetry(");
+    expect(keyIdx).toBeGreaterThan(-1);
+    expect(missingCheckIdx).toBeGreaterThan(-1);
+    expect(transportIdx).toBeGreaterThan(-1);
+    // Key resolution → missing-key check → transport call, in that order
+    expect(keyIdx).toBeLessThan(missingCheckIdx);
+    expect(missingCheckIdx).toBeLessThan(transportIdx);
+  });
+
+  it("discoverCalibrationCandidates passes the resolved key as apiKey to the transport", () => {
+    const f = files.find((x) => x.endsWith(path.join("functions", "discoverCalibrationCandidates", "entry.ts")));
+    expect(f).toBeTruthy();
+    const content = stripComments(fs.readFileSync(f!, "utf8"));
+    // The transport call must receive apiKey as a parameter (not a hardcoded or env value)
+    expect(content).toContain("apiKey,");
+    // Must NOT hardcode or inline the key
+    expect(content).not.toMatch(/apiKey:\s*["']/);
+  });
+
+  it("the API key is never stored in an entity, returned in a response, or logged", () => {
+    const f = files.find((x) => x.endsWith(path.join("functions", "discoverCalibrationCandidates", "entry.ts")));
+    expect(f).toBeTruthy();
+    const content = stripComments(fs.readFileSync(f!, "utf8"));
+    // The key variable must not appear in any entity create, response, or log
+    expect(content).not.toContain("api_key: apiKey");
+    expect(content).not.toContain("apiKey: apiKey");
+    expect(content).not.toMatch(/console\.(log|info|warn).*apiKey/);
+    expect(content).not.toMatch(/Response\.json.*apiKey/);
+    expect(content).not.toMatch(/trackSafe.*apiKey/);
+  });
+
+  it("discoverCalibrationCandidates missing-key response is sanitized (no key value)", () => {
+    const f = files.find((x) => x.endsWith(path.join("functions", "discoverCalibrationCandidates", "entry.ts")));
+    expect(f).toBeTruthy();
+    const content = stripComments(fs.readFileSync(f!, "utf8"));
+    // The missing-key Response.json call must not include the apiKey variable.
+    // Find the response line and verify it only has the static error string.
+    const respMatch = content.match(/Response\.json\(\{[^}]*"Nansen API key not configured\."[^}]*\}/);
+    expect(respMatch).toBeTruthy();
+    const respLine = respMatch![0];
+    expect(respLine).not.toContain("apiKey");
+    // The error message is a static string, not a variable reference
+    expect(respLine).toContain('"Nansen API key not configured."');
+    expect(respLine).toContain("missing_key: true");
   });
 });

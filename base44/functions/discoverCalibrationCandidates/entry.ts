@@ -10,7 +10,7 @@
 //
 // Discovery never automatically queues, analyzes, or creates a WalletTrial.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { secrets, waitUntil } from "base44:runtime";
+import { waitUntil } from "base44:runtime";
 import {
   validateDiscoveryRequest,
   buildDiscoveryRequest,
@@ -28,7 +28,7 @@ import {
   DEFAULT_DISCOVERY_LIMIT,
   checkBudget
 } from "../../shared/candidateDiscovery.ts";
-import { NANSEN_BASE, DISCOVERY_EP } from "../../shared/nansen.ts";
+import { NANSEN_BASE, DISCOVERY_EP, getNansenApiKey } from "../../shared/nansen.ts";
 import { callEndpointWithRetry, newCorrelationId, detectEnvironment } from "../../shared/nansenTelemetry.ts";
 import { getControl, getVerifiedTotal } from "../../shared/calibrationStore.ts";
 import { getExistingQueueFingerprints } from "../../shared/calibrationStore.ts";
@@ -88,9 +88,10 @@ export default async function (req) {
       return Response.json({ error: "Provider is in Court Recess. Try again later.", court_recess: true }, { status: 423 });
     }
 
-    // Read API key
-    const apiKey = secrets?.NANSEN_API_KEY;
-    if (!apiKey || !apiKey.trim()) {
+    // Resolve the Nansen API key via the same shared server-side helper used by
+    // analyzeWalletWithNansen. Never access secrets directly — one credential path.
+    const apiKey = getNansenApiKey();
+    if (!apiKey) {
       return Response.json({ error: "Nansen API key not configured.", missing_key: true }, { status: 500 });
     }
 

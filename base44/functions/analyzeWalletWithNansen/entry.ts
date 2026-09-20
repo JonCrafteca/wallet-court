@@ -10,7 +10,6 @@
 // paid calls. A nonessential endpoint failure with sufficient remaining evidence
 // may still proceed as a partial verdict with reduced confidence.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { secrets } from "base44:runtime";
 import {
   validateAddress,
   normalizeAddress,
@@ -28,7 +27,7 @@ import {
 import { selectEntityVerdict } from "../../shared/verdicts_entity.ts";
 import { applySeverityCap } from "../../shared/verdicts_performance.ts";
 import { classifyOutcome, OPERATIONAL_FAILURE } from "../../shared/evidenceGate.ts";
-import { fetchNansenEvidence, assessRecess, CHAIN_BY_NETWORK, ERR } from "../../shared/nansen.ts";
+import { fetchNansenEvidence, assessRecess, CHAIN_BY_NETWORK, ERR, getNansenApiKey } from "../../shared/nansen.ts";
 import {
   isCircuitOpen,
   sanitizeReason,
@@ -103,8 +102,8 @@ export default async function (req) {
       return Response.json({ trial, analysis: { outcome: "demo", error_category: null, partial: false, nansen_calls: 0 } });
     }
 
-    const apiKey = secrets.get("NANSEN_API_KEY");
-    if (!apiKey || !apiKey.trim()) {
+    const apiKey = getNansenApiKey();
+    if (!apiKey) {
       // No key configured — honest demo. Not a provider outage; no circuit action.
       const public_slug = newSlug();
       const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId);

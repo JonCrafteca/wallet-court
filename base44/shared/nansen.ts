@@ -3,8 +3,19 @@
 // it from the secret store); this module never logs, serializes, or returns it.
 // All Nansen responses are normalized defensively: missing fields are omitted,
 // never invented and never treated as zero.
-import { waitUntil } from "base44:runtime";
+import { waitUntil, secrets } from "base44:runtime";
 import { fmtPctSigned, fmtPctPlain, fmtUsd, fmtInt, totalTradesEvidence, sampleEvidence, avgTokenAge } from "./format.ts";
+
+// Shared server-side Nansen API key resolution. Every backend function that
+// needs the key MUST call this helper — never access `secrets` directly. This
+// guarantees one consistent credential path and prevents the property-access
+// vs. .get() mistake that broke Candidate Discovery. The key is never logged,
+// returned, stored on an entity, or included in telemetry.
+export function getNansenApiKey(): string | null {
+  const key = secrets.get("NANSEN_API_KEY");
+  if (!key || !key.trim()) return null;
+  return key;
+}
 import { normalizeWalletClass } from "./walletClass.ts";
 // assessRecess is pure pipeline-level recess logic, extracted into its own
 // module so it is unit-testable without the platform runtime. Re-exported here
