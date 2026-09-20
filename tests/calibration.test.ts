@@ -164,7 +164,7 @@ describe("preflightEntries", () => {
   it("same normalized address + network cannot queue twice (idempotent import)", async () => {
     const entries = [
       { network: "ethereum", wallet_address: ETH_ADDR, source_label: "research", test_objective: "calibration", line: 1 },
-      { network: "ethereum", wallet_address: ETH_ADDR.toUpperCase(), source_label: "research", test_objective: "calibration", line: 2 }
+      { network: "ethereum", wallet_address: "0x" + ETH_ADDR.slice(2).toUpperCase(), source_label: "research", test_objective: "calibration", line: 2 }
     ];
     const result = await preflightEntries(entries, new Set(), new Set());
     expect(result.counts.accepted).toBe(1);
