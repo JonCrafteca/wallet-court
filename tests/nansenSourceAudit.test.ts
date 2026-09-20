@@ -37,9 +37,9 @@ describe("Nansen source audit — no bypass of approved transport", () => {
   it("no raw fetch( call exists anywhere in base44/ (all HTTP goes through the transport)", () => {
     const offenders: string[] = [];
     for (const f of files) {
-      const content = fs.readFileSync(f, "utf8");
+      const content = stripComments(fs.readFileSync(f, "utf8"));
       // Match "fetch(" as a call. The transport uses an injected fetchFn `f`,
-      // so no literal fetch( should appear anywhere.
+      // so no literal fetch( should appear in executable code anywhere.
       if (/\bfetch\s*\(/.test(content)) {
         offenders.push(path.relative(ROOT, f));
       }
@@ -69,7 +69,7 @@ describe("Nansen source audit — no bypass of approved transport", () => {
   it("nansen.ts callEndpoint delegates to callEndpointWithRetry (no inline fetch)", () => {
     const nansenFile = files.find((f) => f.endsWith(path.join("shared", "nansen.ts")));
     expect(nansenFile).toBeTruthy();
-    const content = fs.readFileSync(nansenFile!, "utf8");
+    const content = stripComments(fs.readFileSync(nansenFile!, "utf8"));
     expect(content).toContain("callEndpointWithRetry");
     expect(/\bfetch\s*\(/.test(content)).toBe(false);
   });
@@ -83,7 +83,7 @@ describe("Nansen source audit — no bypass of approved transport", () => {
     for (const rel of callers) {
       const f = files.find((x) => x.endsWith(rel));
       expect(f, `missing caller ${rel}`).toBeTruthy();
-      const content = fs.readFileSync(f!, "utf8");
+      const content = stripComments(fs.readFileSync(f!, "utf8"));
       // Each must route through the shared nansen module (which delegates to the
       // transport) — no direct fetch.
       expect(content.includes("nansen")).toBe(true);

@@ -168,16 +168,16 @@ function mkRecord(over: Partial<any> = {}) {
     endpoint_key: over.endpoint_key || "pnl_summary",
     workflow: over.workflow || "trial_analysis",
     network: over.network || "ethereum",
-    case_slug: over.case_slug ?? "case-1",
+    case_slug: over.case_slug !== undefined ? over.case_slug : "case-1",
     correlation_id: over.correlation_id || "corr_1",
-    attempt_number: over.attempt_number ?? 1,
-    response_status: over.response_status ?? 200,
+    attempt_number: over.attempt_number !== undefined ? over.attempt_number : 1,
+    response_status: over.response_status !== undefined ? over.response_status : 200,
     outcome: over.outcome || AUDIT_OUTCOMES.SUCCESS,
-    latency_ms: over.latency_ms ?? 50,
+    latency_ms: over.latency_ms !== undefined ? over.latency_ms : 50,
     environment: over.environment || "production",
     data_mode: "live",
-    provider_request_id: over.provider_request_id ?? null,
-    credits_consumed: over.credits_consumed ?? 1,
+    provider_request_id: over.provider_request_id !== undefined ? over.provider_request_id : null,
+    credits_consumed: over.credits_consumed !== undefined ? over.credits_consumed : 1,
     telemetry_version: TELEMETRY_VERSION
   };
 }
