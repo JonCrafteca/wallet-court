@@ -1,0 +1,163 @@
+{
+  "name": "CalibrationDocketItem",
+  "type": "object",
+  "properties": {
+    "docket_item_id": {
+      "type": "string",
+      "description": "Permanent unique ID. Format: cdi_<random>."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base",
+        "solana"
+      ],
+      "description": "Chain the wallet will be analyzed on."
+    },
+    "wallet_address": {
+      "type": "string",
+      "description": "Full wallet address as submitted. Required internally to run the analysis. NEVER exposed in dashboard responses, logs, exports, or analytics."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) address. NEVER exposed publicly."
+    },
+    "wallet_fingerprint": {
+      "type": "string",
+      "description": "Irreversible SHA-256 fingerprint of network + ':' + normalized_wallet_address. Safe to expose for dedup display."
+    },
+    "address_short": {
+      "type": "string",
+      "description": "Abbreviated address (0x1234\u2026abcd or first4\u2026last4) for safe display."
+    },
+    "source_label": {
+      "type": "string",
+      "description": "Administrator-provided source label, e.g. 'public wallet research'."
+    },
+    "test_objective": {
+      "type": "string",
+      "description": "Administrator-provided testing purpose, e.g. 'cross-chain verdict calibration'."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "processing",
+        "completed",
+        "rejected",
+        "failed",
+        "stopped"
+      ],
+      "default": "pending",
+      "description": "Queue lifecycle state. pending = queued; processing = claimed by a batch; completed = analysis finished; rejected = preflight rejected; failed = analysis error; stopped = budget/provider stop before analysis."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "Optimistic-concurrency CAS token. Incremented on every state transition. Used as a compare-and-set guard so two concurrent batch starts cannot claim the same item."
+    },
+    "attempt_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of analysis attempts for this item. Incremented each time a batch claims it."
+    },
+    "queued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the current batch claimed this item. Null while pending."
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the item reached a terminal state (completed/failed/stopped)."
+    },
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the WalletTrial created by the analysis. Null if no trial was created. Never overwritten once set."
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "Batch run_id this item was processed in. Null until claimed."
+    },
+    "calls_before": {
+      "type": "number",
+      "description": "Verified NansenApiCallAudit total immediately before this wallet's analysis. Null if not yet processed."
+    },
+    "calls_after": {
+      "type": "number",
+      "description": "Verified NansenApiCallAudit total immediately after this wallet's analysis. Null if not yet processed."
+    },
+    "physical_calls_used": {
+      "type": "number",
+      "description": "calls_after - calls_before. The number of physical Nansen requests consumed by this wallet's analysis (4 for a normal case, more with retries)."
+    },
+    "verdict_code": {
+      "type": "string",
+      "description": "Verdict code copied from the created WalletTrial for coverage display. Null for dismissed/mistrial or unprocessed items."
+    },
+    "verdict_name": {
+      "type": "string",
+      "description": "Verdict display name copied from the created WalletTrial. Null for dismissed/mistrial or unprocessed items."
+    },
+    "case_outcome": {
+      "type": "string",
+      "description": "Case outcome copied from the created WalletTrial: verdict, dismissed_no_evidence, mistrial_insufficient_evidence. Null if unprocessed."
+    },
+    "data_mode": {
+      "type": "string",
+      "description": "Data mode copied from the created WalletTrial: live or demo. Null if unprocessed."
+    },
+    "failure_category": {
+      "type": "string",
+      "description": "Safe failure category: validation, provider_recess, provider_error, budget_reached, consecutive_failures, ceiling_reached, invocation_error. Never raw provider response."
+    },
+    "failure_message_safe": {
+      "type": "string",
+      "description": "Sanitized failure message. Never includes wallet addresses, API keys, response bodies, or credentials."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Unique identifier for the batch run that claimed this item. Format: run_<random>."
+    }
+  },
+  "required": [
+    "docket_item_id",
+    "network",
+    "wallet_address",
+    "normalized_wallet_address",
+    "wallet_fingerprint",
+    "address_short",
+    "source_label",
+    "test_objective",
+    "status",
+    "version",
+    "queued_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

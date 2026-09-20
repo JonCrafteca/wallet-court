@@ -4,7 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle, Loader2, Download, FileJson, FileSpreadsheet, RefreshCw,
-  CheckCircle2, Circle, Activity, Target, Gauge, Clock, TrendingUp
+  CheckCircle2, Circle, Activity, Target, Gauge, Clock, TrendingUp, FlaskConical
 } from "lucide-react";
 
 const TARGET = 1000;
@@ -106,6 +106,9 @@ export default function AdminContestControl() {
         <p className="mt-2 font-mono text-base text-court-ice leading-relaxed">
           Verified outbound Nansen request ledger. Every record is one physical provider request — no backfill, no estimates, no demo counts.
         </p>
+        <Link to="/admin/calibration-docket" className="inline-flex items-center gap-1.5 mt-3 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors border-2 border-court-chart/40 px-3 py-1.5">
+          <FlaskConical className="h-4 w-4" /> Calibration Docket →
+        </Link>
       </header>
 
       {error && (

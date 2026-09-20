@@ -1,0 +1,75 @@
+{
+  "name": "CalibrationControl",
+  "type": "object",
+  "properties": {
+    "control_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every state transition."
+    },
+    "calibration_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Kill switch. true = admin may start calibration batches; false = calibration paused. Pausing does not affect public wallet submissions or interrupt an already-started wallet."
+    },
+    "paused_reason": {
+      "type": "string",
+      "description": "Safe reason set when calibration is paused. Null when enabled."
+    },
+    "paused_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When calibration was last paused. Null when enabled."
+    },
+    "paused_by_user_id": {
+      "type": "string",
+      "description": "Admin user id who last paused. NEVER returned in public/dashboard responses."
+    },
+    "target_reached": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set when verified NansenApiCallAudit total first reaches 1,000. Prevents new calibration batches."
+    },
+    "ceiling_reached": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set when verified total reaches 1,020. Absolute safety lock; calibration remains locked."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "control_key",
+    "version",
+    "calibration_enabled",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}
