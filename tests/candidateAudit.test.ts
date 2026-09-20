@@ -91,7 +91,9 @@ describe("Candidate Discovery — source audit", () => {
     expect(f).toBeTruthy();
     const content = stripComments(fs.readFileSync(f!, "utf8"));
     const authIdx = content.indexOf('base44.auth.me()');
-    const firstQueryIdx = content.indexOf('asServiceRole');
+    // getCalibrationCandidates delegates to store modules (getCandidates, getVerifiedTotal)
+    // which use asServiceRole internally. Auth must appear before the first store call.
+    const firstQueryIdx = content.indexOf('getCandidates');
     expect(authIdx).toBeGreaterThan(-1);
     expect(firstQueryIdx).toBeGreaterThan(-1);
     expect(authIdx).toBeLessThan(firstQueryIdx);
