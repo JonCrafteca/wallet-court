@@ -34,7 +34,7 @@ import {
   CALIBRATION_TARGET,
   CALIBRATION_CEILING
 } from "../../shared/calibration.ts";
-import { getVerifiedTotal, updateControl, releaseCampaignLock, getTelemetryHealth } from "../../shared/calibrationStore.ts";
+import { getVerifiedTotal, updateControl, releaseCampaignLock, getTelemetryHealth, getControl } from "../../shared/calibrationStore.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
 import { shouldHaltForTelemetry } from "../../shared/calibrationCampaign.ts";

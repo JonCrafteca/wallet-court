@@ -196,12 +196,15 @@ describe("Campaign Runner — source audit", () => {
     expect(content).toContain("updateMany");
   });
 
-  it("stopCalibrationCampaign reverts unprocessed items to pending", () => {
+  it("stopCalibrationCampaign reverts unprocessed items to pending via delegated helper", () => {
     const f = tsFiles.find((x) => x.endsWith(path.join("functions", "stopCalibrationCampaign", "entry.ts")));
     expect(f).toBeTruthy();
     const content = stripComments(fs.readFileSync(f!, "utf8"));
-    expect(content).toContain("ITEM_STATUS.PENDING");
-    expect(content).toContain("updateMany");
+    // Stop delegates reversion to revertNonCurrentProcessingItems (in campaignStore),
+    // which uses updateMany with ITEM_STATUS.PENDING internally. The stop function
+    // itself should call the helper and release the campaign lock on terminal stop.
+    expect(content).toContain("revertNonCurrentProcessingItems");
+    expect(content).toContain("releaseCampaignLock");
   });
 
   it("resumeCalibrationCampaign requires explicit confirmation", () => {

@@ -19,6 +19,7 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { waitUntil } from "base44:runtime";
 import { sanitizeCampaignRun, CAMPAIGN_STATUS, ACTIVE_STATUSES } from "../../shared/calibrationCampaign.ts";
 import { getCampaignById, updateCampaign, revertNonCurrentProcessingItems } from "../../shared/campaignStore.ts";
+import { releaseCampaignLock } from "../../shared/calibrationStore.ts";
 
 function trackSafe(base44, eventName: string, props: Record<string, any>) {
   try { if (base44?.analytics?.track) waitUntil(base44.analytics.track({ eventName, properties: props })); } catch {}
@@ -69,6 +70,7 @@ export default async function (req) {
       });
       // Revert any PROCESSING items (safety net — should be none)
       await revertNonCurrentProcessingItems(base44, runId, []);
+      await releaseCampaignLock(base44, runId);
       trackSafe(base44, "calibration_campaign_stopped", { run_id: runId, had_current_item: false });
       return Response.json({
         run: sanitizeCampaignRun(updated || { ...run, status: CAMPAIGN_STATUS.STOPPED }),

@@ -52,9 +52,10 @@ import {
   CALIBRATION_TARGET,
   CALIBRATION_CEILING
 } from "../../shared/calibration.ts";
-import { getVerifiedTotal } from "../../shared/calibrationStore.ts";
+import { getVerifiedTotal, releaseCampaignLock, getControl } from "../../shared/calibrationStore.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
+import { shouldHaltForTelemetry } from "../../shared/calibrationCampaign.ts";
 
 const PROVIDER = "nansen";
 
@@ -174,6 +175,7 @@ export default async function (req) {
       reconciliationFields.stop_reason = run.stop_reason || "Stopped by admin after current wallet.";
       reconciliationFields.completed_at = now;
       await updateCampaign(base44, runId, reconciliationFields);
+      await releaseCampaignLock(base44, runId);
       trackSafe(base44, "calibration_campaign_stopped_after_reconciliation", { run_id: runId, reconciliation: reconciliationResult.action, accounted: reconciliationResult.accounted });
       const stoppedRun = await getCampaignById(base44, runId);
       return Response.json({
@@ -193,6 +195,7 @@ export default async function (req) {
       reconciliationFields.stop_reason = budget.reason;
       reconciliationFields.completed_at = now;
       await updateCampaign(base44, runId, reconciliationFields);
+      await releaseCampaignLock(base44, runId);
       return Response.json({ error: budget.reason, budget, verified_total: verifiedTotal, reconciliation: reconciliationResult.action }, { status: 423 });
     }
 
@@ -202,7 +205,25 @@ export default async function (req) {
       reconciliationFields.stop_reason = "Provider is in Court Recess.";
       reconciliationFields.completed_at = now;
       await updateCampaign(base44, runId, reconciliationFields);
+      await releaseCampaignLock(base44, runId);
       return Response.json({ error: "Provider is in Court Recess. Try again later.", court_recess: true, reconciliation: reconciliationResult.action }, { status: 423 });
+    }
+
+    // Telemetry health check: halt if audit persistence is unhealthy.
+    const control = await getControl(base44);
+    if (control && shouldHaltForTelemetry(control)) {
+      reconciliationFields.status = CAMPAIGN_STATUS.ERROR;
+      reconciliationFields.stop_reason = "Telemetry persistence is unhealthy. Campaign halted to preserve proof integrity.";
+      reconciliationFields.completed_at = now;
+      await updateCampaign(base44, runId, reconciliationFields);
+      await releaseCampaignLock(base44, runId);
+      trackSafe(base44, "calibration_campaign_halted_telemetry", { run_id: runId, verified_total: verifiedTotal, reconciliation: reconciliationResult.action });
+      return Response.json({
+        error: "Telemetry persistence is unhealthy. Campaign cannot resume until audit writes succeed.",
+        telemetry_unhealthy: true,
+        telemetry_warning: control.telemetry_warning || "Telemetry persistence failed.",
+        reconciliation: reconciliationResult.action
+      }, { status: 423 });
     }
 
     // Set status back to running
@@ -223,6 +244,7 @@ export default async function (req) {
         stop_reason: "No more pending wallets in the queue.",
         completed_at: now
       });
+      await releaseCampaignLock(base44, runId);
       const completedRun = await getCampaignById(base44, runId);
       return Response.json({
         run: sanitizeCampaignRun(completedRun || run),
