@@ -33,7 +33,7 @@ import {
   newCorrelationId
 } from "./nansenTelemetry.ts";
 import { persistWithRetry, buildTelemetryWarning } from "./telemetryRetry.ts";
-import { checkBudget } from "./calibration.ts";
+import { checkCeilingBudget } from "./calibration.ts";
 import { getVerifiedTotal } from "./calibrationStore.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
@@ -264,11 +264,36 @@ function mapEvidence(calls, windowDays) {
   return { metrics, evidence };
 }
 
+// Exactly-once audit persistence: checks for an existing call_id before
+// creating, preventing duplicate rows when the first create succeeded but its
+// response threw or timed out. Duplicate-key errors are treated as success.
+// This function is server-side only (uses asServiceRole); never exported.
+async function persistAuditRecord(base44, rec) {
+  const existing = await base44.asServiceRole.entities.NansenApiCallAudit.filter(
+    { call_id: rec.call_id }, "-occurred_at", 1
+  );
+  if (existing && existing.length > 0) {
+    return; // already persisted — treat as success, do not create another row
+  }
+  try {
+    await base44.asServiceRole.entities.NansenApiCallAudit.create(rec);
+  } catch (e) {
+    const msg = (e?.message || "").toLowerCase();
+    if (msg.includes("duplicate") || msg.includes("already exists") || msg.includes("e11000")) {
+      return; // duplicate key = another attempt already persisted this call_id
+    }
+    throw e;
+  }
+}
+
 // Orchestrates the four-endpoint pipeline for one wallet. Returns normalized
 // evidence + an honest outcome (live | partial | demo) + a sanitized error
 // category. Logs one sanitized NansenApiUsage record per call (via waitUntil).
+// When durableTelemetry is true (campaign traffic), audit persistence is
+// awaited before returning so the campaign cannot advance until telemetry
+// health is confirmed.
 export async function fetchNansenEvidence(apiKey, network, address, opts) {
-  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000 } = opts || {};
+  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false } = opts || {};
 
   if (!apiKey || !apiKey.trim()) {
     return { outcome: "demo", errorCategory: ERR.MISSING_KEY, partial: false, failedSources: NANSEN_ENDPOINTS.map((e) => e.key), evidence: [], metrics: {}, sources: [], meta: null, nansenCalls: 0 };
@@ -294,11 +319,17 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // This is the last line of defense: even if the campaign-level check passed,
   // a concurrent request from another workflow could have pushed the total to
   // the ceiling between the campaign check and this physical attempt.
+  // Per-physical-attempt ceiling guard. Uses checkCeilingBudget (blocks only at
+  // 1,020), NOT checkBudget (which blocks at 1,000). This allows a wallet
+  // already in progress to finish its remaining physical requests even after
+  // the verified total crosses 1,000, as long as it stays below 1,020. New
+  // wallets are blocked at 1,000 by the campaign-level shouldCampaignContinue
+  // check, not by this per-attempt guard.
   const budgetGuard = base44
     ? async () => {
         try {
           const total = await getVerifiedTotal(base44);
-          const budget = checkBudget(total);
+          const budget = checkCeilingBudget(total);
           return { allowed: budget.allowed, verifiedTotal: total, reason: budget.reason };
         } catch {
           // Guard check failed — be conservative and allow the request. The
@@ -315,11 +346,9 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     correlationId,
     environment: detectEnvironment(),
     persistAudit: base44
-      ? (rec) => waitUntil(
-          (async () => {
-            const outcome = await persistWithRetry(rec, (r) =>
-              base44.asServiceRole.entities.NansenApiCallAudit.create(r)
-            );
+      ? (rec) => {
+          const persistPromise = (async () => {
+            const outcome = await persistWithRetry(rec, (r) => persistAuditRecord(base44, r));
             if (!outcome.succeeded) {
               console.error("[nansen-telemetry] audit persist failed after retries:", outcome.finalError);
               // Mark telemetry unhealthy so the campaign halts with a visible warning.
@@ -330,8 +359,15 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
                 console.error("[nansen-telemetry] failed to mark telemetry unhealthy:", e?.message);
               }
             }
-          })()
-        )
+          })();
+          if (durableTelemetry) {
+            // Durable: return the Promise so callNansenWithTelemetry awaits it.
+            // The campaign cannot advance until persistence settles.
+            return persistPromise;
+          }
+          // Non-durable: fire and forget with waitUntil (public visitor traffic).
+          waitUntil(persistPromise);
+        }
       : undefined
   };
 

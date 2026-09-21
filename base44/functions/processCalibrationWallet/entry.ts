@@ -99,7 +99,8 @@ export default async function (req) {
       analysisResult = await base44.asServiceRole.functions.invoke("analyzeWalletWithNansen", {
         wallet_address: item.wallet_address,
         network: item.network,
-        window_days: 180
+        window_days: 180,
+        durable_telemetry: true
       });
     } catch (e) {
       analysisResult = { status: 500, data: { error: e?.message || "Pipeline invocation failed." } };

@@ -7,28 +7,44 @@ import { AUDIT_QUERY_LIMIT } from "./calibration.ts";
 const CONTROL_KEY = "main";
 
 // Read the singleton CalibrationControl record, or null if it doesn't exist yet.
+// Returns the OLDEST record (by created_date ascending) so all processes agree
+// on the canonical singleton, even if duplicate rows were created in a
+// simultaneous first-use race.
 export async function getControl(base44): Promise<any> {
   const records = await base44.asServiceRole.entities.CalibrationControl.filter(
-    { control_key: CONTROL_KEY }, "-updated_at", 1
+    { control_key: CONTROL_KEY }, "created_date", 1
   );
   return (records && records[0]) || null;
 }
 
-// Ensure the control record exists (create with defaults if missing). Returns it.
+// Ensure the control record exists (create with defaults if missing). Returns
+// the canonical (oldest) record. If two processes call this simultaneously when
+// no control exists, both may create a row, but both then re-read and get the
+// same oldest record — so subsequent CAS operations (acquireCampaignLock)
+// target the same id and only one can succeed.
 export async function ensureControl(base44): Promise<any> {
   const existing = await getControl(base44);
   if (existing) return existing;
-  return base44.asServiceRole.entities.CalibrationControl.create({
-    control_key: CONTROL_KEY,
-    version: 0,
-    calibration_enabled: true,
-    paused_reason: null,
-    paused_at: null,
-    paused_by_user_id: null,
-    target_reached: false,
-    ceiling_reached: false,
-    updated_at: new Date().toISOString()
-  });
+  try {
+    await base44.asServiceRole.entities.CalibrationControl.create({
+      control_key: CONTROL_KEY,
+      version: 0,
+      calibration_enabled: true,
+      paused_reason: null,
+      paused_at: null,
+      paused_by_user_id: null,
+      target_reached: false,
+      ceiling_reached: false,
+      updated_at: new Date().toISOString()
+    });
+  } catch (e) {
+    // Create failed (e.g. duplicate) — fall through to re-read.
+  }
+  // ALWAYS re-read after create to get the canonical (oldest) record, in case
+  // another process created one simultaneously.
+  const afterCreate = await getControl(base44);
+  if (afterCreate) return afterCreate;
+  throw new Error("Failed to ensure calibration control singleton.");
 }
 
 // Update the control record with new fields, bumping the CAS version.
@@ -73,9 +89,12 @@ export async function acquireCampaignLock(base44, runId: string): Promise<boolea
   if (control.campaign_lock_run_id === runId) return true;
   // If held by another run, fail
   if (control.campaign_lock_run_id) return false;
-  // Atomic CAS: only succeeds if campaign_lock_run_id is still null
+  // Atomic CAS on the canonical control record (by id). Both concurrent starts
+  // read the same canonical record (oldest by created_date), so both target the
+  // same id. The filter (campaign_lock_run_id = null + version match) ensures
+  // only one update succeeds.
   const result = await base44.asServiceRole.entities.CalibrationControl.updateMany(
-    { control_key: "main", campaign_lock_run_id: null, version: control.version },
+    { id: control.id, campaign_lock_run_id: null, version: control.version },
     {
       $set: {
         campaign_lock_run_id: runId,
@@ -88,10 +107,13 @@ export async function acquireCampaignLock(base44, runId: string): Promise<boolea
 }
 
 // Release the campaign lock. Only releases if the lock is held by the given
-// run_id (prevents a stale run from releasing another run's lock). Uses CAS.
+// run_id (prevents a stale or non-owner run from releasing another run's lock).
+// Uses CAS on the canonical record id.
 export async function releaseCampaignLock(base44, runId: string): Promise<boolean> {
+  const control = await getControl(base44);
+  if (!control) return false;
   const result = await base44.asServiceRole.entities.CalibrationControl.updateMany(
-    { control_key: "main", campaign_lock_run_id: runId },
+    { id: control.id, campaign_lock_run_id: runId },
     {
       $set: {
         campaign_lock_run_id: null,
@@ -118,7 +140,7 @@ export async function markTelemetryUnhealthy(base44, warning: string): Promise<v
   const control = await ensureControl(base44);
   if (control.telemetry_health === "unhealthy") return; // already unhealthy
   await base44.asServiceRole.entities.CalibrationControl.updateMany(
-    { control_key: "main", telemetry_health: "healthy", version: control.version },
+    { id: control.id, telemetry_health: "healthy", version: control.version },
     {
       $set: {
         telemetry_health: "unhealthy",
@@ -136,7 +158,7 @@ export async function markTelemetryHealthy(base44): Promise<void> {
   const control = await getControl(base44);
   if (!control || control.telemetry_health === "healthy") return;
   await base44.asServiceRole.entities.CalibrationControl.updateMany(
-    { control_key: "main", telemetry_health: "unhealthy", version: control.version },
+    { id: control.id, telemetry_health: "unhealthy", version: control.version },
     {
       $set: {
         telemetry_health: "healthy",

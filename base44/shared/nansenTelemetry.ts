@@ -336,7 +336,15 @@ export async function callNansenWithTelemetry(args: {
   });
 
   if (typeof persistAudit === "function") {
-    try { persistAudit(auditRecord); } catch (e) {
+    try {
+      // If persistAudit returns a Promise (durable mode), await it so the
+      // caller knows persistence settled before proceeding. If it returns
+      // void (non-durable mode with waitUntil), fire and forget.
+      const maybePromise = persistAudit(auditRecord);
+      if (maybePromise && typeof (maybePromise as any).then === "function") {
+        await (maybePromise as Promise<void>);
+      }
+    } catch (e) {
       // Telemetry persistence failure must never change the verdict.
       // Emit a server-side log and keep going.
       if (typeof console !== "undefined" && console.error) {

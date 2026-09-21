@@ -93,6 +93,10 @@ export default async function (req) {
 
     const normalized = normalizeAddress(network, wallet_address);
     const windowDays = Math.min(Math.max(parseInt(body?.window_days, 10) || 180, 7), 365);
+    // Campaign traffic (processCalibrationWallet) passes durable_telemetry=true
+    // so audit persistence is awaited before the analysis returns. Public
+    // visitor traffic omits it and stays non-blocking (waitUntil).
+    const durableTelemetry = !!body?.durable_telemetry;
 
     // Mandatory demo wallet: deterministic demo verdict, never spends Nansen calls
     // and never touches the circuit.
@@ -126,7 +130,8 @@ export default async function (req) {
       windowDays,
       caseSlug: public_slug,
       base44,
-      timeoutMs: 20000
+      timeoutMs: 20000,
+      durableTelemetry
     });
 
     // Defensive: if the provider reported an unsupported chain (should be caught

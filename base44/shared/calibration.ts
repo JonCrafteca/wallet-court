@@ -308,6 +308,21 @@ export function checkBudget(verifiedTotal: number): BudgetCheck {
   return { allowed: true, reason: "", target_reached: false, ceiling_reached: false, verified_total: verifiedTotal };
 }
 
+// Ceiling-only budget check for per-physical-attempt guards. Unlike checkBudget,
+// this does NOT block at the 1,000 target — only at the 1,020 absolute safety
+// ceiling. This allows a wallet already in progress to finish its remaining
+// physical requests even after the verified total crosses 1,000, as long as
+// it stays below 1,020. New wallets are blocked at 1,000 by the campaign-level
+// check (shouldCampaignContinue / checkBudget), not by this guard.
+export function checkCeilingBudget(verifiedTotal: number): BudgetCheck {
+  const target_reached = verifiedTotal >= CALIBRATION_TARGET;
+  const ceiling_reached = verifiedTotal >= CALIBRATION_CEILING;
+  if (ceiling_reached) {
+    return { allowed: false, reason: "Absolute safety ceiling (1,020) reached. No further physical requests.", target_reached: true, ceiling_reached: true, verified_total: verifiedTotal };
+  }
+  return { allowed: true, reason: "", target_reached, ceiling_reached: false, verified_total: verifiedTotal };
+}
+
 // ---- Provider-stop classification ----
 
 // Classify the result of invoking analyzeWalletWithNansen for one wallet.
