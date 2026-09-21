@@ -183,7 +183,11 @@ export default async function (req) {
       if (decision.newStatus) {
         updatedFields.status = decision.newStatus;
         updatedFields.stop_reason = decision.stopReason;
-        updatedFields.completed_at = new Date().toISOString();
+        // Only set completed_at for terminal statuses. Paused is NOT terminal —
+        // it's an intentional state that the admin can resume from.
+        if (TERMINAL_STATUSES.has(decision.newStatus)) {
+          updatedFields.completed_at = new Date().toISOString();
+        }
       }
       await updateCampaign(base44, runId, updatedFields);
       await releaseCampaignLock(base44, runId);

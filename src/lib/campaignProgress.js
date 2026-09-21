@@ -46,6 +46,28 @@ export function safeProgress(done, total) {
   return { done: safeDone, total, label: `${safeDone} of ${total}` };
 }
 
+// The progress denominator is the campaign's immutable original wallet total
+// (max_wallets). For "all approved" (max_wallets = null), fall back to
+// wallets_selected as the best available denominator. Never derive the
+// denominator from completed results or currently loaded result rows.
+export function campaignProgressTotal(campaign) {
+  if (!campaign) return 0;
+  if (campaign.max_wallets != null) return campaign.max_wallets;
+  return campaign.wallets_selected || 0;
+}
+
+// Classify a campaign status for stop-reason treatment.
+// "success" = completed or target_reached (lime/chartreuse).
+// "error" = error, circuit_open, or ceiling_reached (red — failed/error/safety-halt).
+// "warning" = stopped (neutral — admin action, not an error).
+export function isSuccessStatus(status) {
+  return status === "completed" || status === "target_reached";
+}
+
+export function isErrorStatus(status) {
+  return status === "error" || status === "circuit_open" || status === "ceiling_reached";
+}
+
 // Average physical Nansen calls per wallet analysis (4 profiler endpoints).
 export const AVG_CALLS_PER_WALLET = 4;
 

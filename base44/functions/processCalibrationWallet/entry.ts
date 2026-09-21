@@ -108,10 +108,21 @@ export default async function (req) {
 
     // ---- Query calls after ----
     const callsAfter = await getVerifiedTotal(base44);
-    const physicalCallsUsed = Math.max(0, callsAfter - callsBefore);
+    // Use the authoritative physical-call count from the analysis pipeline when
+    // available. physical_calls_made counts every physical outbound attempt
+    // (including 429/network retries) and is not affected by concurrent audit
+    // writes from other workflows. Falls back to the ledger delta when the
+    // analysis didn't return a count (e.g., court recess, invocation error).
+    const ledgerDelta = Math.max(0, callsAfter - callsBefore);
+    const analysisData = analysisResult?.data || {};
+    const physicalCallsMade = typeof analysisData?.analysis?.physical_calls_made === "number"
+      ? analysisData.analysis.physical_calls_made
+      : null;
+    const physicalCallsUsed = physicalCallsMade !== null ? physicalCallsMade : ledgerDelta;
+    const callsAttribution = physicalCallsMade !== null ? "authoritative" : "ledger_delta";
 
     const httpStatus = analysisResult?.status || 500;
-    const data = analysisResult?.data || {};
+    const data = analysisData;
 
     // ---- Classify result and check stop conditions ----
     const decision = classifyWalletResult(httpStatus, data, 0);
@@ -161,6 +172,7 @@ export default async function (req) {
         calls_before: callsBefore,
         calls_after: callsAfter,
         physical_calls_used: physicalCallsUsed,
+        calls_attribution: callsAttribution,
         verified_total: callsAfter,
         stop_batch: targetReached || ceilingReached,
         stop_reason: targetReached ? "Contest target reached." : (ceilingReached ? "Safety ceiling reached." : ""),
@@ -214,6 +226,7 @@ export default async function (req) {
       calls_before: callsBefore,
       calls_after: callsAfter,
       physical_calls_used: physicalCallsUsed,
+      calls_attribution: callsAttribution,
       verified_total: callsAfter,
       stop_batch: decision.stop || isCourtRecess,
       stop_reason: decision.stop ? decision.reason : ""

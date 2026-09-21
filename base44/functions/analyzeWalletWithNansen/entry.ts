@@ -103,7 +103,7 @@ export default async function (req) {
     if (normalized.toLowerCase() === MANDATORY_DEMO_ADDRESS) {
       const public_slug = newSlug();
       const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId);
-      return Response.json({ trial, analysis: { outcome: "demo", error_category: null, partial: false, nansen_calls: 0 } });
+      return Response.json({ trial, analysis: { outcome: "demo", error_category: null, partial: false, nansen_calls: 0, physical_calls_made: 0, correlation_id: null } });
     }
 
     const apiKey = getNansenApiKey();
@@ -111,7 +111,7 @@ export default async function (req) {
       // No key configured — honest demo. Not a provider outage; no circuit action.
       const public_slug = newSlug();
       const trial = await createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId);
-      return Response.json({ trial, analysis: { outcome: "demo", error_category: "missing_key", partial: false, nansen_calls: 0 } });
+      return Response.json({ trial, analysis: { outcome: "demo", error_category: "missing_key", partial: false, nansen_calls: 0, physical_calls_made: 0, correlation_id: null } });
     }
 
     // ---- Circuit check BEFORE any paid Nansen request (N2.4) ----
@@ -199,7 +199,9 @@ export default async function (req) {
           outcome: nansen.outcome,
           error_category: nansen.errorCategory,
           partial: nansen.partial,
-          nansen_calls: nansen.nansenCalls
+          nansen_calls: nansen.nansenCalls,
+          physical_calls_made: nansen.physicalCallCount || 0,
+          correlation_id: nansen.correlationId || null
         }
       });
     }
@@ -228,7 +230,9 @@ export default async function (req) {
         outcome: nansen.outcome,
         error_category: nansen.errorCategory,
         partial: nansen.partial,
-        nansen_calls: nansen.nansenCalls
+        nansen_calls: nansen.nansenCalls,
+        physical_calls_made: nansen.physicalCallCount || 0,
+        correlation_id: nansen.correlationId || null
       }
     });
   } catch (error) {

@@ -314,6 +314,15 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // share it; each attempt gets its own NansenApiCallAudit record.
   const correlationId = newCorrelationId();
 
+  // Authoritative physical-call counter. Incremented once per persistAudit
+  // invocation, which corresponds to exactly one callNansenWithTelemetry call,
+  // which is exactly one physical outbound HTTP attempt (including 429/network
+  // retries). This count is returned to the caller as physical_calls_made,
+  // replacing the callsAfter - callsBefore delta which can be skewed by
+  // concurrent audit writes from other workflows landing in the gap between
+  // wallets.
+  let physicalCallCount = 0;
+
   // Per-physical-attempt ceiling guard. Injected into the transport so every
   // physical request checks the verified total before leaving the process.
   // This is the last line of defense: even if the campaign-level check passed,
@@ -347,6 +356,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     environment: detectEnvironment(),
     persistAudit: base44
       ? (rec) => {
+          physicalCallCount++;
           const persistPromise = (async () => {
             const outcome = await persistWithRetry(rec, (r) => persistAuditRecord(base44, r));
             if (!outcome.succeeded) {
@@ -451,7 +461,9 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     meta,
     walletClass,
     rawLabels,
-    nansenCalls: NANSEN_ENDPOINTS.length
+    nansenCalls: NANSEN_ENDPOINTS.length,
+    physicalCallCount,
+    correlationId
   };
 }
 

@@ -8,7 +8,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   CAMPAIGN_SIZES, CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUS_COLORS,
-  TERMINAL_STATUSES, ACTIVE_STATUSES, safeProgress, estimateCalls, AVG_CALLS_PER_WALLET
+  TERMINAL_STATUSES, ACTIVE_STATUSES, safeProgress, estimateCalls, AVG_CALLS_PER_WALLET,
+  campaignProgressTotal, isSuccessStatus, isErrorStatus
 } from "@/lib/campaignProgress";
 
 // Calibration Campaign Runner: processes up to N approved wallets sequentially
@@ -23,6 +24,7 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
   const [progress, setProgress] = useState(null);
   const [results, setResults] = useState([]);
   const [error, setError] = useState("");
+  const [stopReason, setStopReason] = useState(null);
   const [interrupted, setInterrupted] = useState(false);
   const [loadingState, setLoadingState] = useState(true);
   const stopRef = useRef(false);
@@ -45,7 +47,11 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
         setCampaign(data.campaign);
         setProgress(data.progress);
         setResults(data.results || []);
-        if (data.campaign.status === "paused" || data.campaign.status === "stopping") {
+        // Only show the interruption banner for stopping (the campaign was
+        // left mid-stop by a page refresh and needs finalization). A paused
+        // campaign is an intentional state — show normal Resume/Stop controls,
+        // NOT the interruption banner.
+        if (data.campaign.status === "stopping") {
           setInterrupted(true);
         }
       }
@@ -128,7 +134,9 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
       // Check stop conditions
       if (advanceData.stop_reason || !advanceData.next_item) {
         if (advanceData.stop_reason && !stopRef.current && !pauseRef.current) {
-          setError(advanceData.stop_reason);
+          // Set as a stop reason (not an error) so it renders with the correct
+          // treatment: lime for completed/target_reached, red for errors.
+          setStopReason({ message: advanceData.stop_reason, status: advanceData.run?.status || "completed" });
         }
         break;
       }
@@ -160,6 +168,7 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
     if (!confirmed) return;
     setRunning(true);
     setError("");
+    setStopReason(null);
     setResults([]);
     stopRef.current = false;
     pauseRef.current = false;
@@ -208,6 +217,7 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
     if (!campaign) return;
     setRunning(true);
     setError("");
+    setStopReason(null);
     setInterrupted(false);
     stopRef.current = false;
     pauseRef.current = false;
@@ -237,7 +247,9 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
         await processLoop(data.run.run_id, data.next_item);
       } else {
         setRunning(false);
-        if (data.stop_reason) setError(data.stop_reason);
+        if (data.stop_reason) {
+          setStopReason({ message: data.stop_reason, status: data.run?.status || "completed" });
+        }
       }
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Campaign resume failed.");
@@ -288,8 +300,10 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
   const walletsToProcess = maxWallets === "all" ? pendingCount : Math.min(maxWallets, pendingCount);
   const estimatedCalls = estimateCalls(walletsToProcess);
 
-  // Progress display (never impossible states)
-  const completedProgress = campaign ? safeProgress(campaign.wallets_completed, campaign.wallets_selected) : null;
+  // Progress display: denominator is the campaign's immutable original wallet
+  // total (max_wallets), never wallets_selected or completed results.
+  const progressTotal = campaign ? campaignProgressTotal(campaign) : 0;
+  const completedProgress = campaign ? safeProgress(campaign.wallets_completed, progressTotal) : null;
 
   return (
     <div className="border-2 border-court-chart bg-court-navy p-5">
@@ -453,6 +467,22 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
         </div>
       )}
 
+      {/* Stop reason: success (lime) for completed/target_reached, red for errors */}
+      {stopReason && !error && (
+        <div className={cn("mt-3 flex items-start gap-2 border-2 px-3 py-2",
+          isSuccessStatus(stopReason.status) ? "border-court-chart bg-court-navy" : "border-court-red bg-court-navy"
+        )}>
+          {isSuccessStatus(stopReason.status)
+            ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-court-chart" />
+            : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-court-red" />}
+          <span className={cn("font-mono text-sm",
+            isSuccessStatus(stopReason.status) ? "text-court-chart" : "text-court-red"
+          )}>
+            {stopReason.message}
+          </span>
+        </div>
+      )}
+
       {error && (
         <div className="mt-3 flex items-start gap-2 border-2 border-court-red bg-court-navy px-3 py-2">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-court-red" />
@@ -490,7 +520,7 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
 
       {/* Clear campaign button for terminal campaigns */}
       {isTerminal && !running && (
-        <button type="button" onClick={() => { setCampaign(null); setProgress(null); setResults([]); setError(""); }}
+        <button type="button" onClick={() => { setCampaign(null); setProgress(null); setResults([]); setError(""); setStopReason(null); }}
           className="mt-3 font-mono text-xs text-court-mute hover:text-court-ice underline">
           Clear campaign display
         </button>

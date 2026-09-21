@@ -204,7 +204,7 @@ export function shouldCampaignContinue(
 ): ContinueDecision {
   // If the admin requested pause, stop after current wallet.
   if (run.status === CAMPAIGN_STATUS.PAUSING) {
-    return { shouldContinue: false, newStatus: CAMPAIGN_STATUS.PAUSED, stopReason: "Paused by admin after current wallet." };
+    return { shouldContinue: false, newStatus: CAMPAIGN_STATUS.PAUSED, stopReason: "Campaign paused by admin after the current wallet." };
   }
 
   // If the admin requested stop (stopping = stop after current wallet), don't
@@ -262,14 +262,18 @@ export function formatCampaignProgress(
   pendingCount: number
 ): CampaignProgress {
   const remainingToTarget = Math.max(0, CALIBRATION_TARGET - verifiedTotal);
-  const selected = run.wallets_selected;
-  const completed = Math.min(run.wallets_completed, selected); // never exceed selected
+  // The progress denominator is the campaign's immutable original wallet total
+  // (max_wallets), never wallets_selected (which grows as wallets are claimed)
+  // or completed results. For "all approved" (max_wallets = null), fall back to
+  // wallets_selected as the best available denominator.
+  const total = run.max_wallets !== null ? run.max_wallets : (run.wallets_selected || 0);
+  const completed = Math.min(run.wallets_completed, total); // never exceed total
 
   // Estimated calls remaining: remaining wallets × avg calls per wallet.
   // If max_wallets is null, use pending count as the remaining.
   const remainingWallets = run.max_wallets !== null
     ? Math.max(0, run.max_wallets - completed)
-    : pendingCount;
+    : Math.max(0, pendingCount);
   const estimatedCallsRemaining = remainingWallets * AVG_CALLS_PER_WALLET;
 
   return {
@@ -278,7 +282,7 @@ export function formatCampaignProgress(
     ceiling: CALIBRATION_CEILING,
     remaining_to_target: remainingToTarget,
     campaign_wallets_completed: completed,
-    campaign_wallets_selected: selected,
+    campaign_wallets_selected: total,
     current_address_short: run.current_address_short || null,
     current_network: run.current_network || null,
     current_result: run.current_result || null,

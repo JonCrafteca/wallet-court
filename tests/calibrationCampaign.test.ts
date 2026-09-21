@@ -258,11 +258,12 @@ describe("formatCampaignProgress — never shows impossible states", () => {
     expect(p.estimated_calls_remaining).toBe(7 * AVG_CALLS_PER_WALLET);
   });
 
-  it("zero-wallet queue: completed=0, selected=0", () => {
+  it("zero-wallet queue: completed=0, total=max_wallets (not wallets_selected)", () => {
     const run = { ...baseRun, wallets_selected: 0, wallets_completed: 0, max_wallets: 5 };
     const p = formatCampaignProgress(run, 100, 0);
     expect(p.campaign_wallets_completed).toBe(0);
-    expect(p.campaign_wallets_selected).toBe(0);
+    // Denominator is the immutable max_wallets, not wallets_selected
+    expect(p.campaign_wallets_selected).toBe(5);
   });
 
   it("shows correct status and stop_reason", () => {
