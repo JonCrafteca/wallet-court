@@ -1,0 +1,140 @@
+{
+  "name": "CalibrationRun",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Permanent unique campaign identifier. Format: camp_<random>."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "running",
+        "pausing",
+        "paused",
+        "completed",
+        "stopped",
+        "target_reached",
+        "ceiling_reached",
+        "circuit_open",
+        "error"
+      ],
+      "default": "ready",
+      "description": "Campaign lifecycle state. ready = created but not started; running = actively processing; pausing = stop requested after current wallet; paused = paused and waiting for resume; completed = all selected wallets processed; stopped = admin stopped; target_reached = 1,000 verified calls reached; ceiling_reached = 1,020 absolute ceiling; circuit_open = provider circuit breaker open; error = unexpected error."
+    },
+    "max_wallets": {
+      "type": "number",
+      "description": "Admin-selected maximum wallets to process. null = all currently approved. Set at campaign start; never changed."
+    },
+    "wallets_selected": {
+      "type": "number",
+      "default": 0,
+      "description": "Total number of docket items claimed for this campaign so far."
+    },
+    "wallets_completed": {
+      "type": "number",
+      "default": 0,
+      "description": "Wallets that reached a terminal state (completed or failed). Never exceeds wallets_selected."
+    },
+    "wallets_succeeded": {
+      "type": "number",
+      "default": 0,
+      "description": "Wallets that produced a live verdict."
+    },
+    "wallets_dismissed": {
+      "type": "number",
+      "default": 0,
+      "description": "Wallets dismissed (no evidence)."
+    },
+    "wallets_mistrial": {
+      "type": "number",
+      "default": 0,
+      "description": "Wallets with mistrial (insufficient evidence)."
+    },
+    "wallets_failed": {
+      "type": "number",
+      "default": 0,
+      "description": "Wallets that failed analysis."
+    },
+    "campaign_calls_used": {
+      "type": "number",
+      "default": 0,
+      "description": "Sum of physical_calls_used across all processed wallets in this campaign."
+    },
+    "current_item_id": {
+      "type": "string",
+      "description": "Docket item currently being processed. Null when idle or between wallets."
+    },
+    "current_address_short": {
+      "type": "string",
+      "description": "Abbreviated address of current wallet. Null when idle. Safe for display."
+    },
+    "current_network": {
+      "type": "string",
+      "description": "Network of current wallet. Null when idle."
+    },
+    "current_result": {
+      "type": "string",
+      "description": "Result of the most recently processed wallet: verdict name, dismissed, mistrial, or failed. Null while processing."
+    },
+    "current_calls_used": {
+      "type": "number",
+      "description": "Physical Nansen calls used by the most recently processed wallet. Null while processing."
+    },
+    "stop_reason": {
+      "type": "string",
+      "description": "Safe, non-identifying reason when campaign stopped or paused. Null when running."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "Optimistic-concurrency CAS token. Incremented on every state transition. Prevents double-clicks, duplicate tabs, and concurrent admins from processing the same campaign."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the campaign reached a terminal state (completed, stopped, target_reached, ceiling_reached, circuit_open, error)."
+    },
+    "started_by_user_id": {
+      "type": "string",
+      "description": "Admin user id who started the campaign. NEVER exposed in dashboard responses."
+    }
+  },
+  "required": [
+    "run_id",
+    "status",
+    "version",
+    "started_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

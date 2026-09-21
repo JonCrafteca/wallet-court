@@ -3,6 +3,11 @@
 // candidates, screens them by label, deduplicates against existing candidates,
 // docket items, and trials, and stores new candidates for admin review.
 //
+// Duplicate-discovery protection: before executing, checks whether the same
+// query was successfully completed recently. If so, returns a warning with
+// the previous discovery info instead of making another Nansen call. The admin
+// must explicitly pass force=true to repeat the discovery.
+//
 // Authorization: 401 unauthenticated, 403 non-admin. Auth before any query or
 // Nansen call. One physical Nansen request per discovery action. All physical
 // requests route through the shared telemetry transport (callEndpointWithRetry)
@@ -22,6 +27,7 @@ import {
   sanitizeCandidate,
   containsForbiddenCandidateData,
   buildDiscoveryOutcome,
+  formatRecentDiscovery,
   DISCOVERY_ENDPOINT_KEY,
   DISCOVERY_WORKFLOW,
   DEFAULT_TIMEFRAME,
@@ -33,7 +39,9 @@ import { callEndpointWithRetry, newCorrelationId, detectEnvironment } from "../.
 import { getControl, getVerifiedTotal } from "../../shared/calibrationStore.ts";
 import { getExistingQueueFingerprints } from "../../shared/calibrationStore.ts";
 import { getCandidates, createCandidates, getExistingCandidateFingerprints } from "../../shared/candidateStore.ts";
+import { getRecentDiscovery, createDiscoveryRecord } from "../../shared/discoveryStore.ts";
 import { walletFingerprint } from "../../shared/calibration.ts";
+import { newDiscoveryId } from "../../shared/calibrationCampaign.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
 
@@ -69,6 +77,38 @@ export default async function (req) {
       return Response.json({ error: "Confirmation is required. Discovery makes a real Nansen API request." }, { status: 400 });
     }
 
+    // Compute the query fingerprint for duplicate-discovery detection
+    const queryFp = await sourceQueryFingerprint(discoveryReq);
+
+    // ---- Duplicate-discovery protection ----
+    // Unless force=true, check if the same query was successfully completed recently.
+    // If so, return the previous discovery info without making a Nansen call.
+    if (!body.force) {
+      const recentDiscovery = await getRecentDiscovery(base44, queryFp);
+      if (recentDiscovery) {
+        // Count how many candidates from this discovery are still eligible
+        const allCandidates = await getCandidates(base44);
+        const discoveryCandidates = allCandidates.filter((c) => c.source_query_fingerprint === queryFp);
+        const remainingEligible = discoveryCandidates.filter((c) => c.review_status === "discovered").length;
+        const alreadyQueuedOrTried = discoveryCandidates.filter((c) =>
+          c.review_status === "queued" || c.review_status === "skipped"
+        ).length;
+
+        const recentInfo = formatRecentDiscovery(
+          recentDiscovery,
+          queryFp,
+          remainingEligible,
+          alreadyQueuedOrTried
+        );
+
+        return Response.json({
+          duplicate_warning: true,
+          previous_discovery: recentInfo,
+          force_required: true
+        });
+      }
+    }
+
     // Check kill switch
     const control = await getControl(base44);
     if (control && !control.calibration_enabled) {
@@ -88,8 +128,7 @@ export default async function (req) {
       return Response.json({ error: "Provider is in Court Recess. Try again later.", court_recess: true }, { status: 423 });
     }
 
-    // Resolve the Nansen API key via the same shared server-side helper used by
-    // analyzeWalletWithNansen. Never access secrets directly — one credential path.
+    // Resolve the Nansen API key via the shared server-side helper.
     const apiKey = getNansenApiKey();
     if (!apiKey) {
       return Response.json({ error: "Nansen API key not configured.", missing_key: true }, { status: 500 });
@@ -98,7 +137,6 @@ export default async function (req) {
     // Build request body
     const requestBody = buildDiscoveryRequest(discoveryReq);
     const correlationId = newCorrelationId();
-    const queryFp = await sourceQueryFingerprint(discoveryReq);
     const url = NANSEN_BASE + DISCOVERY_EP.path;
 
     trackSafe(base44, "calibration_discovery_started", {
@@ -203,6 +241,19 @@ export default async function (req) {
     if (toCreate.length > 0) {
       stored = await createCandidates(base44, toCreate);
     }
+
+    // ---- Record the successful discovery for duplicate detection ----
+    await createDiscoveryRecord(base44, {
+      discovery_id: newDiscoveryId(),
+      query_fingerprint: queryFp,
+      network: discoveryReq.network,
+      cohort: discoveryReq.cohort,
+      timeframe_days: discoveryReq.timeframe,
+      result_limit: discoveryReq.limit,
+      candidates_found: stored.length,
+      correlation_id: correlationId,
+      discovered_at: now
+    }).catch((e) => console.error("[candidate-discovery] discovery record write failed:", e?.message));
 
     // Privacy guard
     for (const s of stored) {

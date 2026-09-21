@@ -10,13 +10,17 @@ import { waitUntil } from "base44:runtime";
 import {
   sanitizeDocketItem,
   computeCoverageStats,
+  computeEnhancedCoverageStats,
   coverageRecommendation,
+  campaignPlanningRecommendations,
   checkBudget,
   CALIBRATION_TARGET,
   CALIBRATION_CEILING,
   containsForbiddenDocketData
 } from "../../shared/calibration.ts";
 import { getControl, ensureControl, updateControl, getVerifiedTotal } from "../../shared/calibrationStore.ts";
+import { getActiveCampaign } from "../../shared/campaignStore.ts";
+import { sanitizeCampaignRun, containsForbiddenCampaignData } from "../../shared/calibrationCampaign.ts";
 
 const MAX_ITEMS = 500;
 
@@ -52,10 +56,11 @@ export default async function (req) {
     }
 
     // ---- Dashboard data ----
-    const [items, control, verifiedTotal] = await Promise.all([
+    const [items, control, verifiedTotal, activeCampaign] = await Promise.all([
       base44.asServiceRole.entities.CalibrationDocketItem.list("-queued_at", MAX_ITEMS),
       ensureControl(base44),
-      getVerifiedTotal(base44)
+      getVerifiedTotal(base44),
+      getActiveCampaign(base44)
     ]);
 
     const allItems = items || [];
@@ -67,14 +72,26 @@ export default async function (req) {
       }
     }
 
-    const coverage = computeCoverageStats(allItems);
+    const enhancedCoverage = computeEnhancedCoverageStats(allItems);
     const budget = checkBudget(verifiedTotal);
-    const recs = coverageRecommendation(coverage);
+    const recs = coverageRecommendation(enhancedCoverage);
+    const planningRecs = campaignPlanningRecommendations(enhancedCoverage);
+
+    // Sanitize campaign state
+    let sanitizedCampaign = null;
+    if (activeCampaign) {
+      sanitizedCampaign = sanitizeCampaignRun(activeCampaign);
+      if (containsForbiddenCampaignData(sanitizedCampaign)) {
+        return Response.json({ error: "Internal privacy error." }, { status: 500 });
+      }
+    }
 
     return Response.json({
       items: sanitized,
-      coverage,
+      coverage: enhancedCoverage,
       coverage_recommendations: recs,
+      campaign_planning_recommendations: planningRecs,
+      campaign: sanitizedCampaign,
       control: sanitizeControl(control),
       verified_total: verifiedTotal,
       target: CALIBRATION_TARGET,

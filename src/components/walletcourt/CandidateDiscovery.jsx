@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { Loader2, Search, AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Search, AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const COHORTS = [
@@ -32,9 +32,12 @@ const STATUS_COLORS = {
   skipped: "text-court-mute"
 };
 
+const MAX_SELECT = 50;
+
 // Candidate Discovery: sources wallets from the Nansen Smart Money PnL
-// Leaderboard for calibration. Admin-only. One physical Nansen request per
-// discovery action. Never automatically queues or analyzes wallets.
+// Leaderboard for calibration. Admin-only. One physical request per discovery.
+// Never automatically queues or analyzes wallets. Supports bulk approval of
+// up to 50 eligible candidates with a confirmation preview step.
 export default function CandidateDiscovery({ verifiedTotal, target, onCandidatesQueued }) {
   const [network, setNetwork] = useState("ethereum");
   const [cohort, setCohort] = useState("top_performers");
@@ -46,9 +49,12 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [candidates, setCandidates] = useState([]);
+  const [recentDiscoveries, setRecentDiscoveries] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [approving, setApproving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
   const loadCandidates = useCallback(async () => {
     setLoading(true);
@@ -56,6 +62,7 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
       const res = await base44.functions.invoke("getCalibrationCandidates", {});
       if (res?.data?.error) { setError(res.data.error); return; }
       setCandidates(res?.data?.candidates || []);
+      setRecentDiscoveries(res?.data?.recent_discoveries || []);
     } catch (e) {
       setError(e?.message || "Failed to load candidates.");
     } finally {
@@ -70,6 +77,7 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
     setDiscovering(true);
     setError("");
     setResult(null);
+    setDuplicateWarning(null);
     try {
       const res = await base44.functions.invoke("discoverCalibrationCandidates", {
         network, cohort, timeframe, limit, confirmed: true
@@ -80,8 +88,39 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
         if (data.court_recess) setError("Provider is in Court Recess. Try again later.");
         return;
       }
+      // Check for duplicate-discovery warning
+      if (data?.duplicate_warning) {
+        setDuplicateWarning(data.previous_discovery);
+        return;
+      }
       setResult(data);
-      // Refresh candidate list
+      loadCandidates();
+    } catch (e) {
+      setError(e?.response?.data?.error || e?.message || "Discovery failed.");
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  async function handleForceDiscover() {
+    if (!confirmed) return;
+    setDiscovering(true);
+    setError("");
+    setDuplicateWarning(null);
+    try {
+      const res = await base44.functions.invoke("discoverCalibrationCandidates", {
+        network, cohort, timeframe, limit, confirmed: true, force: true
+      });
+      const data = res?.data;
+      if (data?.error) {
+        setError(data.error);
+        return;
+      }
+      if (data?.duplicate_warning) {
+        setDuplicateWarning(data.previous_discovery);
+        return;
+      }
+      setResult(data);
       loadCandidates();
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Discovery failed.");
@@ -94,12 +133,44 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(candidateId)) next.delete(candidateId);
-      else if (next.size < 5) next.add(candidateId);
+      else if (next.size < MAX_SELECT) next.add(candidateId);
       return next;
     });
+    setPreview(null);
   }
 
-  async function handleApproveSelected() {
+  function selectAllEligible() {
+    const eligible = candidates.filter((c) => c.review_status === "discovered" && c.screening === "eligible");
+    const limited = eligible.slice(0, MAX_SELECT);
+    setSelected(new Set(limited.map((c) => c.candidate_id)));
+    setPreview(null);
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+    setPreview(null);
+  }
+
+  async function handlePreview() {
+    if (selected.size === 0) return;
+    setApproving(true);
+    setError("");
+    try {
+      const res = await base44.functions.invoke("approveCalibrationCandidates", {
+        candidate_ids: Array.from(selected),
+        preview: true
+      });
+      const data = res?.data;
+      if (data?.error) { setError(data.error); return; }
+      setPreview(data);
+    } catch (e) {
+      setError(e?.response?.data?.error || e?.message || "Preview failed.");
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleApprove() {
     if (selected.size === 0) return;
     setApproving(true);
     setError("");
@@ -110,6 +181,7 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
       const data = res?.data;
       if (data?.error) { setError(data.error); return; }
       setSelected(new Set());
+      setPreview(null);
       loadCandidates();
       if (onCandidatesQueued) onCandidatesQueued();
     } catch (e) {
@@ -132,6 +204,7 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
 
   const remaining = Math.max(0, target - verifiedTotal);
   const discoveredCandidates = candidates.filter((c) => c.review_status === "discovered");
+  const eligibleCount = discoveredCandidates.filter((c) => c.screening === "eligible").length;
 
   return (
     <div className="border-2 border-court-chart/60 bg-court-navy p-5">
@@ -204,6 +277,30 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
         Discover Candidates
       </button>
 
+      {/* Duplicate-discovery warning */}
+      {duplicateWarning && (
+        <div className="mt-3 border-2 border-yellow-400 bg-court-navy p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-yellow-400" />
+            <div className="flex-1">
+              <p className="font-mono text-sm text-yellow-400 mb-1">This discovery was already run recently.</p>
+              <div className="font-mono text-xs text-court-mute space-y-0.5 mb-3">
+                <p>When: {duplicateWarning.discovered_at ? new Date(duplicateWarning.discovered_at).toLocaleString() : "Unknown"}</p>
+                <p>Candidates found: {duplicateWarning.candidates_found ?? 0}</p>
+                <p>Still eligible: {duplicateWarning.remaining_eligible ?? 0}</p>
+                <p>Already queued or tried: {duplicateWarning.already_queued_or_tried ?? 0}</p>
+                <p>Query: {duplicateWarning.network} · {duplicateWarning.cohort} · {duplicateWarning.timeframe_days}d · limit {duplicateWarning.result_limit}</p>
+              </div>
+              <button type="button" onClick={handleForceDiscover} disabled={!confirmed || discovering}
+                className="inline-flex items-center gap-2 border-2 border-court-red text-court-red font-mono text-xs uppercase px-3 py-1.5 hover:bg-court-red hover:text-court-ice transition-colors disabled:opacity-50">
+                {discovering ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                Run Again
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mt-3 flex items-start gap-2 border-2 border-court-red bg-court-navy px-3 py-2">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-court-red" />
@@ -233,18 +330,59 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
 
       {/* Candidate list */}
       <div className="mt-5">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <p className="font-mono text-xs uppercase text-court-mute">
             Discovered Candidates ({discoveredCandidates.length})
           </p>
-          {selected.size > 0 && (
-            <button type="button" onClick={handleApproveSelected} disabled={approving}
-              className="inline-flex items-center gap-1 bg-court-chart text-court-navy font-mono text-xs uppercase px-3 py-1.5 border-2 border-court-navy hover:bg-court-ice transition-colors disabled:opacity-50">
-              {approving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-              Queue Selected ({selected.size})
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={selectAllEligible}
+              className="font-mono text-xs uppercase text-court-chart hover:text-court-ice border border-court-chart/40 px-2 py-1">
+              Select All Eligible ({Math.min(eligibleCount, MAX_SELECT)})
             </button>
-          )}
+            {selected.size > 0 && (
+              <button type="button" onClick={clearSelection}
+                className="font-mono text-xs uppercase text-court-mute hover:text-court-ice border border-court-mute/40 px-2 py-1">
+                Clear
+              </button>
+            )}
+            {selected.size > 0 && !preview && (
+              <button type="button" onClick={handlePreview} disabled={approving}
+                className="inline-flex items-center gap-1 border-2 border-court-chart text-court-chart font-mono text-xs uppercase px-3 py-1.5 hover:bg-court-chart hover:text-court-navy transition-colors disabled:opacity-50">
+                {approving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                Preview ({selected.size})
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Preview confirmation */}
+        {preview && (
+          <div className="mb-3 border-2 border-court-chart p-3">
+            <p className="font-display uppercase text-court-chart text-sm mb-2">Approval Preview</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-sm mb-3">
+              <Stat label="Selected" value={preview.selected_count} />
+              <Stat label="New Unique" value={preview.new_unique} color="text-court-chart" />
+              <Stat label="Already Queued" value={preview.already_queued} />
+              <Stat label="Already Tried" value={preview.already_tried} />
+              <Stat label="Existing Candidate" value={preview.existing_candidate} />
+              <Stat label="Invalid/Excluded" value={preview.invalid_or_excluded} color="text-court-red" />
+            </div>
+            <p className="font-mono text-xs text-court-mute mb-3">
+              Estimated analysis calls: ~{preview.estimated_analysis_calls} physical Nansen requests
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={handleApprove} disabled={approving || preview.new_unique === 0}
+                className="inline-flex items-center gap-1 bg-court-chart text-court-navy font-mono text-xs uppercase px-3 py-1.5 border-2 border-court-navy hover:bg-court-ice transition-colors disabled:opacity-50">
+                {approving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                Approve & Queue ({preview.new_unique})
+              </button>
+              <button type="button" onClick={() => setPreview(null)}
+                className="font-mono text-xs uppercase text-court-mute hover:text-court-ice px-3 py-1.5">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading && <p className="font-mono text-sm text-court-mute animate-blink">Loading candidates…</p>}
 
@@ -259,12 +397,15 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
             {discoveredCandidates.map((c) => {
               const screening = SCREENING_LABELS[c.screening] || SCREENING_LABELS.eligible;
               const isSelected = selected.has(c.candidate_id);
+              const isExcluded = c.screening === "excluded";
+              const maxReached = selected.size >= MAX_SELECT && !isSelected;
               return (
                 <div key={c.candidate_id} className={cn("border-2 p-3", isSelected ? "border-court-chart bg-court-chart/10" : "border-court-ice/20")}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2">
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(c.candidate_id)}
-                        disabled={c.screening === "excluded"}
+                      <input type="checkbox" checked={isSelected}
+                        onChange={() => toggleSelect(c.candidate_id)}
+                        disabled={isExcluded || maxReached}
                         className="mt-1" />
                       <div>
                         <p className="font-mono text-sm text-court-ice">{c.address_short}</p>
@@ -311,6 +452,21 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
           </div>
         )}
       </div>
+
+      {/* Recent discoveries */}
+      {recentDiscoveries.length > 0 && (
+        <div className="mt-4 border-t border-court-ice/20 pt-3">
+          <p className="font-mono text-xs uppercase text-court-mute mb-1">Recent Discoveries</p>
+          <div className="space-y-0.5 max-h-32 overflow-y-auto">
+            {recentDiscoveries.slice(0, 10).map((d) => (
+              <div key={d.discovery_id} className="flex items-center justify-between font-mono text-xs text-court-mute">
+                <span>{d.network} · {d.cohort} · {d.timeframe_days}d</span>
+                <span>{d.candidates_found} found · {d.discovered_at ? new Date(d.discovered_at).toLocaleDateString() : ""}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

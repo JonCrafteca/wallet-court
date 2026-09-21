@@ -432,6 +432,8 @@ export function sanitizeDocketItem(item: any): PublicDocketItem {
     data_mode: item.data_mode || null,
     failure_category: item.failure_category || null,
     failure_message_safe: item.failure_message_safe || null,
+    discovery_cohort: item.discovery_cohort || null,
+    discovery_timeframe: item.discovery_timeframe ?? null,
     run_id: item.run_id || null
   };
 }
@@ -533,5 +535,93 @@ export function coverageRecommendation(stats: CoverageStats): string[] {
   if (objectiveCount === 1 && stats.total > 5) {
     recs.push("All items share one test objective. Consider diversifying objectives for broader coverage.");
   }
+  return recs;
+}
+
+// ---- Enhanced coverage stats with cohort and timeframe ----
+
+export interface EnhancedCoverageStats extends CoverageStats {
+  by_cohort: Record<string, number>;
+  by_timeframe: Record<string, number>;
+  by_verdict: Record<string, number>;
+  by_case_outcome: Record<string, number>;
+}
+
+// Compute enhanced coverage stats including cohort and timeframe dimensions.
+// Cohort is parsed from test_objective ("Discovered via {cohort} on {network}")
+// or from the discovery_cohort field if present. Timeframe is from
+// discovery_timeframe if present, otherwise "unknown".
+export function computeEnhancedCoverageStats(items: any[]): EnhancedCoverageStats {
+  const base = computeCoverageStats(items);
+  const byCohort: Record<string, number> = {};
+  const byTimeframe: Record<string, number> = {};
+  const byVerdict: Record<string, number> = {};
+  const byCaseOutcome: Record<string, number> = {};
+
+  for (const it of items) {
+    // Cohort: prefer discovery_cohort, fallback to parsing test_objective
+    let cohort = it.discovery_cohort || "unknown";
+    if (!it.discovery_cohort && it.test_objective) {
+      const m = it.test_objective.match(/Discovered via (\w+) on/);
+      if (m) cohort = m[1];
+    }
+    byCohort[cohort] = (byCohort[cohort] || 0) + 1;
+
+    // Timeframe: prefer discovery_timeframe, fallback to "unknown"
+    const tf = it.discovery_timeframe != null ? String(it.discovery_timeframe) : "unknown";
+    byTimeframe[tf] = (byTimeframe[tf] || 0) + 1;
+
+    // Verdict and case outcome (only for completed items)
+    if (it.status === ITEM_STATUS.COMPLETED) {
+      const verdict = it.verdict_code || it.verdict_name || "none";
+      byVerdict[verdict] = (byVerdict[verdict] || 0) + 1;
+      const outcome = it.case_outcome || "unknown";
+      byCaseOutcome[outcome] = (byCaseOutcome[outcome] || 0) + 1;
+    }
+  }
+
+  return {
+    ...base,
+    by_cohort: byCohort,
+    by_timeframe: byTimeframe,
+    by_verdict: byVerdict,
+    by_case_outcome: byCaseOutcome
+  };
+}
+
+// Coverage recommendations for campaign planning. Suggests missing networks
+// and timeframes. These are recommendations only — never automatically run.
+export function campaignPlanningRecommendations(stats: EnhancedCoverageStats): string[] {
+  const recs: string[] = [];
+  const networks = ["ethereum", "base", "solana"];
+  const missing = networks.filter((n) => !stats.by_network[n]);
+  if (missing.length > 0) {
+    recs.push(`Missing networks: ${missing.join(", ")}. Consider discovering candidates on these chains.`);
+  }
+
+  // Suggest discovery sequence: 30-day first, then longer timeframes
+  const timeframes = [30, 90, 180];
+  const coveredTimeframes = new Set(Object.keys(stats.by_timeframe).filter((t) => t !== "unknown"));
+  const missingTimeframes = timeframes.filter((t) => !coveredTimeframes.has(String(t)));
+  if (missingTimeframes.length > 0 && stats.completed > 0) {
+    recs.push(`Consider discovering with longer timeframes: ${missingTimeframes.map((t) => `${t}d`).join(", ")} to find additional unique candidates.`);
+  }
+
+  // Suggest cohorts that haven't been discovered yet
+  const allCohorts = ["top_performers", "bottom_performers", "high_activity", "lower_activity"];
+  const coveredCohorts = new Set(Object.keys(stats.by_cohort).filter((c) => c !== "unknown"));
+  const missingCohorts = allCohorts.filter((c) => !coveredCohorts.has(c));
+  if (missingCohorts.length > 0 && stats.completed > 0) {
+    recs.push(`Unexplored cohorts: ${missingCohorts.join(", ")}.`);
+  }
+
+  // Network balance
+  const networkCounts = networks.map((n) => stats.by_network[n] || 0);
+  const maxCount = Math.max(...networkCounts);
+  const minCount = Math.min(...networkCounts);
+  if (maxCount > 0 && minCount === 0) {
+    recs.push("Network coverage is unbalanced. Add wallets on underrepresented chains.");
+  }
+
   return recs;
 }

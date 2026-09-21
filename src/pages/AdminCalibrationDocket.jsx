@@ -6,6 +6,7 @@ import CalibrationImportForm from "@/components/walletcourt/CalibrationImportFor
 import CalibrationBatchControls from "@/components/walletcourt/CalibrationBatchControls";
 import CalibrationSingleWalletForm from "@/components/walletcourt/CalibrationSingleWalletForm";
 import CandidateDiscovery from "@/components/walletcourt/CandidateDiscovery";
+import CampaignRunner from "@/components/walletcourt/CampaignRunner";
 
 // Admin-only Calibration Docket dashboard.
 export default function AdminCalibrationDocket() {
@@ -128,6 +129,17 @@ export default function AdminCalibrationDocket() {
         </div>
       )}
 
+      {/* Campaign Runner */}
+      <div className="mb-6">
+        <CampaignRunner
+          verifiedTotal={data?.verified_total || 0}
+          target={data?.target || 1000}
+          ceiling={data?.ceiling || 1020}
+          pendingCount={pendingCount}
+          onCampaignComplete={load}
+        />
+      </div>
+
       {/* Single-wallet form (default) + Batch controls */}
       <div className="grid lg:grid-cols-2 gap-4 mb-4">
         <CalibrationSingleWalletForm onImported={load} />
@@ -154,28 +166,40 @@ export default function AdminCalibrationDocket() {
         />
       </div>
 
-      {/* Coverage */}
+      {/* Coverage Planning Panel */}
       {coverage && (
         <div className="mb-6 border-2 border-court-ice/40 bg-court-navy p-5">
-          <h3 className="font-display uppercase text-court-ice text-lg mb-3">Coverage</h3>
-          <div className="grid sm:grid-cols-3 gap-4 font-mono text-sm">
+          <h3 className="font-display uppercase text-court-ice text-lg mb-3">Coverage Planning</h3>
+          <div className="grid sm:grid-cols-3 gap-4 font-mono text-sm mb-3">
             <CoverageBlock label="By Network" data={coverage.by_network} />
             <CoverageBlock label="By Status" data={coverage.by_status} />
-            <CoverageBlock label="By Objective" data={coverage.by_objective} />
+            <CoverageBlock label="By Cohort" data={coverage.by_cohort} />
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4 font-mono text-sm mb-3">
+            <CoverageBlock label="By Timeframe" data={coverage.by_timeframe} />
+            <CoverageBlock label="By Verdict" data={coverage.by_verdict} />
+            <CoverageBlock label="By Case Outcome" data={coverage.by_case_outcome} />
           </div>
           <div className="mt-3 grid sm:grid-cols-2 gap-4 font-mono text-sm">
             <div>
-              <p className="text-court-mute text-xs uppercase mb-1">Live vs Dismissed</p>
-              <p className="text-court-ice">Live: {coverage.live_vs_dismissed.live} · Dismissed: {coverage.live_vs_dismissed.dismissed} · Mistrial: {coverage.live_vs_dismissed.mistrial}</p>
+              <p className="text-court-mute text-xs uppercase mb-1">Live vs Dismissed vs Mistrial</p>
+              <p className="text-court-ice">Live: {coverage.live_vs_dismissed?.live || 0} · Dismissed: {coverage.live_vs_dismissed?.dismissed || 0} · Mistrial: {coverage.live_vs_dismissed?.mistrial || 0}</p>
             </div>
             <div>
               <p className="text-court-mute text-xs uppercase mb-1">Successful vs Failed</p>
-              <p className="text-court-ice">Successful: {coverage.successful_vs_failed.successful} · Failed: {coverage.successful_vs_failed.failed}</p>
+              <p className="text-court-ice">Successful: {coverage.successful_vs_failed?.successful || 0} · Failed: {coverage.successful_vs_failed?.failed || 0}</p>
             </div>
           </div>
-          {data?.coverage_recommendations?.length > 0 && (
+          {data?.campaign_planning_recommendations?.length > 0 && (
             <div className="mt-3 border-t border-court-ice/20 pt-3">
-              <p className="font-mono text-xs uppercase text-court-chart mb-1">Recommendations</p>
+              <p className="font-mono text-xs uppercase text-court-chart mb-1">Campaign Planning Recommendations</p>
+              {data.campaign_planning_recommendations.map((r, i) => (
+                <p key={i} className="font-mono text-xs text-court-mute">• {r}</p>
+              ))}
+            </div>
+          )}
+          {data?.coverage_recommendations?.length > 0 && (
+            <div className="mt-2">
               {data.coverage_recommendations.map((r, i) => (
                 <p key={i} className="font-mono text-xs text-court-mute">• {r}</p>
               ))}

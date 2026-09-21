@@ -81,6 +81,25 @@ describe("Nansen source audit — no bypass of approved transport", () => {
       "functions" + path.sep + "adminProviderHealthCheck" + path.sep + "entry.ts",
       "functions" + path.sep + "discoverCalibrationCandidates" + path.sep + "entry.ts"
     ];
+    // Campaign functions do NOT call Nansen directly — they delegate to
+    // processCalibrationWallet which invokes analyzeWalletWithNansen. Verify
+    // they don't contain raw fetch or direct Nansen calls.
+    const campaignNonCallers = [
+      "functions" + path.sep + "startCalibrationCampaign" + path.sep + "entry.ts",
+      "functions" + path.sep + "advanceCalibrationCampaign" + path.sep + "entry.ts",
+      "functions" + path.sep + "pauseCalibrationCampaign" + path.sep + "entry.ts",
+      "functions" + path.sep + "stopCalibrationCampaign" + path.sep + "entry.ts",
+      "functions" + path.sep + "resumeCalibrationCampaign" + path.sep + "entry.ts",
+      "functions" + path.sep + "getCalibrationCampaign" + path.sep + "entry.ts"
+    ];
+    for (const rel of campaignNonCallers) {
+      const f = files.find((x) => x.endsWith(rel));
+      if (!f) continue;
+      const content = stripComments(fs.readFileSync(f, "utf8"));
+      expect(/\bfetch\s*\(/.test(content)).toBe(false);
+      expect(content.includes("fetchNansenEvidence")).toBe(false);
+      expect(content.includes("callEndpointWithRetry")).toBe(false);
+    }
     for (const rel of callers) {
       const f = files.find((x) => x.endsWith(rel));
       expect(f, `missing caller ${rel}`).toBeTruthy();

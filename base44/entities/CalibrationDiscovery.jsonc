@@ -1,0 +1,81 @@
+{
+  "name": "CalibrationDiscovery",
+  "type": "object",
+  "properties": {
+    "discovery_id": {
+      "type": "string",
+      "description": "Permanent unique ID. Format: disc_<random>."
+    },
+    "query_fingerprint": {
+      "type": "string",
+      "description": "SHA-256 of normalized discovery query params (network, cohort, timeframe, limit, endpoint). Used for duplicate-discovery detection."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "ethereum",
+        "base",
+        "solana"
+      ]
+    },
+    "cohort": {
+      "type": "string",
+      "enum": [
+        "top_performers",
+        "bottom_performers",
+        "high_activity",
+        "lower_activity"
+      ]
+    },
+    "timeframe_days": {
+      "type": "number",
+      "description": "Timeframe in days used for the discovery query."
+    },
+    "result_limit": {
+      "type": "number",
+      "description": "Result limit used for the discovery query."
+    },
+    "candidates_found": {
+      "type": "number",
+      "description": "Total candidates returned and stored by this discovery."
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "Correlation ID of the physical Nansen request that produced this discovery."
+    },
+    "discovered_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the discovery was executed."
+    }
+  },
+  "required": [
+    "discovery_id",
+    "query_fingerprint",
+    "network",
+    "cohort",
+    "discovered_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

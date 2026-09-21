@@ -1,21 +1,32 @@
-// Wallet Court — admin-only Candidate Discovery approval.
-// Takes up to 5 candidate_ids, resolves the private wallet addresses
+// Wallet Court — admin-only Candidate Discovery bulk approval.
+// Takes up to 50 candidate_ids, resolves the private wallet addresses
 // server-side, revalidates and rechecks duplicates, and creates
-// CalibrationDocketItem records. Never automatically starts a batch.
+// CalibrationDocketItem records. Never automatically starts a batch or campaign.
+//
+// Supports a preview mode (body.preview=true) that returns the approval
+// breakdown without creating any docket items.
 //
 // Authorization: 401 unauthenticated, 403 non-admin. Auth before any query.
 // Zero Nansen calls. Zero WalletTrial mutations.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
 import { waitUntil } from "base44:runtime";
-import { sanitizeCandidate, containsForbiddenCandidateData } from "../../shared/candidateDiscovery.ts";
-import { sanitizeDocketItem, containsForbiddenDocketData, ITEM_STATUS, newDocketItemId } from "../../shared/calibration.ts";
-import { getCandidateById, updateCandidateStatus } from "../../shared/candidateStore.ts";
+import {
+  sanitizeCandidate,
+  containsForbiddenCandidateData,
+  buildApprovalPreview,
+  MAX_BULK_APPROVE
+} from "../../shared/candidateDiscovery.ts";
+import {
+  sanitizeDocketItem,
+  containsForbiddenDocketData,
+  ITEM_STATUS,
+  newDocketItemId
+} from "../../shared/calibration.ts";
+import { getCandidateById, updateCandidateStatus, getCandidates } from "../../shared/candidateStore.ts";
 import { getExistingQueueFingerprints } from "../../shared/calibrationStore.ts";
 import { validateWalletForChain } from "../../shared/walletValidation.ts";
 import { normalizeAddress } from "../../shared/verdicts.ts";
 import { walletFingerprint } from "../../shared/calibration.ts";
-
-const MAX_APPROVE = 5;
 
 function trackSafe(base44, eventName: string, props: Record<string, any>) {
   try { if (base44?.analytics?.track) waitUntil(base44.analytics.track({ eventName, properties: props })); } catch {}
@@ -35,8 +46,8 @@ export default async function (req) {
     if (candidateIds.length === 0) {
       return Response.json({ error: "At least one candidate_id is required." }, { status: 400 });
     }
-    if (candidateIds.length > MAX_APPROVE) {
-      return Response.json({ error: `Maximum ${MAX_APPROVE} candidates per approval.` }, { status: 400 });
+    if (candidateIds.length > MAX_BULK_APPROVE) {
+      return Response.json({ error: `Maximum ${MAX_BULK_APPROVE} candidates per approval.` }, { status: 400 });
     }
 
     // Collect existing docket fingerprints for recheck
@@ -52,19 +63,36 @@ export default async function (req) {
       }
     }
 
+    // Resolve all candidates by ID
+    const resolvedCandidates: any[] = [];
+    for (const candidateId of candidateIds) {
+      const candidate = await getCandidateById(base44, candidateId);
+      if (candidate) {
+        resolvedCandidates.push(candidate);
+      }
+    }
+
+    // Build preview (pure function)
+    const preview = buildApprovalPreview(resolvedCandidates, existingDocketFps, existingTrialFps);
+
+    // If preview mode, return the breakdown without creating anything
+    if (body.preview) {
+      return Response.json({
+        preview: true,
+        ...preview
+      });
+    }
+
+    // ---- Actual approval (not preview) ----
     const now = new Date().toISOString();
     const results: any[] = [];
     let queued = 0;
     let skipped = 0;
 
-    for (const candidateId of candidateIds) {
-      const candidate = await getCandidateById(base44, candidateId);
-      if (!candidate) {
-        results.push({ candidate_id: candidateId, status: "not_found" });
-        continue;
-      }
+    for (const candidate of resolvedCandidates) {
+      const candidateId = candidate.candidate_id;
 
-      // CAS: only "discovered" candidates can be approved
+      // CAS: only "discovered" candidates can be approved (idempotent — already queued is skipped)
       if (candidate.review_status !== "discovered") {
         results.push({
           candidate_id: candidateId,
@@ -86,7 +114,7 @@ export default async function (req) {
 
       // Recheck duplicates
       const normalized = normalizeAddress(candidate.network, candidate.wallet_address);
-      const fp = await walletFingerprint(candidate.network, normalized);
+      const fp = candidate.wallet_fingerprint || await walletFingerprint(candidate.network, normalized);
       if (existingDocketFps.has(fp)) {
         await updateCandidateStatus(base44, candidateId, candidate.version, "skipped", "Already in docket queue.");
         results.push({ candidate_id: candidateId, status: "skipped", reason: "Already in docket queue." });
@@ -100,7 +128,7 @@ export default async function (req) {
         continue;
       }
 
-      // Create the docket item
+      // Create the docket item with discovery cohort/timeframe
       const docketItem = {
         docket_item_id: newDocketItemId(),
         network: candidate.network,
@@ -113,6 +141,8 @@ export default async function (req) {
         status: ITEM_STATUS.PENDING,
         version: 0,
         attempt_count: 0,
+        discovery_cohort: candidate.cohort || null,
+        discovery_timeframe: null, // timeframe is on the discovery record, not the candidate
         queued_at: now
       };
 
@@ -150,7 +180,15 @@ export default async function (req) {
       results,
       queued,
       skipped,
-      total: candidateIds.length
+      total: candidateIds.length,
+      preview_breakdown: {
+        new_unique: preview.new_unique,
+        already_queued: preview.already_queued,
+        already_tried: preview.already_tried,
+        existing_candidate: preview.existing_candidate,
+        invalid_or_excluded: preview.invalid_or_excluded,
+        estimated_analysis_calls: preview.estimated_analysis_calls
+      }
     });
   } catch (error) {
     return Response.json({ error: error.message || "Approval failed." }, { status: 500 });

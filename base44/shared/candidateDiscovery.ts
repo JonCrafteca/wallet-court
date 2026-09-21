@@ -350,6 +350,138 @@ export function newCandidateId(): string {
   return "cand_" + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
 }
 
+// ---- Bulk approval preview ----
+
+export const MAX_BULK_APPROVE = 50;
+
+export interface ApprovalPreview {
+  selected_count: number;
+  new_unique: number;
+  already_queued: number;
+  already_tried: number;
+  existing_candidate: number;
+  invalid_or_excluded: number;
+  estimated_analysis_calls: number;
+  eligible_candidate_ids: string[];
+}
+
+// Build a preview of what would happen if the selected candidates were approved.
+// Pure: takes resolved candidate records and existing fingerprint sets, returns
+// the breakdown without creating any docket items. Used for the confirmation
+// step before APPROVE & QUEUE.
+export function buildApprovalPreview(
+  candidates: Array<{
+    candidate_id: string;
+    wallet_fingerprint: string;
+    review_status: string;
+    network: string;
+    wallet_address: string;
+  }>,
+  existingDocketFps: Set<string>,
+  existingTrialFps: Set<string>
+): ApprovalPreview {
+  let newUnique = 0;
+  let alreadyQueued = 0;
+  let alreadyTried = 0;
+  let existingCandidate = 0;
+  let invalidOrExcluded = 0;
+  const eligibleIds: string[] = [];
+  const seenFps = new Set<string>();
+
+  for (const c of candidates) {
+    // Skip candidates that are not in "discovered" status (already queued/rejected/skipped)
+    if (c.review_status !== "discovered") {
+      existingCandidate++;
+      continue;
+    }
+    // Validate address for chain
+    const validation = validateWalletForChain(c.network, c.wallet_address);
+    if (!validation.ok) {
+      invalidOrExcluded++;
+      continue;
+    }
+    const fp = c.wallet_fingerprint;
+    // Duplicate within the batch
+    if (seenFps.has(fp)) {
+      invalidOrExcluded++;
+      continue;
+    }
+    seenFps.add(fp);
+    if (existingDocketFps.has(fp)) {
+      alreadyQueued++;
+      continue;
+    }
+    if (existingTrialFps.has(fp)) {
+      alreadyTried++;
+      continue;
+    }
+    newUnique++;
+    eligibleIds.push(c.candidate_id);
+  }
+
+  return {
+    selected_count: candidates.length,
+    new_unique: newUnique,
+    already_queued: alreadyQueued,
+    already_tried: alreadyTried,
+    existing_candidate: existingCandidate,
+    invalid_or_excluded: invalidOrExcluded,
+    estimated_analysis_calls: newUnique * 4,
+    eligible_candidate_ids: eligibleIds
+  };
+}
+
+// ---- Recent discovery info for duplicate-discovery detection ----
+
+export interface RecentDiscoveryInfo {
+  found: boolean;
+  discovered_at: string | null;
+  candidates_found: number | null;
+  query_fingerprint: string;
+  network: string;
+  cohort: string;
+  timeframe_days: number;
+  result_limit: number;
+  remaining_eligible: number;
+  already_queued_or_tried: number;
+}
+
+// Format a recent discovery record for the duplicate-discovery warning.
+// Pure: takes the discovery record and candidate stats, returns the info.
+export function formatRecentDiscovery(
+  discovery: any | null,
+  queryFingerprint: string,
+  remainingEligible: number,
+  alreadyQueuedOrTried: number
+): RecentDiscoveryInfo {
+  if (!discovery) {
+    return {
+      found: false,
+      discovered_at: null,
+      candidates_found: null,
+      query_fingerprint: queryFingerprint,
+      network: "",
+      cohort: "",
+      timeframe_days: 0,
+      result_limit: 0,
+      remaining_eligible: 0,
+      already_queued_or_tried: 0
+    };
+  }
+  return {
+    found: true,
+    discovered_at: discovery.discovered_at || null,
+    candidates_found: discovery.candidates_found ?? null,
+    query_fingerprint: discovery.query_fingerprint || queryFingerprint,
+    network: discovery.network || "",
+    cohort: discovery.cohort || "",
+    timeframe_days: discovery.timeframe_days ?? 0,
+    result_limit: discovery.result_limit ?? 0,
+    remaining_eligible: remainingEligible,
+    already_queued_or_tried: alreadyQueuedOrTried
+  };
+}
+
 // ---- Budget check (re-exported from calibration.ts for convenience) ----
 
 export { checkBudget, CALIBRATION_TARGET, CALIBRATION_CEILING };

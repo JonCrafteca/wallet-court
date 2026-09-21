@@ -50,7 +50,7 @@
         "stopped"
       ],
       "default": "pending",
-      "description": "Queue lifecycle state. pending = queued; processing = claimed by a batch; completed = analysis finished; rejected = preflight rejected; failed = analysis error; stopped = budget/provider stop before analysis."
+      "description": "Queue lifecycle state. pending = queued; processing = claimed by a batch or campaign; completed = analysis finished; rejected = preflight rejected; failed = analysis error; stopped = budget/provider stop before analysis."
     },
     "version": {
       "type": "number",
@@ -60,7 +60,7 @@
     "attempt_count": {
       "type": "number",
       "default": 0,
-      "description": "Number of analysis attempts for this item. Incremented each time a batch claims it."
+      "description": "Number of analysis attempts for this item. Incremented each time a batch or campaign claims it."
     },
     "queued_at": {
       "type": "string",
@@ -69,7 +69,7 @@
     "started_at": {
       "type": "string",
       "format": "date-time",
-      "description": "When the current batch claimed this item. Null while pending."
+      "description": "When the current batch or campaign claimed this item. Null while pending."
     },
     "completed_at": {
       "type": "string",
@@ -82,7 +82,7 @@
     },
     "correlation_id": {
       "type": "string",
-      "description": "Batch run_id this item was processed in. Null until claimed."
+      "description": "Batch or campaign run_id this item was processed in. Null until claimed."
     },
     "calls_before": {
       "type": "number",
@@ -120,9 +120,17 @@
       "type": "string",
       "description": "Sanitized failure message. Never includes wallet addresses, API keys, response bodies, or credentials."
     },
+    "discovery_cohort": {
+      "type": "string",
+      "description": "Cohort from the Candidate Discovery that found this wallet. Null for manually imported items. Used for coverage planning."
+    },
+    "discovery_timeframe": {
+      "type": "number",
+      "description": "Timeframe in days from the Candidate Discovery that found this wallet. Null for manually imported items. Used for coverage planning."
+    },
     "run_id": {
       "type": "string",
-      "description": "Unique identifier for the batch run that claimed this item. Format: run_<random>."
+      "description": "Unique identifier for the batch or campaign run that claimed this item. Format: run_<random> or camp_<random>."
     }
   },
   "required": [
