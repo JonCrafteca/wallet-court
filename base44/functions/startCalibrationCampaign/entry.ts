@@ -29,9 +29,10 @@ import {
   CALIBRATION_CEILING,
   claimFilter
 } from "../../shared/calibration.ts";
-import { getControl, getVerifiedTotal } from "../../shared/calibrationStore.ts";
+import { getControl, getVerifiedTotal, acquireCampaignLock, releaseCampaignLock, getTelemetryHealth } from "../../shared/calibrationStore.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
+import { shouldHaltForTelemetry } from "../../shared/calibrationCampaign.ts";
 
 const PROVIDER = "nansen";
 
@@ -65,6 +66,15 @@ export default async function (req) {
       return Response.json({ error: "Calibration is paused.", paused: true, reason: control.paused_reason }, { status: 423 });
     }
 
+    // Check telemetry health — halt if audit persistence is unhealthy
+    if (control && shouldHaltForTelemetry(control)) {
+      return Response.json({
+        error: "Telemetry persistence is unhealthy. Campaign cannot start until audit writes succeed.",
+        telemetry_unhealthy: true,
+        telemetry_warning: control.telemetry_warning || "Telemetry persistence failed."
+      }, { status: 423 });
+    }
+
     // Check budget (verified total)
     const verifiedTotal = await getVerifiedTotal(base44);
     const budget = checkBudget(verifiedTotal);
@@ -78,7 +88,7 @@ export default async function (req) {
       return Response.json({ error: "Provider is in Court Recess. Try again later.", court_recess: true }, { status: 423 });
     }
 
-    // One-active-run guarantee: no active campaign exists
+    // One-active-run guarantee: no active campaign exists (non-atomic precheck)
     const activeExists = await hasActiveCampaign(base44);
     if (activeExists) {
       return Response.json({ error: "A campaign is already in progress. Resume or stop it first.", active_campaign: true }, { status: 409 });
@@ -100,6 +110,19 @@ export default async function (req) {
     // Create the campaign run
     const now = new Date().toISOString();
     const runId = newCampaignId();
+
+    // Atomically acquire the singleton campaign lock. This is the atomic
+    // one-active-campaign guarantee: two concurrent start requests cannot
+    // both succeed because the CAS filter (campaign_lock_run_id = null)
+    // only matches one. If the lock is already held, reject.
+    const lockAcquired = await acquireCampaignLock(base44, runId);
+    if (!lockAcquired) {
+      return Response.json({
+        error: "Another campaign is already starting or running. The singleton lock is held.",
+        active_campaign: true
+      }, { status: 409 });
+    }
+
     const run = await createCampaign(base44, {
       run_id: runId,
       status: CAMPAIGN_STATUS.RUNNING,
@@ -157,12 +180,13 @@ export default async function (req) {
         });
       }
     } else {
-      // CAS failed — another run claimed it. Mark campaign as error.
+      // CAS failed — another run claimed it. Mark campaign as error and release lock.
       await updateCampaignCAS(base44, runId, 0, {
         status: CAMPAIGN_STATUS.ERROR,
         stop_reason: "Failed to claim the first wallet. It may have been claimed by another run.",
         completed_at: now
       });
+      await releaseCampaignLock(base44, runId);
       return Response.json({ error: "Failed to claim the first wallet. Try again.", run: sanitizeCampaignRun(run) }, { status: 409 });
     }
 

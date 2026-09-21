@@ -401,6 +401,48 @@ export function classifyWalletForCampaign(data: any): WalletResultCounters {
   };
 }
 
+// ---- Singleton campaign lock ----
+
+// The campaign lock is stored on the CalibrationControl singleton as
+// campaign_lock_run_id. It is acquired atomically via CAS (filtering on
+// campaign_lock_run_id = null) so that two concurrent start requests cannot
+// both succeed. The lock is released when the campaign reaches a terminal
+// state. This is the "one active campaign" guarantee, enforced atomically
+// rather than by a read-then-create race.
+
+export interface CampaignLockState {
+  locked: boolean;
+  run_id: string | null;
+}
+
+// Pure: given the control record and a candidate run_id, determine if the
+// lock is available for that run_id. The lock is available if it is null OR
+// already held by the same run_id (idempotent re-acquire).
+export function isCampaignLockAvailable(control: any, runId: string): boolean {
+  const currentLock = control?.campaign_lock_run_id || null;
+  return currentLock === null || currentLock === runId;
+}
+
+// Pure: determine if a lock holder is stale (held by a run that is no longer
+// active). Used by acquireCampaignLock to reclaim a stale lock.
+export function isLockStale(control: any, activeRunIds: Set<string>): boolean {
+  const lockRunId = control?.campaign_lock_run_id;
+  if (!lockRunId) return false;
+  return !activeRunIds.has(lockRunId);
+}
+
+// ---- Telemetry health ----
+
+export const TELEMETRY_HEALTH = {
+  HEALTHY: "healthy",
+  UNHEALTHY: "unhealthy"
+} as const;
+
+// Pure: determine if the campaign should halt based on telemetry health.
+export function shouldHaltForTelemetry(control: any): boolean {
+  return control?.telemetry_health === TELEMETRY_HEALTH.UNHEALTHY;
+}
+
 // ---- Interrupted-campaign reconciliation ----
 
 // A PROCESSING docket item's "lease" is considered stale after this duration.

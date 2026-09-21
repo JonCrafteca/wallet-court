@@ -32,6 +32,9 @@ import {
   detectEnvironment,
   newCorrelationId
 } from "./nansenTelemetry.ts";
+import { persistWithRetry, buildTelemetryWarning } from "./telemetryRetry.ts";
+import { checkBudget } from "./calibration.ts";
+import { getVerifiedTotal } from "./calibrationStore.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
 
@@ -110,7 +113,7 @@ function num(v) {
 // distinct physical request → its own record + attempt_number, sharing the
 // correlation_id). When telemetryCtx is omitted, no audit record is written.
 // The return shape is preserved exactly so verdict behavior is unchanged.
-export async function callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx) {
+export async function callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx, budgetGuard) {
   const url = NANSEN_BASE + ep.path;
   return callEndpointWithRetry({
     url,
@@ -125,7 +128,8 @@ export async function callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx) {
       correlationId: "corr_unknown",
       environment: detectEnvironment()
     },
-    persistAudit: telemetryCtx ? telemetryCtx.persistAudit : undefined
+    persistAudit: telemetryCtx ? telemetryCtx.persistAudit : undefined,
+    budgetGuard
   });
 }
 
@@ -284,6 +288,26 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // One correlation_id groups all physical attempts for this analysis. Retries
   // share it; each attempt gets its own NansenApiCallAudit record.
   const correlationId = newCorrelationId();
+
+  // Per-physical-attempt ceiling guard. Injected into the transport so every
+  // physical request checks the verified total before leaving the process.
+  // This is the last line of defense: even if the campaign-level check passed,
+  // a concurrent request from another workflow could have pushed the total to
+  // the ceiling between the campaign check and this physical attempt.
+  const budgetGuard = base44
+    ? async () => {
+        try {
+          const total = await getVerifiedTotal(base44);
+          const budget = checkBudget(total);
+          return { allowed: budget.allowed, verifiedTotal: total, reason: budget.reason };
+        } catch {
+          // Guard check failed — be conservative and allow the request. The
+          // audit record will still be written and the next attempt re-checks.
+          return { allowed: true, verifiedTotal: 0, reason: "" };
+        }
+      }
+    : undefined;
+
   const telemetryCtx = {
     workflow: "trial_analysis",
     network,
@@ -292,9 +316,21 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     environment: detectEnvironment(),
     persistAudit: base44
       ? (rec) => waitUntil(
-          base44.asServiceRole.entities.NansenApiCallAudit.create(rec).catch((e) =>
-            console.error("[nansen-telemetry] audit write failed:", e?.message)
-          )
+          (async () => {
+            const outcome = await persistWithRetry(rec, (r) =>
+              base44.asServiceRole.entities.NansenApiCallAudit.create(r)
+            );
+            if (!outcome.succeeded) {
+              console.error("[nansen-telemetry] audit persist failed after retries:", outcome.finalError);
+              // Mark telemetry unhealthy so the campaign halts with a visible warning.
+              try {
+                const { markTelemetryUnhealthy } = await import("./calibrationStore.ts");
+                await markTelemetryUnhealthy(base44, buildTelemetryWarning(outcome));
+              } catch (e) {
+                console.error("[nansen-telemetry] failed to mark telemetry unhealthy:", e?.message);
+              }
+            }
+          })()
         )
       : undefined
   };
@@ -308,7 +344,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     }
     if (ep.paginated) body.pagination = { page: 1, per_page: ep.key === "current_balance" ? 1000 : 100 };
     if (ep.key === "current_balance" || ep.key === "transactions") body.hide_spam_token = true;
-    const r = await callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx);
+    const r = await callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx, budgetGuard);
     r.chain = chain;
     return r;
   });

@@ -60,3 +60,101 @@ export async function getExistingQueueFingerprints(base44): Promise<Set<string>>
   }
   return set;
 }
+
+// ---- Singleton campaign lock ----
+
+// Atomically acquire the singleton campaign lock on the CalibrationControl
+// singleton. Uses CAS (updateMany with campaign_lock_run_id = null filter) so
+// two concurrent start requests cannot both succeed. Returns true if the lock
+// was acquired (or already held by this run_id), false if another run holds it.
+export async function acquireCampaignLock(base44, runId: string): Promise<boolean> {
+  const control = await ensureControl(base44);
+  // If already held by this run, idempotent success
+  if (control.campaign_lock_run_id === runId) return true;
+  // If held by another run, fail
+  if (control.campaign_lock_run_id) return false;
+  // Atomic CAS: only succeeds if campaign_lock_run_id is still null
+  const result = await base44.asServiceRole.entities.CalibrationControl.updateMany(
+    { control_key: "main", campaign_lock_run_id: null, version: control.version },
+    {
+      $set: {
+        campaign_lock_run_id: runId,
+        campaign_lock_acquired_at: new Date().toISOString()
+      },
+      $inc: { version: 1 }
+    }
+  );
+  return !!(result && result.updated === 1);
+}
+
+// Release the campaign lock. Only releases if the lock is held by the given
+// run_id (prevents a stale run from releasing another run's lock). Uses CAS.
+export async function releaseCampaignLock(base44, runId: string): Promise<boolean> {
+  const result = await base44.asServiceRole.entities.CalibrationControl.updateMany(
+    { control_key: "main", campaign_lock_run_id: runId },
+    {
+      $set: {
+        campaign_lock_run_id: null,
+        campaign_lock_acquired_at: null
+      },
+      $inc: { version: 1 }
+    }
+  );
+  return !!(result && result.updated === 1);
+}
+
+// Check if the campaign lock is currently held by the given run_id.
+export async function isCampaignLockHeldBy(base44, runId: string): Promise<boolean> {
+  const control = await getControl(base44);
+  return control?.campaign_lock_run_id === runId;
+}
+
+// ---- Telemetry health ----
+
+// Mark telemetry as unhealthy. Sets telemetry_health to "unhealthy" and stores
+// a safe warning message. Uses CAS to avoid clobbering. Called when audit
+// persistence fails after all retries.
+export async function markTelemetryUnhealthy(base44, warning: string): Promise<void> {
+  const control = await ensureControl(base44);
+  if (control.telemetry_health === "unhealthy") return; // already unhealthy
+  await base44.asServiceRole.entities.CalibrationControl.updateMany(
+    { control_key: "main", telemetry_health: "healthy", version: control.version },
+    {
+      $set: {
+        telemetry_health: "unhealthy",
+        telemetry_warning: warning,
+        telemetry_unhealthy_since: new Date().toISOString()
+      },
+      $inc: { version: 1 }
+    }
+  );
+}
+
+// Mark telemetry as healthy again. Called when audit persistence succeeds
+// after a period of failure.
+export async function markTelemetryHealthy(base44): Promise<void> {
+  const control = await getControl(base44);
+  if (!control || control.telemetry_health === "healthy") return;
+  await base44.asServiceRole.entities.CalibrationControl.updateMany(
+    { control_key: "main", telemetry_health: "unhealthy", version: control.version },
+    {
+      $set: {
+        telemetry_health: "healthy",
+        telemetry_warning: null,
+        telemetry_unhealthy_since: null
+      },
+      $inc: { version: 1 }
+    }
+  );
+}
+
+// Check if telemetry is currently unhealthy. Returns the warning string if
+// unhealthy, null if healthy.
+export async function getTelemetryHealth(base44): Promise<{ healthy: boolean; warning: string | null }> {
+  const control = await getControl(base44);
+  if (!control) return { healthy: true, warning: null };
+  return {
+    healthy: control.telemetry_health !== "unhealthy",
+    warning: control.telemetry_warning || null
+  };
+}

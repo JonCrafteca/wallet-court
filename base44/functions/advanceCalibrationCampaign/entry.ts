@@ -34,9 +34,10 @@ import {
   CALIBRATION_TARGET,
   CALIBRATION_CEILING
 } from "../../shared/calibration.ts";
-import { getVerifiedTotal, updateControl } from "../../shared/calibrationStore.ts";
+import { getVerifiedTotal, updateControl, releaseCampaignLock, getTelemetryHealth } from "../../shared/calibrationStore.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
+import { shouldHaltForTelemetry } from "../../shared/calibrationCampaign.ts";
 
 const PROVIDER = "nansen";
 
@@ -115,6 +116,7 @@ export default async function (req) {
       updatedFields.stop_reason = run.stop_reason || "Stopped by admin after current wallet.";
       updatedFields.completed_at = now;
       await updateCampaign(base44, runId, updatedFields);
+      await releaseCampaignLock(base44, runId);
       trackSafe(base44, "calibration_campaign_stopped", { run_id: runId, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
@@ -136,6 +138,7 @@ export default async function (req) {
         ceiling_reached: budget.ceiling_reached || undefined
       });
       await updateCampaign(base44, runId, updatedFields);
+      await releaseCampaignLock(base44, runId);
       trackSafe(base44, "calibration_campaign_stopped", { run_id: runId, reason: budget.reason, verified_total: verifiedTotal, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
@@ -151,6 +154,7 @@ export default async function (req) {
       updatedFields.stop_reason = itemResult?.stop_reason || "Provider is in Court Recess.";
       updatedFields.completed_at = new Date().toISOString();
       await updateCampaign(base44, runId, updatedFields);
+      await releaseCampaignLock(base44, runId);
       trackSafe(base44, "calibration_campaign_circuit_open", { run_id: runId, verified_total: verifiedTotal, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
@@ -182,6 +186,7 @@ export default async function (req) {
         updatedFields.completed_at = new Date().toISOString();
       }
       await updateCampaign(base44, runId, updatedFields);
+      await releaseCampaignLock(base44, runId);
       trackSafe(base44, "calibration_campaign_completed", { run_id: runId, status: decision.newStatus, verified_total: verifiedTotal, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
@@ -192,6 +197,28 @@ export default async function (req) {
     }
 
     // ---- Campaign continues: claim the next pending item ----
+
+    // Telemetry health check: halt if audit persistence is unhealthy.
+    // This prevents the campaign from making more Nansen calls when we can't
+    // prove they happened (the audit ledger is the contest proof).
+    const control = await getControl(base44);
+    if (control && shouldHaltForTelemetry(control)) {
+      updatedFields.status = CAMPAIGN_STATUS.ERROR;
+      updatedFields.stop_reason = "Telemetry persistence is unhealthy. Campaign halted to preserve proof integrity.";
+      updatedFields.completed_at = new Date().toISOString();
+      await updateCampaign(base44, runId, updatedFields);
+      await releaseCampaignLock(base44, runId);
+      trackSafe(base44, "calibration_campaign_halted_telemetry", { run_id: runId, verified_total: verifiedTotal, accounted });
+      return Response.json({
+        run: sanitizeCampaignRun({ ...run, ...updatedFields }),
+        next_item: null,
+        stop_reason: updatedFields.stop_reason,
+        telemetry_unhealthy: true,
+        telemetry_warning: control.telemetry_warning || "Telemetry persistence failed.",
+        verified_total: verifiedTotal
+      });
+    }
+
     const nextPending = pendingItems[0];
     const now = new Date().toISOString();
     const claimResult = await base44.asServiceRole.entities.CalibrationDocketItem.updateMany(
@@ -232,6 +259,7 @@ export default async function (req) {
         updatedFields.stop_reason = "No more pending wallets could be claimed.";
         updatedFields.completed_at = now;
         await updateCampaign(base44, runId, updatedFields);
+        await releaseCampaignLock(base44, runId);
         return Response.json({
           run: sanitizeCampaignRun({ ...run, ...updatedFields }),
           next_item: null,

@@ -372,6 +372,22 @@ function sleep(ms: number): Promise<void> {
 // caller's correlation_id. `fetchFn` is injected for tests; production passes
 // nothing and the global fetch is used. Returns the exact shape the pipeline
 // expects, so verdict behavior is unchanged.
+// Result returned when a budget guard refuses the physical attempt. No HTTP
+// request is made and no audit record is written — the ceiling is enforced
+// before the request leaves the process.
+export const CEILING_GUARD_OUTCOME = "ceiling_reached" as const;
+
+export interface BudgetGuardResult {
+  allowed: boolean;
+  verifiedTotal: number;
+  reason: string;
+}
+
+// A budget guard is injected by the caller (nansen.ts wires it to
+// getVerifiedTotal + checkBudget). The transport calls it before each physical
+// attempt and refuses to make the HTTP request if it returns allowed=false.
+export type BudgetGuard = () => Promise<BudgetGuardResult>;
+
 export async function callEndpointWithRetry(args: {
   url: string;
   ep: { key: string };
@@ -389,6 +405,7 @@ export async function callEndpointWithRetry(args: {
   persistAudit?: (record: Record<string, any>) => void;
   maxAttempts?: number;
   now?: () => Date;
+  budgetGuard?: BudgetGuard;
 }): Promise<{
   key: string;
   ok: boolean;
@@ -402,7 +419,7 @@ export async function callEndpointWithRetry(args: {
   creditsRemaining: number | null;
   rateLimitRemaining: string | null;
 }> {
-  const { url, ep, apiKey, body, timeoutMs, telemetryCtx, fetchFn, persistAudit, now } = args;
+  const { url, ep, apiKey, body, timeoutMs, telemetryCtx, fetchFn, persistAudit, now, budgetGuard } = args;
   const maxAttempts = args.maxAttempts ?? 2;
   const initBase: RequestInit = {
     method: "POST",
@@ -417,6 +434,41 @@ export async function callEndpointWithRetry(args: {
   }
   while (attempt < maxAttempts) {
     attempt++;
+
+    // Per-physical-attempt ceiling enforcement at the transport boundary.
+    // The guard is injected by the caller (nansen.ts wires it to
+    // getVerifiedTotal + checkBudget). If it refuses, NO HTTP request is
+    // made and NO audit record is written — the ceiling is enforced before
+    // the request leaves the process. This is the last line of defense:
+    // even if the campaign-level check passed, a concurrent request from
+    // another workflow could have pushed the total to the ceiling between
+    // the campaign check and this physical attempt.
+    if (budgetGuard) {
+      try {
+        const guard = await budgetGuard();
+        if (!guard.allowed) {
+          const calledAt = (now ? now() : new Date()).toISOString();
+          return {
+            key: ep.key,
+            ok: false,
+            status: 0,
+            errorCategory: CEILING_GUARD_OUTCOME,
+            calledAt,
+            json: null,
+            requestId: null,
+            creditsCost: null,
+            creditsUsed: null,
+            creditsRemaining: null,
+            rateLimitRemaining: null
+          };
+        }
+      } catch {
+        // Guard check itself failed (e.g. DB read error). Be conservative:
+        // allow the request through. The audit record will still be written
+        // and the next attempt's guard will re-check.
+      }
+    }
+
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     const result = await callNansenWithTelemetry({

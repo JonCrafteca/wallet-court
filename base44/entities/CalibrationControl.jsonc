@@ -39,6 +39,33 @@
       "default": false,
       "description": "Set when verified total reaches 1,020. Absolute safety lock; calibration remains locked."
     },
+    "campaign_lock_run_id": {
+      "type": "string",
+      "description": "Run ID that currently holds the singleton campaign lock. Null when no campaign is active. Acquired atomically via CAS (campaign_lock_run_id = null filter) at campaign start. Released when the campaign reaches a terminal state. Prevents two concurrent admins from starting campaigns simultaneously."
+    },
+    "campaign_lock_acquired_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the campaign lock was acquired. Null when no lock is held."
+    },
+    "telemetry_health": {
+      "type": "string",
+      "enum": [
+        "healthy",
+        "unhealthy"
+      ],
+      "default": "healthy",
+      "description": "Health of the NansenApiCallAudit persistence pipeline. healthy = audit records persist successfully; unhealthy = persistence failed after retries and the campaign must halt. Checked by campaign functions before processing each wallet."
+    },
+    "telemetry_warning": {
+      "type": "string",
+      "description": "Safe, non-identifying warning message set when telemetry_health is unhealthy. Null when healthy. Shown to the admin in the campaign dashboard."
+    },
+    "telemetry_unhealthy_since": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When telemetry was first marked unhealthy. Null when healthy. Used to track how long the issue has persisted."
+    },
     "updated_at": {
       "type": "string",
       "format": "date-time"
