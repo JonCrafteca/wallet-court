@@ -45,7 +45,7 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
         setCampaign(data.campaign);
         setProgress(data.progress);
         setResults(data.results || []);
-        if (data.campaign.status === "paused") {
+        if (data.campaign.status === "paused" || data.campaign.status === "stopping") {
           setInterrupted(true);
         }
       }
@@ -133,8 +133,8 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
         break;
       }
 
-      // Check if the campaign was paused/stopped by another tab
-      if (advanceData.run && (advanceData.run.status === "paused" || advanceData.run.status === "stopped" || TERMINAL_STATUSES.has(advanceData.run.status))) {
+      // Check if the campaign was paused/stopped/stopping by another tab
+      if (advanceData.run && (advanceData.run.status === "paused" || advanceData.run.status === "stopping" || advanceData.run.status === "stopped" || TERMINAL_STATUSES.has(advanceData.run.status))) {
         break;
       }
 
@@ -224,6 +224,14 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
         return;
       }
 
+      // If the current wallet is still settling (analysis may still be running),
+      // don't resume — show a message and let the admin try again later.
+      if (data?.still_settling) {
+        setError(data.message || "The current wallet's analysis may still be running. Wait a few minutes and try again.");
+        setRunning(false);
+        return;
+      }
+
       setCampaign(data.run);
       if (data.next_item) {
         await processLoop(data.run.run_id, data.next_item);
@@ -251,10 +259,24 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
     if (!campaign) return;
     stopRef.current = true;
     try {
-      await base44.functions.invoke("stopCalibrationCampaign", { run_id: campaign.run_id });
-      setRunning(false);
-      // Refresh state
-      checkInterrupted();
+      const res = await base44.functions.invoke("stopCalibrationCampaign", { run_id: campaign.run_id });
+      const data = res?.data;
+      if (data?.error) {
+        setError(data.error);
+        return;
+      }
+      // If the campaign transitioned directly to "stopped" (no current wallet
+      // in flight), update the UI immediately.
+      if (data?.stopped) {
+        setRunning(false);
+        checkInterrupted();
+      }
+      // If the campaign is "stopping" (current wallet still settling), don't
+      // set running(false) — the loop will break when advanceCalibrationCampaign
+      // transitions to "stopped". Update the campaign state for the UI.
+      if (data?.stopping && data?.run) {
+        setCampaign(data.run);
+      }
     } catch (e) {
       setError(e?.message || "Stop failed.");
     }
@@ -345,7 +367,9 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-yellow-400" />
             <div className="flex-1">
               <p className="font-mono text-sm text-yellow-400 mb-1">
-                Campaign was interrupted by a page refresh.
+                {campaign.status === "stopping"
+                  ? "Campaign was stopping when the page was refreshed. Reconcile to finalize the stop."
+                  : "Campaign was interrupted by a page refresh."}
               </p>
               <p className="font-mono text-xs text-court-mute">
                 {completedProgress?.label || "0 of 0"} wallets completed · {campaign.campaign_calls_used || 0} calls used
@@ -353,7 +377,7 @@ export default function CampaignRunner({ verifiedTotal, target, ceiling, pending
               <div className="flex gap-2 mt-2">
                 <button type="button" onClick={handleResume}
                   className="inline-flex items-center gap-1 bg-court-chart text-court-navy font-mono text-xs uppercase px-3 py-1.5 border-2 border-court-navy hover:bg-court-ice transition-colors">
-                  <Play className="h-3 w-3" /> Resume
+                  <Play className="h-3 w-3" /> {campaign.status === "stopping" ? "Reconcile & Stop" : "Resume"}
                 </button>
                 <button type="button" onClick={handleStop}
                   className="inline-flex items-center gap-1 bg-court-red text-court-ice font-mono text-xs uppercase px-3 py-1.5 border-2 border-court-ice hover:opacity-80 transition-opacity">

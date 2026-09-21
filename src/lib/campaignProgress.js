@@ -10,6 +10,7 @@ export const CAMPAIGN_STATUS_LABELS = {
   running: "Running",
   pausing: "Pausing…",
   paused: "Paused",
+  stopping: "Stopping…",
   completed: "Completed",
   stopped: "Stopped",
   target_reached: "Target Reached",
@@ -23,6 +24,7 @@ export const CAMPAIGN_STATUS_COLORS = {
   running: "text-court-chart",
   pausing: "text-yellow-400",
   paused: "text-yellow-400",
+  stopping: "text-orange-400",
   completed: "text-court-chart",
   stopped: "text-court-red",
   target_reached: "text-court-chart",
@@ -35,7 +37,7 @@ export const TERMINAL_STATUSES = new Set([
   "completed", "stopped", "target_reached", "ceiling_reached", "circuit_open", "error"
 ]);
 
-export const ACTIVE_STATUSES = new Set(["running", "pausing", "paused"]);
+export const ACTIVE_STATUSES = new Set(["running", "pausing", "paused", "stopping"]);
 
 // Never show a numerator greater than its denominator.
 export function safeProgress(done, total) {

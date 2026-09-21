@@ -13,7 +13,10 @@ import {
   TERMINAL_STATUSES,
   ACTIVE_STATUSES,
   CAMPAIGN_SIZES,
-  AVG_CALLS_PER_WALLET
+  AVG_CALLS_PER_WALLET,
+  LEASE_STALE_MS,
+  isLeaseStale,
+  reconcileCurrentItem
 } from "../base44/shared/calibrationCampaign.ts";
 import { CALIBRATION_TARGET, CALIBRATION_CEILING } from "../base44/shared/calibration.ts";
 
@@ -79,6 +82,31 @@ describe("Campaign status transitions", () => {
     expect(canTransitionTo(CAMPAIGN_STATUS.RUNNING, CAMPAIGN_STATUS.TARGET_REACHED)).toBe(true);
     expect(canTransitionTo(CAMPAIGN_STATUS.RUNNING, CAMPAIGN_STATUS.CEILING_REACHED)).toBe(true);
     expect(canTransitionTo(CAMPAIGN_STATUS.RUNNING, CAMPAIGN_STATUS.CIRCUIT_OPEN)).toBe(true);
+  });
+
+  it("running → stopping is allowed", () => {
+    expect(canTransitionTo(CAMPAIGN_STATUS.RUNNING, CAMPAIGN_STATUS.STOPPING)).toBe(true);
+  });
+
+  it("stopping → stopped is allowed", () => {
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.STOPPED)).toBe(true);
+  });
+
+  it("stopping → completed/target_reached/ceiling_reached/circuit_open/error are allowed", () => {
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.COMPLETED)).toBe(true);
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.TARGET_REACHED)).toBe(true);
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.CEILING_REACHED)).toBe(true);
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.CIRCUIT_OPEN)).toBe(true);
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.ERROR)).toBe(true);
+  });
+
+  it("stopping → running/paused is NOT allowed", () => {
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.RUNNING)).toBe(false);
+    expect(canTransitionTo(CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.PAUSED)).toBe(false);
+  });
+
+  it("paused → stopping is allowed", () => {
+    expect(canTransitionTo(CAMPAIGN_STATUS.PAUSED, CAMPAIGN_STATUS.STOPPING)).toBe(true);
   });
 });
 
@@ -150,6 +178,14 @@ describe("shouldCampaignContinue", () => {
     const d = shouldCampaignContinue(run, 100, false, 10);
     expect(d.shouldContinue).toBe(false);
     expect(d.newStatus).toBe(CAMPAIGN_STATUS.PAUSED);
+  });
+
+  it("stops when stopping (admin requested stop after current)", () => {
+    const run = { ...baseRun, status: CAMPAIGN_STATUS.STOPPING };
+    const d = shouldCampaignContinue(run, 100, false, 10);
+    expect(d.shouldContinue).toBe(false);
+    expect(d.newStatus).toBe(CAMPAIGN_STATUS.STOPPED);
+    expect(d.stopReason).toContain("Stopped by admin");
   });
 
   it("stops when already stopped", () => {
@@ -334,14 +370,148 @@ describe("Status sets", () => {
     expect(TERMINAL_STATUSES.has(CAMPAIGN_STATUS.ERROR)).toBe(true);
   });
 
-  it("ACTIVE_STATUSES contains running, pausing, paused", () => {
+  it("ACTIVE_STATUSES contains running, pausing, paused, stopping", () => {
     expect(ACTIVE_STATUSES.has(CAMPAIGN_STATUS.RUNNING)).toBe(true);
     expect(ACTIVE_STATUSES.has(CAMPAIGN_STATUS.PAUSING)).toBe(true);
     expect(ACTIVE_STATUSES.has(CAMPAIGN_STATUS.PAUSED)).toBe(true);
+    expect(ACTIVE_STATUSES.has(CAMPAIGN_STATUS.STOPPING)).toBe(true);
   });
 
   it("ready is NOT active or terminal", () => {
     expect(ACTIVE_STATUSES.has(CAMPAIGN_STATUS.READY)).toBe(false);
     expect(TERMINAL_STATUSES.has(CAMPAIGN_STATUS.READY)).toBe(false);
+  });
+
+  it("stopping is active but NOT terminal", () => {
+    expect(ACTIVE_STATUSES.has(CAMPAIGN_STATUS.STOPPING)).toBe(true);
+    expect(TERMINAL_STATUSES.has(CAMPAIGN_STATUS.STOPPING)).toBe(false);
+  });
+});
+
+// ---- Lease staleness ----
+
+describe("isLeaseStale", () => {
+  it("returns true for null started_at", () => {
+    expect(isLeaseStale(null)).toBe(true);
+  });
+
+  it("returns true for undefined started_at", () => {
+    expect(isLeaseStale(undefined as any)).toBe(true);
+  });
+
+  it("returns false for recent started_at (1 minute ago)", () => {
+    const recent = new Date(Date.now() - 60 * 1000).toISOString();
+    expect(isLeaseStale(recent)).toBe(false);
+  });
+
+  it("returns false for started_at exactly at the threshold boundary", () => {
+    const boundary = new Date(Date.now() - LEASE_STALE_MS + 1000).toISOString();
+    expect(isLeaseStale(boundary)).toBe(false);
+  });
+
+  it("returns true for old started_at (11 minutes ago, beyond 10-min threshold)", () => {
+    const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    expect(isLeaseStale(old)).toBe(true);
+  });
+
+  it("returns true for invalid date string", () => {
+    expect(isLeaseStale("not-a-date")).toBe(true);
+  });
+});
+
+// ---- Interrupted-campaign reconciliation ----
+
+describe("reconcileCurrentItem", () => {
+  it("returns no_current_item for null docket item", () => {
+    const d = reconcileCurrentItem(null, null);
+    expect(d.action).toBe("no_current_item");
+    expect(d.clear_current_item).toBe(false);
+  });
+
+  it("returns already_accounted for terminal item with campaign_accounted=true", () => {
+    const d = reconcileCurrentItem({ status: "completed", campaign_accounted: true }, null);
+    expect(d.action).toBe("already_accounted");
+    expect(d.clear_current_item).toBe(true);
+  });
+
+  it("returns account_and_proceed for completed item with campaign_accounted=false", () => {
+    const d = reconcileCurrentItem({ status: "completed", campaign_accounted: false }, null);
+    expect(d.action).toBe("account_and_proceed");
+    expect(d.clear_current_item).toBe(true);
+    expect(d.docketItemStatus).toBeUndefined();
+  });
+
+  it("returns account_and_proceed for failed item with campaign_accounted=false", () => {
+    const d = reconcileCurrentItem({ status: "failed", campaign_accounted: false, failure_message_safe: "Provider error" }, null);
+    expect(d.action).toBe("account_and_proceed");
+    expect(d.clear_current_item).toBe(true);
+  });
+
+  it("returns account_and_proceed for stopped item with campaign_accounted=false", () => {
+    const d = reconcileCurrentItem({ status: "stopped", campaign_accounted: false }, null);
+    expect(d.action).toBe("account_and_proceed");
+    expect(d.clear_current_item).toBe(true);
+  });
+
+  it("returns still_settling for PROCESSING with non-stale lease", () => {
+    const recent = new Date(Date.now() - 60 * 1000).toISOString();
+    const d = reconcileCurrentItem({ status: "processing", started_at: recent }, null);
+    expect(d.action).toBe("still_settling");
+    expect(d.clear_current_item).toBe(false);
+  });
+
+  it("returns account_and_proceed for stale PROCESSING with existing trial", () => {
+    const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const trial = {
+      public_slug: "slug_abc",
+      verdict_code: "one_pump_chump",
+      verdict_name: "One Pump Chump",
+      case_outcome: "verdict",
+      data_mode: "live"
+    };
+    const d = reconcileCurrentItem({ status: "processing", started_at: old, case_slug: null }, trial);
+    expect(d.action).toBe("account_and_proceed");
+    expect(d.clear_current_item).toBe(true);
+    expect(d.docketItemStatus).toBe("completed");
+    expect(d.docketItemFields?.case_slug).toBe("slug_abc");
+    expect(d.docketItemFields?.verdict_name).toBe("One Pump Chump");
+  });
+
+  it("returns account_and_proceed for stale PROCESSING with case_slug but no trial object", () => {
+    const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const d = reconcileCurrentItem({ status: "processing", started_at: old, case_slug: "slug_xyz" }, null);
+    expect(d.action).toBe("account_and_proceed");
+    expect(d.docketItemStatus).toBe("completed");
+    expect(d.docketItemFields?.case_slug).toBe("slug_xyz");
+  });
+
+  it("returns revert_and_proceed for stale PROCESSING with no trial and no case_slug", () => {
+    const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const d = reconcileCurrentItem({ status: "processing", started_at: old, case_slug: null }, null);
+    expect(d.action).toBe("revert_and_proceed");
+    expect(d.clear_current_item).toBe(true);
+    expect(d.docketItemStatus).toBe("pending");
+    expect(d.docketItemFields?.started_at).toBeNull();
+    expect(d.docketItemFields?.run_id).toBeNull();
+  });
+
+  it("returns already_accounted for pending item", () => {
+    const d = reconcileCurrentItem({ status: "pending" }, null);
+    expect(d.action).toBe("already_accounted");
+    expect(d.clear_current_item).toBe(true);
+  });
+
+  it("returns already_accounted for rejected item", () => {
+    const d = reconcileCurrentItem({ status: "rejected" }, null);
+    expect(d.action).toBe("already_accounted");
+    expect(d.clear_current_item).toBe(true);
+  });
+
+  it("never reprocesses a non-stale PROCESSING item even if a trial exists", () => {
+    const recent = new Date(Date.now() - 60 * 1000).toISOString();
+    const trial = { public_slug: "slug1", verdict_code: "vc", verdict_name: "VN", case_outcome: "verdict", data_mode: "live" };
+    const d = reconcileCurrentItem({ status: "processing", started_at: recent }, trial);
+    expect(d.action).toBe("still_settling");
+    expect(d.clear_current_item).toBe(false);
   });
 });

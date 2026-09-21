@@ -17,6 +17,7 @@ export const CAMPAIGN_STATUS = {
   RUNNING: "running",
   PAUSING: "pausing",
   PAUSED: "paused",
+  STOPPING: "stopping",
   COMPLETED: "completed",
   STOPPED: "stopped",
   TARGET_REACHED: "target_reached",
@@ -37,7 +38,8 @@ export const TERMINAL_STATUSES = new Set<string>([
 export const ACTIVE_STATUSES = new Set<string>([
   CAMPAIGN_STATUS.RUNNING,
   CAMPAIGN_STATUS.PAUSING,
-  CAMPAIGN_STATUS.PAUSED
+  CAMPAIGN_STATUS.PAUSED,
+  CAMPAIGN_STATUS.STOPPING
 ]);
 
 // Average physical Nansen calls per wallet analysis (4 profiler endpoints).
@@ -139,11 +141,12 @@ export function canTransitionTo(currentStatus: string, newStatus: string): boole
   }
   // Ready → running
   if (currentStatus === CAMPAIGN_STATUS.READY && newStatus === CAMPAIGN_STATUS.RUNNING) return true;
-  // Running → pausing, paused, completed, stopped, target_reached, ceiling_reached, circuit_open, error
+  // Running → pausing, paused, stopping, completed, stopped, target_reached, ceiling_reached, circuit_open, error
   if (currentStatus === CAMPAIGN_STATUS.RUNNING) {
     return [
       CAMPAIGN_STATUS.PAUSING,
       CAMPAIGN_STATUS.PAUSED,
+      CAMPAIGN_STATUS.STOPPING,
       CAMPAIGN_STATUS.COMPLETED,
       CAMPAIGN_STATUS.STOPPED,
       CAMPAIGN_STATUS.TARGET_REACHED,
@@ -164,9 +167,21 @@ export function canTransitionTo(currentStatus: string, newStatus: string): boole
       CAMPAIGN_STATUS.ERROR
     ].includes(newStatus as any);
   }
-  // Paused → running (resume), stopped, error
+  // Stopping → stopped, completed, target_reached, ceiling_reached, circuit_open, error
+  // (stopping = stop requested after current wallet; the current wallet settles, then → stopped)
+  if (currentStatus === CAMPAIGN_STATUS.STOPPING) {
+    return [
+      CAMPAIGN_STATUS.STOPPED,
+      CAMPAIGN_STATUS.COMPLETED,
+      CAMPAIGN_STATUS.TARGET_REACHED,
+      CAMPAIGN_STATUS.CEILING_REACHED,
+      CAMPAIGN_STATUS.CIRCUIT_OPEN,
+      CAMPAIGN_STATUS.ERROR
+    ].includes(newStatus as any);
+  }
+  // Paused → running (resume), stopping, stopped, error
   if (currentStatus === CAMPAIGN_STATUS.PAUSED) {
-    return [CAMPAIGN_STATUS.RUNNING, CAMPAIGN_STATUS.STOPPED, CAMPAIGN_STATUS.ERROR].includes(newStatus as any);
+    return [CAMPAIGN_STATUS.RUNNING, CAMPAIGN_STATUS.STOPPING, CAMPAIGN_STATUS.STOPPED, CAMPAIGN_STATUS.ERROR].includes(newStatus as any);
   }
   return false;
 }
@@ -190,6 +205,13 @@ export function shouldCampaignContinue(
   // If the admin requested pause, stop after current wallet.
   if (run.status === CAMPAIGN_STATUS.PAUSING) {
     return { shouldContinue: false, newStatus: CAMPAIGN_STATUS.PAUSED, stopReason: "Paused by admin after current wallet." };
+  }
+
+  // If the admin requested stop (stopping = stop after current wallet), don't
+  // claim the next item. The current wallet settles, then advanceCalibrationCampaign
+  // transitions to stopped.
+  if (run.status === CAMPAIGN_STATUS.STOPPING) {
+    return { shouldContinue: false, newStatus: CAMPAIGN_STATUS.STOPPED, stopReason: "Stopped by admin after current wallet." };
   }
 
   // If the admin requested stop, stop immediately.
@@ -377,4 +399,121 @@ export function classifyWalletForCampaign(data: any): WalletResultCounters {
     callsUsed,
     resultLabel: data?.failure_message_safe || "Failed"
   };
+}
+
+// ---- Interrupted-campaign reconciliation ----
+
+// A PROCESSING docket item's "lease" is considered stale after this duration.
+// If the lease is stale, the analysis likely failed or the browser closed
+// without advancing the campaign. If the lease is NOT stale, the analysis may
+// still be running and must not be touched.
+export const LEASE_STALE_MS = 10 * 60 * 1000; // 10 minutes
+
+export function isLeaseStale(startedAt: string | null, now: number = Date.now()): boolean {
+  if (!startedAt) return true; // no started_at = treat as stale
+  const started = new Date(startedAt).getTime();
+  if (!Number.isFinite(started)) return true;
+  return (now - started) > LEASE_STALE_MS;
+}
+
+export type ReconciliationAction =
+  | "account_and_proceed"  // docket item is terminal (or stale-PROCESSING with a trial): account it once, then proceed
+  | "revert_and_proceed"   // docket item is stale-PROCESSING with NO trial: revert to PENDING, safe to reprocess later
+  | "still_settling"       // docket item is PROCESSING and lease is NOT stale: the analysis may still be running — don't touch
+  | "already_accounted"    // docket item was already accounted (campaign_accounted=true) or is pending/rejected — just proceed
+  | "no_current_item";     // no current_item_id on the campaign — nothing to reconcile
+
+export interface ReconciliationDecision {
+  action: ReconciliationAction;
+  clear_current_item: boolean;
+  // When action is "account_and_proceed" and the docket item is a stale PROCESSING
+  // item with an existing trial, these fields are set on the docket item to mark
+  // it completed with the trial's info (since processCalibrationWallet never
+  // got to update it).
+  docketItemStatus?: string;
+  docketItemFields?: Record<string, any>;
+}
+
+// Authoritative reconciliation decision for the campaign's current_item_id.
+// Pure: takes the current docket item, an existing trial (if found), and the
+// current time. Returns the action to take. Never reprocesses a wallet that
+// may still be running or that already completed.
+//
+// The decision tree:
+// 1. No current_item_id → nothing to reconcile.
+// 2. Docket item is terminal (completed/failed/stopped):
+//    - If campaign_accounted is true → already accounted, just clear current_item.
+//    - If campaign_accounted is false → account it once, then clear current_item.
+// 3. Docket item is PROCESSING:
+//    - If lease is NOT stale → "still_settling" (the analysis may still be running).
+//    - If lease IS stale:
+//      - If an existing trial exists (or case_slug is set) → mark the docket item
+//        completed with the trial's info, account it once, clear current_item.
+//      - If no trial exists → genuinely stale, revert to PENDING, clear current_item.
+// 4. Docket item is pending/rejected → already handled, clear current_item.
+export function reconcileCurrentItem(
+  docketItem: any | null,
+  existingTrial: any | null,
+  now: number = Date.now()
+): ReconciliationDecision {
+  // 1. No current item
+  if (!docketItem) {
+    return { action: "no_current_item", clear_current_item: false };
+  }
+
+  const status = docketItem.status;
+
+  // 2. Docket item is terminal
+  if (status === "completed" || status === "failed" || status === "stopped") {
+    if (docketItem.campaign_accounted) {
+      return { action: "already_accounted", clear_current_item: true };
+    }
+    return { action: "account_and_proceed", clear_current_item: true };
+  }
+
+  // 3. Docket item is still processing
+  if (status === "processing") {
+    if (!isLeaseStale(docketItem.started_at, now)) {
+      // Lease is not stale — the analysis may still be running. Don't touch it.
+      return { action: "still_settling", clear_current_item: false };
+    }
+    // Lease is stale — check if a trial was created
+    if (existingTrial || docketItem.case_slug) {
+      // A trial exists — the analysis completed but the docket item wasn't
+      // updated (browser closed before processCalibrationWallet resolved).
+      // Mark it as completed with the trial's info and account it.
+      return {
+        action: "account_and_proceed",
+        clear_current_item: true,
+        docketItemStatus: "completed",
+        docketItemFields: {
+          case_slug: existingTrial?.public_slug || docketItem.case_slug || null,
+          verdict_code: existingTrial?.verdict_code || docketItem.verdict_code || null,
+          verdict_name: existingTrial?.verdict_name || docketItem.verdict_name || null,
+          case_outcome: existingTrial?.case_outcome || docketItem.case_outcome || null,
+          data_mode: existingTrial?.data_mode || docketItem.data_mode || null,
+          completed_at: docketItem.completed_at || new Date(now).toISOString()
+        }
+      };
+    }
+    // No trial exists — genuinely stale, safe to reprocess later
+    return {
+      action: "revert_and_proceed",
+      clear_current_item: true,
+      docketItemStatus: "pending",
+      docketItemFields: {
+        started_at: null,
+        run_id: null,
+        correlation_id: null
+      }
+    };
+  }
+
+  // 4. Docket item is pending or rejected (already reverted or never claimed)
+  if (status === "pending" || status === "rejected") {
+    return { action: "already_accounted", clear_current_item: true };
+  }
+
+  // Unknown status — treat as already accounted
+  return { action: "already_accounted", clear_current_item: true };
 }

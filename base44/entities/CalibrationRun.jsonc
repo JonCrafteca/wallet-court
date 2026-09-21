@@ -13,6 +13,7 @@
         "running",
         "pausing",
         "paused",
+        "stopping",
         "completed",
         "stopped",
         "target_reached",
@@ -21,7 +22,7 @@
         "error"
       ],
       "default": "ready",
-      "description": "Campaign lifecycle state. ready = created but not started; running = actively processing; pausing = stop requested after current wallet; paused = paused and waiting for resume; completed = all selected wallets processed; stopped = admin stopped; target_reached = 1,000 verified calls reached; ceiling_reached = 1,020 absolute ceiling; circuit_open = provider circuit breaker open; error = unexpected error."
+      "description": "Campaign lifecycle state. ready = created but not started; running = actively processing; pausing = pause requested after current wallet; paused = paused and waiting for resume; stopping = stop requested after current wallet (the current wallet's analysis is allowed to complete, then the campaign transitions to stopped); completed = all selected wallets processed; stopped = admin stopped; target_reached = 1,000 verified calls reached; ceiling_reached = 1,020 absolute ceiling; circuit_open = provider circuit breaker open; error = unexpected error."
     },
     "max_wallets": {
       "type": "number",

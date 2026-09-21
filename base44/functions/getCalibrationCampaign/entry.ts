@@ -78,7 +78,7 @@ export default async function (req) {
       target: CALIBRATION_TARGET,
       ceiling: CALIBRATION_CEILING,
       has_active_campaign: isActive && ACTIVE_STATUSES.has(run.status),
-      is_interrupted: run.status === CAMPAIGN_STATUS.RUNNING && !!run.current_item_id
+      is_interrupted: (run.status === CAMPAIGN_STATUS.RUNNING || run.status === CAMPAIGN_STATUS.STOPPING) && !!run.current_item_id
     });
   } catch (error) {
     return Response.json({ error: error.message || "Campaign state failed." }, { status: 500 });

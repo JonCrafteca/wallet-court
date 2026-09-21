@@ -1,7 +1,16 @@
 // Wallet Court — admin-only Calibration Campaign Runner: advance.
 // Called by the frontend after each wallet is processed. Updates campaign
-// progress counters, checks whether the campaign should continue (budget,
-// circuit, max_wallets, pause/stop), and claims the next pending item if so.
+// progress counters (idempotently via campaign_accounted), checks whether the
+// campaign should continue (budget, circuit, max_wallets, pause/stop), and
+// claims the next pending item if so.
+//
+// Idempotent accounting: reads the current docket item and uses
+// markDocketItemAccounted (CAS on campaign_accounted != true) to ensure the
+// counters are incremented exactly once per wallet, even if the frontend
+// calls advance twice or the browser refreshes and resume reconciles.
+//
+// Stopping handling: if the campaign is "stopping", accounts for the current
+// wallet and transitions to "stopped" without claiming the next item.
 //
 // Authorization: 401 unauthenticated, 403 non-admin. Auth before any query.
 // Zero Nansen calls. Zero WalletTrial mutations.
@@ -15,7 +24,7 @@ import {
   CAMPAIGN_STATUS,
   TERMINAL_STATUSES
 } from "../../shared/calibrationCampaign.ts";
-import { getCampaignById, updateCampaign } from "../../shared/campaignStore.ts";
+import { getCampaignById, updateCampaign, markDocketItemAccounted } from "../../shared/campaignStore.ts";
 import {
   sanitizeDocketItem,
   containsForbiddenDocketData,
@@ -61,25 +70,63 @@ export default async function (req) {
       });
     }
 
-    // ---- Update progress counters from the wallet result ----
-    const counters = classifyWalletForCampaign(itemResult || {});
+    // ---- Idempotent accounting for the current wallet ----
+    // Read the current docket item to check/set campaign_accounted. The
+    // current_item_id identifies the wallet that was just processed.
+    const currentItemId = run.current_item_id || itemResult?.docket_item_id;
+    let accounted = false;
+    let counters = classifyWalletForCampaign(itemResult || {});
+
+    if (currentItemId) {
+      // CAS: mark the docket item as accounted. Returns true only if it was
+      // NOT yet accounted (false/null/undefined). This is the idempotent guard
+      // — repeated advance/resume calls cannot double-count.
+      accounted = await markDocketItemAccounted(base44, currentItemId);
+    }
+
     const updatedFields: any = {
-      wallets_completed: (run.wallets_completed || 0) + 1,
-      campaign_calls_used: (run.campaign_calls_used || 0) + counters.callsUsed,
-      current_result: counters.resultLabel,
-      current_calls_used: counters.callsUsed,
-      current_item_id: null // clear current item after processing
+      current_item_id: null, // clear current item after processing
+      current_address_short: null,
+      current_network: null
     };
-    if (counters.succeeded) updatedFields.wallets_succeeded = (run.wallets_succeeded || 0) + 1;
-    if (counters.dismissed) updatedFields.wallets_dismissed = (run.wallets_dismissed || 0) + 1;
-    if (counters.mistrial) updatedFields.wallets_mistrial = (run.wallets_mistrial || 0) + 1;
-    if (counters.failed) updatedFields.wallets_failed = (run.wallets_failed || 0) + 1;
+
+    if (accounted) {
+      // First time accounting for this wallet — increment counters
+      updatedFields.wallets_completed = (run.wallets_completed || 0) + 1;
+      updatedFields.campaign_calls_used = (run.campaign_calls_used || 0) + counters.callsUsed;
+      updatedFields.current_result = counters.resultLabel;
+      updatedFields.current_calls_used = counters.callsUsed;
+      if (counters.succeeded) updatedFields.wallets_succeeded = (run.wallets_succeeded || 0) + 1;
+      if (counters.dismissed) updatedFields.wallets_dismissed = (run.wallets_dismissed || 0) + 1;
+      if (counters.mistrial) updatedFields.wallets_mistrial = (run.wallets_mistrial || 0) + 1;
+      if (counters.failed) updatedFields.wallets_failed = (run.wallets_failed || 0) + 1;
+    } else {
+      // Already accounted (idempotent skip) — don't increment counters
+      updatedFields.current_result = counters.resultLabel;
+      updatedFields.current_calls_used = counters.callsUsed;
+    }
+
+    // ---- Stopping handling ----
+    // If the campaign is "stopping", account for the current wallet (above)
+    // and transition to "stopped". Do NOT claim the next item.
+    if (run.status === CAMPAIGN_STATUS.STOPPING) {
+      const now = new Date().toISOString();
+      updatedFields.status = CAMPAIGN_STATUS.STOPPED;
+      updatedFields.stop_reason = run.stop_reason || "Stopped by admin after current wallet.";
+      updatedFields.completed_at = now;
+      await updateCampaign(base44, runId, updatedFields);
+      trackSafe(base44, "calibration_campaign_stopped", { run_id: runId, accounted });
+      return Response.json({
+        run: sanitizeCampaignRun({ ...run, ...updatedFields }),
+        next_item: null,
+        stop_reason: updatedFields.stop_reason
+      });
+    }
 
     // Check if target/ceiling was reached by this wallet
     const verifiedTotal = await getVerifiedTotal(base44);
     const budget = checkBudget(verifiedTotal);
     if (!budget.allowed) {
-      // Budget reached — finalize the campaign
       const finalStatus = budget.ceiling_reached ? CAMPAIGN_STATUS.CEILING_REACHED : CAMPAIGN_STATUS.TARGET_REACHED;
       updatedFields.status = finalStatus;
       updatedFields.stop_reason = budget.reason;
@@ -89,7 +136,7 @@ export default async function (req) {
         ceiling_reached: budget.ceiling_reached || undefined
       });
       await updateCampaign(base44, runId, updatedFields);
-      trackSafe(base44, "calibration_campaign_stopped", { run_id: runId, reason: budget.reason, verified_total: verifiedTotal });
+      trackSafe(base44, "calibration_campaign_stopped", { run_id: runId, reason: budget.reason, verified_total: verifiedTotal, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
         next_item: null,
@@ -104,7 +151,7 @@ export default async function (req) {
       updatedFields.stop_reason = itemResult?.stop_reason || "Provider is in Court Recess.";
       updatedFields.completed_at = new Date().toISOString();
       await updateCampaign(base44, runId, updatedFields);
-      trackSafe(base44, "calibration_campaign_circuit_open", { run_id: runId, verified_total: verifiedTotal });
+      trackSafe(base44, "calibration_campaign_circuit_open", { run_id: runId, verified_total: verifiedTotal, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
         next_item: null,
@@ -135,7 +182,7 @@ export default async function (req) {
         updatedFields.completed_at = new Date().toISOString();
       }
       await updateCampaign(base44, runId, updatedFields);
-      trackSafe(base44, "calibration_campaign_completed", { run_id: runId, status: decision.newStatus, verified_total: verifiedTotal });
+      trackSafe(base44, "calibration_campaign_completed", { run_id: runId, status: decision.newStatus, verified_total: verifiedTotal, accounted });
       return Response.json({
         run: sanitizeCampaignRun({ ...run, ...updatedFields }),
         next_item: null,
@@ -177,7 +224,6 @@ export default async function (req) {
       }
     } else {
       // CAS failed — another run claimed it. Try to find another pending item.
-      // If no other items, complete the campaign.
       const remainingPending = await base44.asServiceRole.entities.CalibrationDocketItem.filter(
         { status: ITEM_STATUS.PENDING }, "queued_at", 1
       );

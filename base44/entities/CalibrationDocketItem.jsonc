@@ -62,6 +62,11 @@
       "default": 0,
       "description": "Number of analysis attempts for this item. Incremented each time a batch or campaign claims it."
     },
+    "campaign_accounted": {
+      "type": "boolean",
+      "default": false,
+      "description": "Idempotent per-item campaign-accounting marker. Set to true when advanceCalibrationCampaign or resumeCalibrationCampaign reconciliation increments the campaign counters (wallets_completed, wallets_succeeded, etc.) for this item. Prevents repeated Resume/Advance calls from double-counting a wallet that completed server-side after a browser refresh or stop. CAS-guarded via updateMany with campaign_accounted != true filter."
+    },
     "queued_at": {
       "type": "string",
       "format": "date-time"
@@ -69,7 +74,7 @@
     "started_at": {
       "type": "string",
       "format": "date-time",
-      "description": "When the current batch or campaign claimed this item. Null while pending."
+      "description": "When the current batch or campaign claimed this item. Null while pending. Used for lease-staleness checks during interrupted-campaign reconciliation."
     },
     "completed_at": {
       "type": "string",
