@@ -1,0 +1,44 @@
+{
+  "description": "Processes pending Wallet Court attribution events and delivers them to the ShoutIt receiver every 5 minutes with bounded retry.",
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "*/5 * * * *",
+      "one_time_date": null,
+      "timezone": "UTC",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "name": "Deliver Attribution Outbox",
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "deliver_attribution_outbox",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "deliver": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "deliverWalletCourtAttribution"
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Deliver pending attribution events",
+            "description": "Sign and send to ShoutIt"
+          }
+        }
+      }
+    ]
+  }
+}

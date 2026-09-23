@@ -389,6 +389,12 @@ export default function AdminNansenUsage() {
           </table>
         </div>
       )}
+
+      <div className="mt-8 border-2 border-court-uv bg-court-navy p-4 text-center">
+        <Link to="/admin/attribution" className="inline-flex items-center gap-2 text-court-chart font-display uppercase tracking-[0.08em] text-sm hover:brightness-110">
+          Attribution Delivery Panel →
+        </Link>
+      </div>
     </section>
   );
 }
