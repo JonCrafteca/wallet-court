@@ -22,6 +22,7 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { reownReady } from "@/lib/reown";
 import { createClaimNonce, verifyClaim } from "@/lib/walletClaim";
+import { getAttributionContext } from "@/lib/attribution";
 import { trackClaim, CLAIM_EVENTS } from "@/lib/claimAnalytics";
 import SolanaClaimModal from "./SolanaClaimModal";
 
@@ -113,7 +114,8 @@ function ClaimModalInner({ trial, open, onOpenChange, onClaimed }) {
         setBusy(false);
         return;
       }
-      const data = await verifyClaim(trial.public_slug, message, signature);
+      const ctx = getAttributionContext();
+      const data = await verifyClaim(trial.public_slug, message, signature, ctx.ref_code, ctx.visitor_id);
       if (data?.error) {
         trackClaim(CLAIM_EVENTS.CLAIM_FAILED, { network: trial.network });
         setError(data.error);

@@ -23,8 +23,8 @@ export async function createRevokeNonce(claimSlug) {
   return res?.data;
 }
 
-export async function verifyClaim(caseSlug, message, signature) {
-  const res = await base44.functions.invoke("verifyWalletClaim", { case_slug: caseSlug, message, signature });
+export async function verifyClaim(caseSlug, message, signature, refCode, visitorId) {
+  const res = await base44.functions.invoke("verifyWalletClaim", { case_slug: caseSlug, message, signature, ref_code: refCode, visitor_id: visitorId });
   return res?.data;
 }
 

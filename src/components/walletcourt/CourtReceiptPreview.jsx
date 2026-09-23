@@ -12,6 +12,7 @@ import {
 import { buildCaseUrl, xIntentUrl } from "@/lib/courtDispatch";
 import { buildVerdictSharePost, truncateForX } from "@/lib/summonsHelpers";
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
+import { enqueueAttribution } from "@/lib/attribution";
 import { X_CHAR_LIMIT } from "@/lib/shareConfig";
 
 export default function CourtReceiptPreview({ trial }) {
@@ -55,6 +56,7 @@ export default function CourtReceiptPreview({ trial }) {
     try {
       await downloadCourtReceipt(trial, "landscape");
       trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation: "landscape" });
+      if (trial.data_mode !== "demo") enqueueAttribution("receipt_created", { external_trial_id: trial.public_slug, metadata: { receipt_type: "landscape" } });
     } catch {
       setError("Could not download the receipt. Try again.");
     } finally {
@@ -68,6 +70,7 @@ export default function CourtReceiptPreview({ trial }) {
     try {
       await downloadCourtReceipt(trial, "portrait");
       trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation: "portrait" });
+      if (trial.data_mode !== "demo") enqueueAttribution("receipt_created", { external_trial_id: trial.public_slug, metadata: { receipt_type: "portrait" } });
     } catch {
       setError("Could not download the receipt. Try again.");
     } finally {
@@ -98,6 +101,7 @@ export default function CourtReceiptPreview({ trial }) {
         await downloadCourtReceipt(trial, orientation);
         trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
         trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
+        if (trial.data_mode !== "demo") enqueueAttribution("receipt_shared", { external_trial_id: trial.public_slug, share_channel: "x", metadata: { share_channel: "x", share_method: "x_intent", verification_status: "unverified", user_initiated: true } });
 
         if (!xWin || xWin.closed) {
           // Popup was blocked — show fallback link, keep downloaded receipt
@@ -134,6 +138,7 @@ export default function CourtReceiptPreview({ trial }) {
           files: [file],
         });
         trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "web_share" });
+        if (trial.data_mode !== "demo") enqueueAttribution("receipt_shared", { external_trial_id: trial.public_slug, share_channel: "web_share", metadata: { share_channel: "web_share", share_method: "web_share", verification_status: "unverified", user_initiated: true } });
         setShareNotice("Share sheet opened.");
       } else {
         // File sharing not actually supported — fallback to download + X
@@ -141,6 +146,7 @@ export default function CourtReceiptPreview({ trial }) {
         trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
         window.open(xUrl, "_blank", "noopener,noreferrer");
         trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
+        if (trial.data_mode !== "demo") enqueueAttribution("receipt_shared", { external_trial_id: trial.public_slug, share_channel: "x", metadata: { share_channel: "x", share_method: "x_intent", verification_status: "unverified", user_initiated: true } });
         setShareNotice("Receipt downloaded. X opened—attach the downloaded receipt and post.");
       }
     } catch (e) {
@@ -154,6 +160,7 @@ export default function CourtReceiptPreview({ trial }) {
           trackShare(SHARE_EVENTS.COURT_RECEIPT_DOWNLOADED, { orientation });
           window.open(xUrl, "_blank", "noopener,noreferrer");
           trackShare(SHARE_EVENTS.COURT_RECEIPT_SHARED, { method: "x_intent" });
+        if (trial.data_mode !== "demo") enqueueAttribution("receipt_shared", { external_trial_id: trial.public_slug, share_channel: "x", metadata: { share_channel: "x", share_method: "x_intent", verification_status: "unverified", user_initiated: true } });
           setShareNotice("Receipt downloaded. X opened—attach the downloaded receipt and post.");
         } catch {
           setError("Could not share the receipt. Try downloading instead.");

@@ -19,6 +19,7 @@ import AdminNansenUsage from '@/pages/AdminNansenUsage';
 import AdminDefenses from '@/pages/AdminDefenses';
 import AdminContestControl from '@/pages/AdminContestControl';
 import AdminCalibrationDocket from '@/pages/AdminCalibrationDocket';
+import AdminAttribution from '@/pages/AdminAttribution';
 import Account from '@/pages/Account';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
@@ -48,6 +49,7 @@ function App() {
                 <Route path="/admin/defenses" element={<AdminDefenses />} />
                 <Route path="/admin/contest-control" element={<AdminContestControl />} />
                 <Route path="/admin/calibration-docket" element={<AdminCalibrationDocket />} />
+                <Route path="/admin/attribution" element={<AdminAttribution />} />
               </Route>
             </Route>
             <Route path="/login" element={<Login />} />

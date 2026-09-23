@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { captureReferral, getAttributionContext } from "@/lib/attribution";
 import IntakeStage from "@/components/walletcourt/IntakeStage";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
@@ -22,11 +23,16 @@ export default function Home() {
   const [subjectType, setSubjectType] = useState("anonymous");
   const [proposedHandle, setProposedHandle] = useState("");
 
+  useEffect(() => { captureReferral(); }, []);
+
   async function runAnalysis(addr, net) {
+    const ctx = getAttributionContext();
     const [res] = await Promise.all([
       base44.functions.invoke("analyzeWalletWithNansen", {
         wallet_address: addr,
         network: net,
+        ref_code: ctx.ref_code,
+        visitor_id: ctx.visitor_id,
       }),
       new Promise((r) => setTimeout(r, 2800)),
     ]);

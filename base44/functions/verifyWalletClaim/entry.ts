@@ -15,6 +15,8 @@ import { verifySolanaSignature } from "../../shared/solanaVerify.ts";
 import { acquireValidNonce, validateNonceFields } from "../../shared/nonceLifecycle.ts";
 import { makeNonceDataAccess } from "../../shared/claimDataAccess.ts";
 import { findCaseBySlug } from "../../shared/caseUtils.ts";
+import { waitUntil } from "base44:runtime";
+import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
 
 export default async function (req) {
   try {
@@ -25,6 +27,8 @@ export default async function (req) {
     let body = {};
     try { body = await req.json(); } catch {}
     const { case_slug, message, signature } = body || {};
+    const refCode = body?.ref_code || null;
+    const visitorId = body?.visitor_id || null;
     if (!case_slug || !message || !signature) {
       return Response.json({ error: "case_slug, message, and signature are required." }, { status: 400 });
     }
@@ -108,6 +112,18 @@ export default async function (req) {
       profile_visibility: "private", show_trial_history: false, show_badges: true,
       latest_trial_slug: trial.public_slug
     });
+    if (refCode && visitorId) {
+      waitUntil(enqueueAttributionEvent(base44, {
+        event_type: "wallet_claimed",
+        ref_code: refCode, visitor_id: visitorId,
+        external_trial_id: trial.public_slug,
+        wallet_address_short: claim.address_short,
+        metadata: {
+          claim_visibility: claim.profile_visibility || "private",
+          alias_used: !!claim.court_name,
+        },
+      }).catch(() => {}));
+    }
     return Response.json({ status: "claimed", claim: sanitizeClaim(claim, { isOwner: true }) });
   } catch (error) {
     return Response.json({ error: error.message || "Wallet claim failed." }, { status: 500 });

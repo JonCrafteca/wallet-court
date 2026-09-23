@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { createClaimNonce, verifyClaim } from "@/lib/walletClaim";
+import { getAttributionContext } from "@/lib/attribution";
 import { trackClaim, CLAIM_EVENTS } from "@/lib/claimAnalytics";
 import { connectSolana, signSolanaMessage, isSolanaWalletAvailable } from "@/lib/solanaWallet";
 
@@ -98,7 +99,8 @@ export default function SolanaClaimModal({ trial, open, onOpenChange, onClaimed 
         setBusy(false);
         return;
       }
-      const data = await verifyClaim(trial.public_slug, message, signature);
+      const ctx = getAttributionContext();
+      const data = await verifyClaim(trial.public_slug, message, signature, ctx.ref_code, ctx.visitor_id);
       if (data?.error) {
         trackClaim(CLAIM_EVENTS.CLAIM_FAILED, { network: trial.network });
         setError(data.error);

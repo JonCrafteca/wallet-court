@@ -36,6 +36,8 @@ import {
   RECESS_TYPES
 } from "../../shared/circuitBreaker.ts";
 import { getCircuit, openCircuit, closeCircuitWithVersion } from "../../shared/circuitStore.ts";
+import { waitUntil } from "base44:runtime";
+import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
 
 const PROVIDER = "nansen";
 
@@ -97,6 +99,8 @@ export default async function (req) {
     // so audit persistence is awaited before the analysis returns. Public
     // visitor traffic omits it and stays non-blocking (waitUntil).
     const durableTelemetry = !!body?.durable_telemetry;
+  const refCode = body?.ref_code || null;
+  const visitorId = body?.visitor_id || null;
 
     // Mandatory demo wallet: deterministic demo verdict, never spends Nansen calls
     // and never touches the circuit.
@@ -193,6 +197,9 @@ export default async function (req) {
         public_slug,
         analyzed_at: new Date().toISOString()
       });
+      if (!durableTelemetry) {
+        enqueueTrialAttribution(base44, record, refCode, visitorId, body?.source_route);
+      }
       return Response.json({
         trial: record,
         analysis: {
@@ -224,6 +231,9 @@ export default async function (req) {
       public_slug,
       analyzed_at: new Date().toISOString()
     });
+    if (!durableTelemetry) {
+      enqueueTrialAttribution(base44, record, refCode, visitorId, body?.source_route);
+    }
     return Response.json({
       trial: record,
       analysis: {
@@ -273,6 +283,29 @@ function computeRetryAfterForRecess(recessType, nowMs) {
   };
   const secs = COOLDOWN[recessType] ?? COOLDOWN.court_recess_unknown;
   return nowMs + secs * 1000;
+}
+
+function enqueueTrialAttribution(base44, trial, refCode, visitorId, sourceRoute) {
+  if (!refCode || !visitorId) return;
+  if (trial.data_mode === "demo") return;
+  waitUntil(enqueueAttributionEvent(base44, {
+    event_type: "trial_started",
+    ref_code: refCode, visitor_id: visitorId,
+    external_trial_id: trial.public_slug,
+    metadata: { network: trial.network, source_route: sourceRoute || "home" },
+  }).catch(() => {}));
+  waitUntil(enqueueAttributionEvent(base44, {
+    event_type: "trial_completed",
+    ref_code: refCode, visitor_id: visitorId,
+    external_trial_id: trial.public_slug,
+    metadata: {
+      network: trial.network,
+      verdict_key: trial.verdict_code || null,
+      outcome: trial.case_outcome || null,
+      confidence_score: trial.confidence_score ?? null,
+      eligible_for_honors: trial.case_outcome === "verdict" && trial.data_mode === "live",
+    },
+  }).catch(() => {}));
 }
 
 async function createDemoTrial(base44, wallet_address, normalized, network, public_slug, submittedByUserId) {
