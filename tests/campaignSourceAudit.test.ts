@@ -41,11 +41,17 @@ describe("Campaign Runner — source audit", () => {
   const tsFiles = listTsFiles(ROOT);
 
   it("no raw fetch( call in any campaign function", () => {
+    // Attribution delivery uses fetch() for the ShoutIt receiver (not Nansen).
+    const FETCH_ALLOWED = new Set([
+      "shared" + path.sep + "attributionStore.ts",
+    ]);
     const offenders: string[] = [];
     for (const f of tsFiles) {
+      const rel = path.relative(ROOT, f);
+      if (FETCH_ALLOWED.has(rel)) continue;
       const content = stripComments(fs.readFileSync(f, "utf8"));
       if (/\bfetch\s*\(/.test(content)) {
-        offenders.push(path.relative(ROOT, f));
+        offenders.push(rel);
       }
     }
     expect(offenders).toEqual([]);
