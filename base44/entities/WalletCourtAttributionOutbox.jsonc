@@ -1,0 +1,123 @@
+{
+  "name": "WalletCourtAttributionOutbox",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Globally unique stable event ID. Generated once at enqueue time and reused for every retry. Never regenerated during a retry."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "trial_started",
+        "trial_completed",
+        "receipt_created",
+        "receipt_shared",
+        "wallet_claimed"
+      ],
+      "description": "The lifecycle event type."
+    },
+    "ref_code": {
+      "type": "string",
+      "description": "Validated, lowercased creator referral code captured from the ?ref= query parameter."
+    },
+    "visitor_id": {
+      "type": "string",
+      "description": "Privacy-safe random visitor ID. Never a wallet address."
+    },
+    "payload": {
+      "type": "string",
+      "description": "JSON-encoded ShoutIt payload. The timestamp field is refreshed at delivery time; occurred_at and event_id are immutable."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "sending",
+        "delivered",
+        "retry_scheduled",
+        "permanently_failed"
+      ],
+      "default": "pending",
+      "description": "Outbox delivery state. pending = awaiting first delivery; sending = delivery in progress; delivered = receiver accepted (200); retry_scheduled = transient failure, will retry with backoff; permanently_failed = non-retryable error or 24h event-age window exceeded."
+    },
+    "attempt_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of delivery attempts made."
+    },
+    "next_attempt_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the next delivery attempt should occur. Set using exponential backoff after a transient failure."
+    },
+    "last_attempt_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the most recent delivery attempt occurred."
+    },
+    "delivered_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the receiver accepted the event (200). Null until delivered."
+    },
+    "receiver_status_code": {
+      "type": "number",
+      "description": "HTTP status code from the most recent receiver response. 0 for network/timeout failures."
+    },
+    "receiver_result": {
+      "type": "string",
+      "description": "Sanitized receiver response summary (attribution_status, duplicate flag). Never includes secrets, signatures, or full wallet addresses."
+    },
+    "last_error_code": {
+      "type": "string",
+      "description": "Sanitized error code from the most recent failure: network_error, receiver_error, invalid_signature, validation_error, replay_window_exceeded, event_too_old, unknown."
+    },
+    "last_error_summary": {
+      "type": "string",
+      "description": "Sanitized, non-identifying error summary. Never includes secrets, signature material, full wallet addresses, or raw provider payloads."
+    },
+    "external_trial_id": {
+      "type": "string",
+      "description": "WalletTrial public_slug linked to this event, when applicable."
+    },
+    "external_case_id": {
+      "type": "string",
+      "description": "Alternative case identifier, when applicable."
+    },
+    "external_receipt_id": {
+      "type": "string",
+      "description": "Receipt identifier, when applicable."
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "ref_code",
+    "visitor_id",
+    "payload",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
