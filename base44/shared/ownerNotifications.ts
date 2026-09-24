@@ -88,11 +88,14 @@ export function canReclaimEnqueueLock(settings: any, now: number = Date.now()): 
 // or stale, the filter matches; otherwise it does not. Returns null when the
 // lock cannot be acquired (fresh lock held by another invocation).
 //
-// Uses a simple enqueue_lock_id: null match (not $or/$exists) because the
-// Base44 updateMany CAS may not correctly combine $or with the version guard.
-// The settings record's enqueue_lock_id field is always initialized to null
-// on creation (saveSettings) and on every release, so the null match is
-// reliable.
+// The version field is the primary CAS guard: every acquire and release
+// increments it, so a matching version proves no other invocation has
+// touched the lock since we read it. The enqueue_lock_id: null filter is
+// NOT used because Base44 updateMany does not reliably filter on null values
+// — it can match records where the field is set, defeating the CAS. For a
+// stale lock, the specific enqueue_lock_id value IS included (it's a
+// non-null string, which filters reliably) to prove we're reclaiming the
+// exact stale lock we observed.
 export function buildEnqueueLockCasFilter(settings: any, now: number = Date.now()): Record<string, any> | null {
   if (!settings) return null;
   if (!canReclaimEnqueueLock(settings, now)) return null;
@@ -101,12 +104,12 @@ export function buildEnqueueLockCasFilter(settings: any, now: number = Date.now(
     version: settings.version
   };
   if (settings.enqueue_lock_id) {
-    // Stale lock — reclaim by matching the specific lock value
+    // Stale lock — reclaim by matching the specific lock value (non-null,
+    // filters reliably) plus the version guard.
     filter.enqueue_lock_id = settings.enqueue_lock_id;
-  } else {
-    // Free lock — match null
-    filter.enqueue_lock_id = null;
   }
+  // Free lock: version guard alone suffices — acquiring the lock increments
+  // the version, so a matching version proves no one else has acquired it.
   return filter;
 }
 

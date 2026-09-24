@@ -346,7 +346,7 @@ describe("Owner Notifications — enqueue lock pure logic", () => {
     expect(buildEnqueueLockCasFilter(settings, now)).toBeNull();
   });
 
-  it("buildEnqueueLockCasFilter returns null-match filter when lock is free", () => {
+  it("buildEnqueueLockCasFilter returns version-only filter when lock is free", () => {
     const settings = {
       control_key: "main",
       version: 3,
@@ -357,7 +357,8 @@ describe("Owner Notifications — enqueue lock pure logic", () => {
     expect(filter).toBeTruthy();
     expect(filter.control_key).toBe("main");
     expect(filter.version).toBe(3);
-    expect(filter.enqueue_lock_id).toBeNull();
+    // Free lock: version guard only — no enqueue_lock_id in filter
+    expect(filter).not.toHaveProperty("enqueue_lock_id");
     expect(filter.$or).toBeUndefined();
   });
 
