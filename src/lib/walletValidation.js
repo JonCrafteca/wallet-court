@@ -4,7 +4,11 @@
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-export const NETWORKS = ["ethereum", "base", "solana"];
+// Canonical chain list is centralized in ./chains. Imported here so this
+// module can use it directly, and re-exported so existing importers keep
+// working without touching every call site.
+import { NETWORKS } from "./chains";
+export { NETWORKS };
 
 const BASE58_LOOKUP = {};
 for (let i = 0; i < BASE58_ALPHABET.length; i++) {

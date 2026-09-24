@@ -13,7 +13,11 @@
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-export const NETWORKS = ["ethereum", "base", "solana"] as const;
+// Canonical chain list is centralized in ./chains.ts. Imported here so this
+// module can use it directly, and re-exported so existing importers
+// (`import { NETWORKS } from "./walletValidation.ts"`) keep working.
+import { NETWORKS } from "./chains.ts";
+export { NETWORKS };
 
 export interface ValidationResult {
   ok: boolean;

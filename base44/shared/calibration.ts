@@ -203,7 +203,7 @@ export async function preflightEntries(
     if (!NETWORKS.includes(entry.network as any)) {
       invalid.push({
         line: entry.line, network: entry.network, address_short: addrShort,
-        reason: "Unsupported network. Use ethereum, base, or solana.",
+        reason: "Unsupported network. Use one of: " + NETWORKS.join(", ") + ".",
         code: "UNSUPPORTED_CHAIN"
       });
       continue;
@@ -535,7 +535,7 @@ export function formatBatchProgress(state: BatchProgressState | null): { label: 
 
 export function coverageRecommendation(stats: CoverageStats): string[] {
   const recs: string[] = [];
-  const networks = ["ethereum", "base", "solana"];
+  const networks = NETWORKS;
   const missing = networks.filter((n) => !stats.by_network[n]);
   if (missing.length > 0) {
     recs.push(`Add wallets on missing networks: ${missing.join(", ")}.`);
@@ -608,7 +608,7 @@ export function computeEnhancedCoverageStats(items: any[]): EnhancedCoverageStat
 // and timeframes. These are recommendations only — never automatically run.
 export function campaignPlanningRecommendations(stats: EnhancedCoverageStats): string[] {
   const recs: string[] = [];
-  const networks = ["ethereum", "base", "solana"];
+  const networks = NETWORKS;
   const missing = networks.filter((n) => !stats.by_network[n]);
   if (missing.length > 0) {
     recs.push(`Missing networks: ${missing.join(", ")}. Consider discovering candidates on these chains.`);

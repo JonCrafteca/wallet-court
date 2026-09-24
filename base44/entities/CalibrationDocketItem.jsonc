@@ -11,7 +11,8 @@
       "enum": [
         "ethereum",
         "base",
-        "solana"
+        "solana",
+        "robinhood"
       ],
       "description": "Chain the wallet will be analyzed on."
     },

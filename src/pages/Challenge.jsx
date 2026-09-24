@@ -12,12 +12,7 @@ import {
 import { trackShare, SHARE_EVENTS } from "@/lib/shareAnalytics";
 import { validateWalletForChain } from "@/lib/walletValidation";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
-
-const NETWORKS = [
-  { id: "ethereum", label: "Ethereum" },
-  { id: "base", label: "Base" },
-  { id: "solana", label: "Solana" },
-];
+import { NETWORK_OPTIONS as NETWORKS } from "@/lib/chains";
 
 export default function Challenge() {
   const { sourceCaseSlug } = useParams();

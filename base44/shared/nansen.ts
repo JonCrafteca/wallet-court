@@ -59,8 +59,8 @@ export const LABELS_EP = { key: "address_labels", path: "/api/v1/profiler/addres
 
 // The Smart Money PnL Leaderboard endpoint, used only by admin Candidate
 // Discovery (calibration_discovery workflow). Does NOT require a token address.
-// Supports ethereum, base, and solana. Returns ranked wallets by PnL over a
-// selectable timeframe (1, 7, 30, 90, 180 days).
+// Supports ethereum, base, solana, and robinhood. Returns ranked wallets by PnL
+// over a selectable timeframe (1, 7, 30, 90, 180 days).
 export const DISCOVERY_EP = { key: "pnl_leaderboard", path: "/api/v1/smart-money/pnl-leaderboard" };
 
 // Fetch Address Labels for a single wallet (admin-triggered only). Returns the
@@ -77,7 +77,9 @@ export async function fetchAddressLabels(apiKey, network, address, timeoutMs = 2
   return { ok: true, walletClass, rawLabels, callResult: r };
 }
 
-export const CHAIN_BY_NETWORK = { ethereum: "ethereum", base: "base", solana: "solana" };
+// Canonical chain → Nansen-chain mapping is centralized in ./chains.ts.
+import { CHAIN_BY_NETWORK, coverageStartFor } from "./chains.ts";
+export { CHAIN_BY_NETWORK };
 
 export const ERR = {
   MISSING_KEY: "missing_key",
@@ -304,7 +306,16 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   }
 
   const to = new Date();
-  const from = new Date(to.getTime() - windowDays * 86400000);
+  let from = new Date(to.getTime() - windowDays * 86400000);
+  // Coverage-start clamp: for chains with a known Nansen coverage start date
+  // (e.g. Robinhood, 2026-04-30), never request data earlier than that date.
+  // Querying before coverage begins returns empty evidence and would produce
+  // an unfair "Dismissed" verdict for a wallet that simply predates the
+  // chain's data availability.
+  const coverageStart = coverageStartFor(network);
+  if (coverageStart && from < coverageStart) {
+    from = coverageStart;
+  }
   const dateFromIso = from.toISOString();
   const dateToIso = to.toISOString();
   const dateFromDay = dateFromIso.slice(0, 10);

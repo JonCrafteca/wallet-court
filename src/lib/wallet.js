@@ -1,7 +1,8 @@
 // Client-side wallet address validation/normalization. Mirrors the server-side
 // rules in base44/shared/verdicts.ts and base44/shared/walletValidation.ts.
 // Solana: strict Base58 decode to 32 bytes (not just a loose regex).
-export const NETWORKS = ["ethereum", "base", "solana"];
+// Canonical chain list is centralized in ./chains.
+export { NETWORKS } from "./chains";
 
 import { isValidSolanaAddress, isValidEvmAddress } from "./walletValidation";
 

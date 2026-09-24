@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader2, Search, AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NETWORK_OPTIONS } from "@/lib/chains";
 
 const COHORTS = [
   { value: "top_performers", label: "Top Performers" },
@@ -235,9 +236,9 @@ export default function CandidateDiscovery({ verifiedTotal, target, onCandidates
           <label className="font-mono text-xs uppercase text-court-mute block mb-1">Network</label>
           <select value={network} onChange={(e) => setNetwork(e.target.value)} disabled={discovering}
             className="w-full bg-[#080B1C] text-court-ice font-mono text-sm p-2 border-2 border-court-ice/40 focus:border-court-chart outline-none">
-            <option value="ethereum">Ethereum</option>
-            <option value="base">Base</option>
-            <option value="solana">Solana</option>
+            {NETWORK_OPTIONS.map((n) => (
+              <option key={n.id} value={n.id}>{n.label}</option>
+            ))}
           </select>
         </div>
         <div>

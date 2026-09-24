@@ -27,7 +27,8 @@
       "enum": [
         "ethereum",
         "base",
-        "solana"
+        "solana",
+        "robinhood"
       ],
       "description": "Chain the candidate was discovered on."
     },

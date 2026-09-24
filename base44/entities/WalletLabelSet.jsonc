@@ -15,7 +15,8 @@
       "enum": [
         "ethereum",
         "base",
-        "solana"
+        "solana",
+        "robinhood"
       ],
       "description": "Chain the labels were fetched on. Cache key, together with normalized_wallet_address."
     },

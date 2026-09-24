@@ -9,6 +9,7 @@
 import { sha256Hex } from "./nansenTelemetry.ts";
 import { normalizeAddress } from "./verdicts.ts";
 import { validateWalletForChain } from "./walletValidation.ts";
+import { NETWORKS } from "./chains.ts";
 import { shortAddress, walletFingerprint, checkBudget, CALIBRATION_TARGET, CALIBRATION_CEILING } from "./calibration.ts";
 
 // ---- Constants ----
@@ -149,8 +150,8 @@ export function buildDiscoveryRequest(req: DiscoveryRequest): Record<string, any
 // ---- Validation ----
 
 export function validateDiscoveryRequest(req: Partial<DiscoveryRequest>): { ok: boolean; reason: string; value: DiscoveryRequest | null } {
-  if (!req.network || !["ethereum", "base", "solana"].includes(req.network as string)) {
-    return { ok: false, reason: "Network must be ethereum, base, or solana.", value: null };
+  if (!req.network || !NETWORKS.includes(req.network as string)) {
+    return { ok: false, reason: "Network must be one of: " + NETWORKS.join(", ") + ".", value: null };
   }
   if (!req.cohort || !COHORTS.includes(req.cohort as Cohort)) {
     return { ok: false, reason: "Invalid cohort.", value: null };

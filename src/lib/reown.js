@@ -12,7 +12,7 @@
 // visitors, and never mentioning environment-variable names.
 import { createAppKit } from "@reown/appkit/react";
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
-import { mainnet, base } from "@reown/appkit/networks";
+import { mainnet, base, robinhood } from "@reown/appkit/networks";
 
 // Public Reown Project ID for Wallet Court. Safe to ship in client bundles.
 const PUBLIC_REOWN_PROJECT_ID = "84029e45a791343d8220495940aea18f";
@@ -30,7 +30,7 @@ let _reownReady = false;
 try {
   createAppKit({
     adapters: [new EthersAdapter()],
-    networks: [mainnet, base],
+    networks: [mainnet, base, robinhood],
     projectId: REOWN_PROJECT_ID,
     metadata: {
       name: "Wallet Court",

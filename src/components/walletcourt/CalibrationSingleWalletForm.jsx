@@ -2,7 +2,8 @@ import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader2, FileCheck, Upload, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { validateWalletForChain, NETWORKS } from "@/lib/walletValidation";
+import { validateWalletForChain } from "@/lib/walletValidation";
+import { NETWORK_OPTIONS } from "@/lib/chains";
 
 // Single-wallet import form: the default import experience. Validates the
 // wallet against the selected network before queueing, shows field-level
@@ -94,9 +95,9 @@ export default function CalibrationSingleWalletForm({ onImported }) {
             disabled={loading}
             className="w-full bg-[#080B1C] text-court-ice font-mono text-sm p-2 border-2 border-court-ice/40 focus:border-court-chart outline-none"
           >
-            <option value="ethereum">Ethereum</option>
-            <option value="base">Base</option>
-            <option value="solana">Solana</option>
+            {NETWORK_OPTIONS.map((n) => (
+              <option key={n.id} value={n.id}>{n.label}</option>
+            ))}
           </select>
           {fieldErrors.network && <p className="font-mono text-xs text-court-red mt-1">{fieldErrors.network}</p>}
         </div>

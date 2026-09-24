@@ -11,7 +11,8 @@
       "enum": [
         "ethereum",
         "base",
-        "solana"
+        "solana",
+        "robinhood"
       ]
     },
     "normalized_wallet_address": {

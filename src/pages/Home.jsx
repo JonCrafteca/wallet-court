@@ -6,12 +6,7 @@ import LoadingStage from "@/components/walletcourt/LoadingStage";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import CourtRecess from "@/components/walletcourt/CourtRecess";
 import { validateWalletForChain } from "@/lib/walletValidation";
-
-const NETWORKS = [
-  { id: "ethereum", label: "Ethereum" },
-  { id: "base", label: "Base" },
-  { id: "solana", label: "Solana" },
-];
+import { NETWORK_OPTIONS as NETWORKS } from "@/lib/chains";
 
 export default function Home() {
   const [network, setNetwork] = useState("ethereum");

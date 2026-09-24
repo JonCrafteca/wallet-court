@@ -15,7 +15,8 @@
       "enum": [
         "ethereum",
         "base",
-        "solana"
+        "solana",
+        "robinhood"
       ]
     },
     "cohort": {

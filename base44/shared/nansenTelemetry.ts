@@ -41,7 +41,8 @@ const ALLOWED_ENDPOINT_KEYS = new Set([
   "pnl_summary", "dex_trades", "current_balance", "transactions", "address_labels",
   "pnl_leaderboard"
 ]);
-const ALLOWED_NETWORKS = new Set(["ethereum", "base", "solana"]);
+// Canonical allowed-networks set is centralized in ./chains.ts.
+import { ALLOWED_NETWORKS } from "./chains.ts";
 const ALLOWED_WORKFLOWS = new Set([
   "trial_analysis", "label_enrichment", "admin_health_check", "admin_verification",
   "calibration_discovery"

@@ -6,7 +6,8 @@
 // The mandatory demo wallet — always returns One Pump Chump.
 export const MANDATORY_DEMO_ADDRESS = "0x71c000000000000000000000000000000000c4f1";
 
-export const NETWORKS = ["ethereum", "base", "solana"];
+// Canonical chain list is centralized in ./chains.ts.
+export { NETWORKS } from "./chains.ts";
 
 import { isValidSolanaAddress, isValidEvmAddress } from "./walletValidation.ts";
 

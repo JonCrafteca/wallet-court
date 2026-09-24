@@ -21,7 +21,7 @@
     },
     "network": {
       "type": "string",
-      "description": "Chain the call was made for. One of: ethereum, base, solana, unknown."
+      "description": "Chain the call was made for. One of: ethereum, base, solana, robinhood, unknown."
     },
     "case_slug": {
       "type": "string",

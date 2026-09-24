@@ -5,7 +5,9 @@
 import { validateAddress, normalizeAddress } from "./verdicts.ts";
 import { sanitizeHandlePublic } from "./handles.ts";
 
-export const SUPPORTED_CLAIM_NETWORKS = ["ethereum", "base", "solana"];
+// Canonical chain metadata is centralized in ./chains.ts.
+import { SUPPORTED_CLAIM_NETWORKS as CLAIM_NETWORKS, isEvmNetwork as isEvm } from "./chains.ts";
+export const SUPPORTED_CLAIM_NETWORKS = CLAIM_NETWORKS;
 export const CLAIM_PURPOSE = "wallet_claim";
 export const REVOKE_PURPOSE = "wallet_revoke";
 export const DISPUTE_PURPOSE = "wallet_dispute";
@@ -30,7 +32,7 @@ export function isSolanaAddress(address) {
 }
 
 export function isEvmNetwork(network) {
-  return network === "ethereum" || network === "base";
+  return isEvm(network);
 }
 
 export function isClaimableAddress(network, address) {
