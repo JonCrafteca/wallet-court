@@ -74,3 +74,46 @@ export function coverageStartFor(network: string): Date | null {
   if (!cfg || !cfg.coverageStart) return null;
   return new Date(cfg.coverageStart + "T00:00:00.000Z");
 }
+
+/**
+ * Compute the effective evidence window after coverage-start clamping.
+ * Pure: no network, no DB. Extracted from fetchNansenEvidence for unit testing.
+ *
+ * For chains with a known Nansen coverage start date (e.g. Robinhood 2026-04-30),
+ * the `from` date is clamped to the coverage start so we never request data
+ * earlier than the chain's data availability.
+ *
+ * Returns the clamped from/to dates, the effective window in days, whether
+ * the window was clamped (coverage_limited), and the coverage start ISO string.
+ */
+export function computeCoverageWindow(
+  network: string,
+  requestedWindowDays: number,
+  now: Date = new Date()
+): {
+  from: Date;
+  to: Date;
+  effectiveWindowDays: number;
+  coverage_limited: boolean;
+  coverage_start: string | null;
+  requested_window_days: number;
+} {
+  const to = new Date(now.getTime());
+  let from = new Date(to.getTime() - requestedWindowDays * 86400000);
+  const coverageStart = coverageStartFor(network);
+  const originalFrom = new Date(from.getTime());
+  const coverage_limited = !!(coverageStart && originalFrom < coverageStart);
+  if (coverageStart && from < coverageStart) {
+    from = new Date(coverageStart.getTime());
+  }
+  const effectiveWindowMs = Math.max(0, to.getTime() - from.getTime());
+  const effectiveWindowDays = effectiveWindowMs / 86400000;
+  return {
+    from,
+    to,
+    effectiveWindowDays,
+    coverage_limited,
+    coverage_start: coverageStart ? coverageStart.toISOString() : null,
+    requested_window_days: requestedWindowDays
+  };
+}

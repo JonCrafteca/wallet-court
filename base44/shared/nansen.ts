@@ -33,7 +33,7 @@ import {
   newCorrelationId
 } from "./nansenTelemetry.ts";
 import { persistWithRetry, buildTelemetryWarning } from "./telemetryRetry.ts";
-import { checkCeilingBudget } from "./calibration.ts";
+import { checkCeilingBudget, checkCeilingBudgetWithLimit, CALIBRATION_CEILING } from "./calibration.ts";
 import { getVerifiedTotal } from "./calibrationStore.ts";
 
 export const NANSEN_BASE = "https://api.nansen.ai";
@@ -78,7 +78,7 @@ export async function fetchAddressLabels(apiKey, network, address, timeoutMs = 2
 }
 
 // Canonical chain → Nansen-chain mapping is centralized in ./chains.ts.
-import { CHAIN_BY_NETWORK, coverageStartFor } from "./chains.ts";
+import { CHAIN_BY_NETWORK, coverageStartFor, computeCoverageWindow } from "./chains.ts";
 export { CHAIN_BY_NETWORK };
 
 export const ERR = {
@@ -295,7 +295,7 @@ async function persistAuditRecord(base44, rec) {
 // awaited before returning so the campaign cannot advance until telemetry
 // health is confirmed.
 export async function fetchNansenEvidence(apiKey, network, address, opts) {
-  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false, extraBudgetGuard = null, onPhysicalCall = null } = opts || {};
+  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false, extraBudgetGuard = null, onPhysicalCall = null, ceilingException = null } = opts || {};
 
   if (!apiKey || !apiKey.trim()) {
     return { outcome: "demo", errorCategory: ERR.MISSING_KEY, partial: false, failedSources: NANSEN_ENDPOINTS.map((e) => e.key), evidence: [], metrics: {}, sources: [], meta: null, nansenCalls: 0 };
@@ -305,27 +305,16 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     return { outcome: "demo", errorCategory: ERR.UNSUPPORTED_CHAIN, partial: false, failedSources: NANSEN_ENDPOINTS.map((e) => e.key), evidence: [], metrics: {}, sources: [], meta: null, nansenCalls: 0 };
   }
 
-  const to = new Date();
-  let from = new Date(to.getTime() - windowDays * 86400000);
   // Coverage-start clamp: for chains with a known Nansen coverage start date
   // (e.g. Robinhood, 2026-04-30), never request data earlier than that date.
-  // Querying before coverage begins returns empty evidence and would produce
-  // an unfair "Dismissed" verdict for a wallet that simply predates the
-  // chain's data availability.
-  const coverageStart = coverageStartFor(network);
-  const originalFrom = new Date(from);
-  const coverage_limited = !!(coverageStart && originalFrom < coverageStart);
-  if (coverageStart && from < coverageStart) {
-    from = coverageStart;
-  }
+  // Uses the pure computeCoverageWindow helper (extracted for unit testing).
+  const coverageWindow = computeCoverageWindow(network, windowDays);
+  const from = coverageWindow.from;
+  const to = coverageWindow.to;
+  const effectiveWindowDays = coverageWindow.effectiveWindowDays;
+  const coverage_limited = coverageWindow.coverage_limited;
   const dateFromIso = from.toISOString();
   const dateToIso = to.toISOString();
-  // Effective window days: the actual span of the evidence window after
-  // coverage-start clamping. Frequency metrics (tx/day) use this, not the
-  // originally requested windowDays, so Robinhood cases don't understate
-  // frequency when the window was clamped from 180 days to ~147.
-  const effectiveWindowMs = Math.max(0, to.getTime() - from.getTime());
-  const effectiveWindowDays = effectiveWindowMs / 86400000;
   const dateFromDay = dateFromIso.slice(0, 10);
   const dateToDay = dateToIso.slice(0, 10);
 
@@ -355,10 +344,15 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // check, not by this per-attempt guard.
   const budgetGuard = base44
     ? async () => {
-        // 1. Global ceiling check (1,020 absolute safety limit).
+        // 1. Global ceiling check. Uses the legacy 1,020 ceiling for all ordinary
+        //    traffic. When ceilingException is present (authenticated
+        //    robinhood_validation context only), uses the per-validation ceiling
+        //    of (starting_global_total + max_attempts) instead, allowing the
+        //    Robinhood validation to exceed 1,020 up to a maximum of 1,022.
         try {
           const total = await getVerifiedTotal(base44);
-          const budget = checkCeilingBudget(total);
+          const ceilingLimit = ceilingException?.maxTotal ?? CALIBRATION_CEILING;
+          const budget = checkCeilingBudgetWithLimit(total, ceilingLimit);
           if (!budget.allowed) {
             return { allowed: false, verifiedTotal: total, reason: budget.reason };
           }

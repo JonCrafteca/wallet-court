@@ -30,7 +30,9 @@ import { isCircuitOpen, sanitizeReason, RECESS_TYPES, recessHttpStatus } from ".
 import { getVerifiedTotal } from "../../shared/calibrationStore.ts";
 import {
   ensureAllowance, updateAllowance, canStartWallet, isExhausted, shouldStop,
-  createLocalAttemptRef, createRobinhoodBudgetGuard, sanitizeAllowance,
+  createPersistentRobinhoodBudgetGuard, sanitizeAllowance,
+  computeValidationMaxTotal, newInvocationId,
+  acquireAdvanceLock, releaseAdvanceLock,
   RH_STATUS, RH_WALLET_STATUS
 } from "../../shared/robinhoodAllowance.ts";
 
@@ -45,6 +47,8 @@ function trackSafe(base44, eventName: string, props: Record<string, any>) {
 }
 
 export default async function (req) {
+  const invocationId = newInvocationId();
+  let lockReleased = false;
   try {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
@@ -59,106 +63,149 @@ export default async function (req) {
       return Response.json({ error: startCheck.reason, status: allowance.status }, { status: 423 });
     }
 
-    // ---- Circuit breaker check (shared across all chains) ----
-    const circuit = await getCircuit(base44, PROVIDER);
-    if (isCircuitOpen(circuit, Date.now())) {
-      await updateAllowance(base44, {
-        status: RH_STATUS.CIRCUIT_OPEN,
-        stop_reason: "Provider circuit is open (shared Nansen CircuitBreaker)."
-      });
+    // ---- Acquire the cross-invocation advance lock (CAS) ----
+    // Only one advance operation can run at a time. A second concurrent request
+    // (double-click, second tab, second serverless invocation) returns 409
+    // VALIDATION_ALREADY_PROCESSING. A stale lock (held longer than 5 minutes)
+    // is reclaimed automatically.
+    const lockResult = await acquireAdvanceLock(base44, invocationId);
+    if (!lockResult.acquired) {
       return Response.json({
-        error: "Provider circuit is open. Validation stopped.",
-        status: RH_STATUS.CIRCUIT_OPEN,
-        circuit_open: true
-      }, { status: 423 });
+        error: "Validation is already processing a wallet. Wait for the current wallet to complete.",
+        code: "VALIDATION_ALREADY_PROCESSING"
+      }, { status: 409 });
     }
 
-    // ---- Find the next pending wallet ----
-    const wallets = await base44.asServiceRole.entities.RobinhoodValidationWallet.list("sequence_order", 50);
-    const nextWallet = (wallets || []).find((w) => w.status === RH_WALLET_STATUS.PENDING);
-    if (!nextWallet) {
-      await updateAllowance(base44, { status: RH_STATUS.STOPPED, stop_reason: "No more pending wallets." });
-      return Response.json({ error: "No more pending wallets.", status: RH_STATUS.STOPPED }, { status: 423 });
-    }
-
-    // ---- Claim the wallet (CAS) ----
-    const claimed = await base44.asServiceRole.entities.RobinhoodValidationWallet.updateMany(
-      { wallet_id: nextWallet.wallet_id, status: RH_WALLET_STATUS.PENDING, version: nextWallet.version },
-      {
-        $set: {
-          status: RH_WALLET_STATUS.PROCESSING,
-          started_at: new Date().toISOString()
-        },
-        $inc: { version: 1 }
+    try {
+    // ---- Stale-lock recovery: revert any wallets stuck in "processing" ----
+    // If we recovered a stale lock, the previous invocation may have crashed
+    // after claiming a wallet but before completing it. Revert those wallets to
+    // "pending" so they can be re-processed.
+    if (lockResult.stale) {
+      const stuckWallets = await base44.asServiceRole.entities.RobinhoodValidationWallet.filter(
+        { status: RH_WALLET_STATUS.PROCESSING }, "sequence_order", 10
+      );
+      for (const w of (stuckWallets || [])) {
+        await base44.asServiceRole.entities.RobinhoodValidationWallet.update(w.id, {
+          status: RH_WALLET_STATUS.PENDING,
+          started_at: null,
+          version: (w.version || 0) + 1
+        }).catch(() => {});
       }
-    );
-    if (!claimed || claimed.updated !== 1) {
-      return Response.json({ error: "Wallet was claimed by another process.", status: "conflict" }, { status: 409 });
     }
-
-    // ---- Update allowance: wallets_started++, current wallet info ----
-    const updatedAllowance = await updateAllowance(base44, {
-      wallets_started: (allowance.wallets_started || 0) + 1,
-      current_wallet_address: nextWallet.wallet_address,
-      current_address_short: nextWallet.address_short,
-      current_wallet_started_at: new Date().toISOString(),
-      current_calls_used: 0
-    });
-
-    trackSafe(base44, "robinhood_validation_wallet_started", {
-      wallet_id: nextWallet.wallet_id,
-      wallets_started: updatedAllowance.wallets_started,
-      attempts_used: allowance.attempts_used
-    });
-
-    // ---- Create the per-physical-attempt budget guard ----
-    const localRef = createLocalAttemptRef(allowance.attempts_used || 0);
-    const rhBudgetGuard = createRobinhoodBudgetGuard(localRef, allowance.max_attempts);
-
-    // ---- Get the Nansen API key ----
-    const apiKey = getNansenApiKey();
-    if (!apiKey) {
-      await base44.asServiceRole.entities.RobinhoodValidationWallet.update(nextWallet.id, {
-        status: RH_WALLET_STATUS.FAILED,
-        completed_at: new Date().toISOString(),
-        failure_category: "missing_key",
-        failure_message_safe: "Nansen API key not configured.",
-        calls_used: 0,
-        version: (nextWallet.version || 0) + 2
-      });
-      await updateAllowance(base44, {
-        status: RH_STATUS.ERROR,
-        stop_reason: "Nansen API key not configured.",
-        wallets_completed: (updatedAllowance.wallets_completed || 0) + 1,
-        attempts_used: localRef.count,
-        current_wallet_address: null,
-        current_address_short: null,
-        current_wallet_started_at: null,
-        current_calls_used: null
-      });
-      return Response.json({ error: "Nansen API key not configured.", status: RH_STATUS.ERROR }, { status: 500 });
-    }
-
-    // ---- Call fetchNansenEvidence with the Robinhood budget guard ----
-    const public_slug = newSlug();
-    const nansen = await fetchNansenEvidence(apiKey, "robinhood", nextWallet.normalized_wallet_address, {
-      windowDays: 180,
-      caseSlug: public_slug,
-      base44,
-      timeoutMs: 20000,
-      durableTelemetry: true,
-      extraBudgetGuard: rhBudgetGuard,
-      onPhysicalCall: (count) => {
-        // Update the allowance's attempts_used in real-time so the dashboard
-        // shows live progress. Fire-and-forget (waitUntil) to avoid blocking.
-        waitUntil(updateAllowance(base44, {
-          attempts_used: count,
-          current_calls_used: count - (allowance.attempts_used || 0)
-        }).catch(() => {}));
+      // ---- Circuit breaker check (shared across all chains) ----
+      const circuit = await getCircuit(base44, PROVIDER);
+      if (isCircuitOpen(circuit, Date.now())) {
+        await updateAllowance(base44, {
+          status: RH_STATUS.CIRCUIT_OPEN,
+          stop_reason: "Provider circuit is open (shared Nansen CircuitBreaker)."
+        });
+        return Response.json({
+          error: "Provider circuit is open. Validation stopped.",
+          status: RH_STATUS.CIRCUIT_OPEN,
+          circuit_open: true
+        }, { status: 423 });
       }
-    });
 
-    const callsUsed = localRef.count - (allowance.attempts_used || 0);
+      // ---- Find the next pending wallet ----
+      const wallets = await base44.asServiceRole.entities.RobinhoodValidationWallet.list("sequence_order", 50);
+      const nextWallet = (wallets || []).find((w) => w.status === RH_WALLET_STATUS.PENDING);
+      if (!nextWallet) {
+        await updateAllowance(base44, { status: RH_STATUS.STOPPED, stop_reason: "No more pending wallets." });
+        return Response.json({ error: "No more pending wallets.", status: RH_STATUS.STOPPED }, { status: 423 });
+      }
+
+      // ---- Claim the wallet (CAS) ----
+      const claimed = await base44.asServiceRole.entities.RobinhoodValidationWallet.updateMany(
+        { wallet_id: nextWallet.wallet_id, status: RH_WALLET_STATUS.PENDING, version: nextWallet.version },
+        {
+          $set: {
+            status: RH_WALLET_STATUS.PROCESSING,
+            started_at: new Date().toISOString()
+          },
+          $inc: { version: 1 }
+        }
+      );
+      if (!claimed || claimed.updated !== 1) {
+        return Response.json({ error: "Wallet was claimed by another process.", status: "conflict" }, { status: 409 });
+      }
+
+      // ---- Update allowance: wallets_started++, current wallet info ----
+      const updatedAllowance = await updateAllowance(base44, {
+        wallets_started: (allowance.wallets_started || 0) + 1,
+        current_wallet_address: nextWallet.wallet_address,
+        current_address_short: nextWallet.address_short,
+        current_wallet_started_at: new Date().toISOString(),
+        current_calls_used: 0
+      });
+
+      trackSafe(base44, "robinhood_validation_wallet_started", {
+        wallet_id: nextWallet.wallet_id,
+        wallets_started: updatedAllowance.wallets_started,
+        attempts_used: allowance.attempts_used
+      });
+
+      // ---- Create the persistent per-physical-attempt budget guard ----
+      // Unlike the local-counter guard, this reserves each physical attempt
+      // via CAS on the allowance record before the outbound Nansen request.
+      // Safe across serverless invocations, multiple tabs, and double-clicks.
+      const rhBudgetGuard = createPersistentRobinhoodBudgetGuard(base44, allowance.max_attempts);
+
+      // ---- Compute the ceiling exception for this validation run ----
+      // The legacy 1,020 ceiling is replaced by (starting_global_total + 21)
+      // for this authenticated robinhood_validation context only. All other
+      // traffic remains bound by 1,020.
+      const validationMaxTotal = computeValidationMaxTotal(allowance) ?? 1020;
+      const ceilingException = { maxTotal: validationMaxTotal };
+
+      // ---- Get the Nansen API key ----
+      const apiKey = getNansenApiKey();
+      if (!apiKey) {
+        await base44.asServiceRole.entities.RobinhoodValidationWallet.update(nextWallet.id, {
+          status: RH_WALLET_STATUS.FAILED,
+          completed_at: new Date().toISOString(),
+          failure_category: "missing_key",
+          failure_message_safe: "Nansen API key not configured.",
+          calls_used: 0,
+          version: (nextWallet.version || 0) + 2
+        });
+        await updateAllowance(base44, {
+          status: RH_STATUS.ERROR,
+          stop_reason: "Nansen API key not configured.",
+          wallets_completed: (updatedAllowance.wallets_completed || 0) + 1,
+          current_wallet_address: null,
+          current_address_short: null,
+          current_wallet_started_at: null,
+          current_calls_used: null
+        });
+        return Response.json({ error: "Nansen API key not configured.", status: RH_STATUS.ERROR }, { status: 500 });
+      }
+
+      // ---- Track starting attempts for callsUsed computation ----
+      const startingAttempts = allowance.attempts_used || 0;
+
+      // ---- Call fetchNansenEvidence with the Robinhood budget guard and ceiling exception ----
+      const public_slug = newSlug();
+      const nansen = await fetchNansenEvidence(apiKey, "robinhood", nextWallet.normalized_wallet_address, {
+        windowDays: 180,
+        caseSlug: public_slug,
+        base44,
+        timeoutMs: 20000,
+        durableTelemetry: true,
+        extraBudgetGuard: rhBudgetGuard,
+        ceilingException,
+        onPhysicalCall: (count) => {
+          // Update current_calls_used for live dashboard display.
+          // attempts_used is already updated persistently by the budget guard.
+          waitUntil(updateAllowance(base44, {
+            current_calls_used: count
+          }).catch(() => {}));
+        }
+      });
+
+      // ---- Read the final attempts_used from the allowance ----
+      const finalAllowance = await ensureAllowance(base44);
+      const callsUsed = (finalAllowance.attempts_used || 0) - startingAttempts;
 
     // ---- Check for Court Recess (circuit breaker) ----
     const gateOutcome = classifyOutcome(nansen.metrics, nansen.meta);
@@ -181,7 +228,7 @@ export default async function (req) {
         status: RH_STATUS.CIRCUIT_OPEN,
         stop_reason: `Provider circuit opened: ${sanitizeReason(recess.recessType)}`,
         wallets_completed: (updatedAllowance.wallets_completed || 0) + 1,
-        attempts_used: localRef.count,
+        attempts_used: finalAllowance.attempts_used || 0,
         endpoint_failures: (updatedAllowance.endpoint_failures || 0) + nansen.failedSources.length,
         current_wallet_address: null,
         current_address_short: null,
@@ -205,7 +252,8 @@ export default async function (req) {
     }
 
     // ---- Check if allowance was exhausted mid-wallet ----
-    const exhausted = isExhausted({ attempts_used: localRef.count, max_attempts: allowance.max_attempts });
+    const finalAttempts = finalAllowance.attempts_used || 0;
+    const exhausted = isExhausted({ attempts_used: finalAttempts, max_attempts: allowance.max_attempts });
 
     // ---- Create the WalletTrial ----
     let trial = null;
@@ -299,7 +347,6 @@ export default async function (req) {
 
     const allowanceFields: Record<string, any> = {
       wallets_completed: (updatedAllowance.wallets_completed || 0) + 1,
-      attempts_used: localRef.count,
       endpoint_successes: (updatedAllowance.endpoint_successes || 0) + endpointSuccesses,
       endpoint_failures: (updatedAllowance.endpoint_failures || 0) + endpointFailures,
       current_wallet_address: null,
@@ -310,7 +357,7 @@ export default async function (req) {
 
     // ---- Check if we should stop ----
     const stopCheck = shouldStop(
-      { ...updatedAllowance, attempts_used: localRef.count, wallets_completed: (updatedAllowance.wallets_completed || 0) + 1 },
+      { ...updatedAllowance, attempts_used: finalAttempts, wallets_completed: (updatedAllowance.wallets_completed || 0) + 1 },
       false
     );
     if (stopCheck.stop && stopCheck.newStatus) {
@@ -326,7 +373,7 @@ export default async function (req) {
       case_slug: trial?.public_slug || null,
       verdict_code: trial?.verdict_code || null,
       calls_used: callsUsed,
-      attempts_used: localRef.count,
+      attempts_used: finalAttempts,
       exhausted
     });
 
@@ -338,10 +385,21 @@ export default async function (req) {
       verdict_name: trial?.verdict_name || null,
       case_outcome: trial?.case_outcome || null,
       calls_used: callsUsed,
-      attempts_used: localRef.count,
+      attempts_used: finalAttempts,
       exhausted,
       allowance: sanitizeAllowance(await ensureAllowance(base44))
     });
+    } catch (error) {
+      return Response.json({ error: error.message || "Wallet processing failed." }, { status: 500 });
+    } finally {
+      // Always release the advance lock, whether the wallet processing
+      // succeeded, failed, or threw. The lock is released via CAS on the
+      // invocation_id so only the owning invocation can release it.
+      if (!lockReleased) {
+        await releaseAdvanceLock(base44, invocationId).catch(() => {});
+        lockReleased = true;
+      }
+    }
   } catch (error) {
     return Response.json({ error: error.message || "Wallet processing failed." }, { status: 500 });
   }

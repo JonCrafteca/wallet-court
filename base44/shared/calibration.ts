@@ -323,6 +323,21 @@ export function checkCeilingBudget(verifiedTotal: number): BudgetCheck {
   return { allowed: true, reason: "", target_reached, ceiling_reached: false, verified_total: verifiedTotal };
 }
 
+// Ceiling-only budget check with a CUSTOM ceiling limit. Used by the Robinhood
+// validation path to enforce a per-validation ceiling of
+// (starting_global_total + max_attempts) instead of the legacy 1,020. The
+// legacy 1,020 ceiling (checkCeilingBudget) still applies to all ordinary
+// traffic and the original calibration runner. Only authenticated
+// robinhood_validation context may use this exception.
+export function checkCeilingBudgetWithLimit(verifiedTotal: number, ceilingLimit: number): BudgetCheck {
+  const target_reached = verifiedTotal >= CALIBRATION_TARGET;
+  const ceiling_reached = verifiedTotal >= ceilingLimit;
+  if (ceiling_reached) {
+    return { allowed: false, reason: `Absolute safety ceiling (${ceilingLimit}) reached. No further physical requests.`, target_reached: true, ceiling_reached: true, verified_total: verifiedTotal };
+  }
+  return { allowed: true, reason: "", target_reached, ceiling_reached: false, verified_total: verifiedTotal };
+}
+
 // ---- Provider-stop classification ----
 
 // Classify the result of invoking analyzeWalletWithNansen for one wallet.

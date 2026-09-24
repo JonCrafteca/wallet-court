@@ -25,6 +25,16 @@ import type { BudgetGuard, BudgetGuardResult } from "./nansenTelemetry.ts";
 export const RH_MAX_WALLETS = 5;
 export const RH_MAX_ATTEMPTS = 21;
 
+// Stale advance lock timeout: 5 minutes. A normal wallet analysis (4 endpoints,
+// 20s timeout each) completes well within this window. If a serverless
+// invocation crashes without releasing the lock, a new invocation can reclaim
+// it after this timeout.
+export const ADVANCE_LOCK_STALE_TIMEOUT_MS = 300000;
+
+// The legacy calibration ceiling. Robinhood validation may exceed this by up to
+// max_attempts (21), but only when carrying the robinhood_validation context.
+export const LEGACY_CEILING = 1020;
+
 export const RH_STATUS = {
   NOT_STARTED: "not_started",
   RUNNING: "running",
@@ -91,6 +101,17 @@ export function shouldStop(
   return { stop: false, reason: "", newStatus: null };
 }
 
+// Compute the maximum authorized global total for this validation run.
+// Formula: starting_global_total + max_attempts.
+// With a starting value of 1,001 and 21 attempts, the absolute maximum is 1,022.
+// This is HIGHER than the legacy 1,020 ceiling — the exception is authorized
+// ONLY for authenticated robinhood_validation context. All other traffic remains
+// bound by the 1,020 ceiling.
+export function computeValidationMaxTotal(allowance: any): number | null {
+  if (!allowance || allowance.starting_global_total == null) return null;
+  return allowance.starting_global_total + (allowance.max_attempts || RH_MAX_ATTEMPTS);
+}
+
 // Remaining attempts in the allowance.
 export function remainingAttempts(allowance: any): number {
   if (!allowance) return RH_MAX_ATTEMPTS;
@@ -104,7 +125,9 @@ export function remainingWallets(allowance: any): number {
 }
 
 // Sanitize the allowance for dashboard responses. Never includes
-// current_wallet_address or started_by_user_id.
+// current_wallet_address, started_by_user_id, or advance_lock_invocation_id.
+// Includes ceiling context: legacy_ceiling (1,020) and validation_max_total
+// (starting_global_total + max_attempts, e.g. 1,022 when starting at 1,001).
 export function sanitizeAllowance(allowance: any): Record<string, any> {
   if (!allowance) return null;
   return {
@@ -123,8 +146,11 @@ export function sanitizeAllowance(allowance: any): Record<string, any> {
     endpoint_successes: allowance.endpoint_successes ?? 0,
     endpoint_failures: allowance.endpoint_failures ?? 0,
     starting_global_total: allowance.starting_global_total ?? null,
+    validation_max_total: computeValidationMaxTotal(allowance),
+    legacy_ceiling: LEGACY_CEILING,
     started_at: allowance.started_at || null,
-    updated_at: allowance.updated_at || null
+    updated_at: allowance.updated_at || null,
+    robinhood_public_enabled: allowance.robinhood_public_enabled ?? false
   };
 }
 
@@ -213,11 +239,18 @@ export async function updateAllowance(base44, fields: Record<string, any>): Prom
 }
 
 // Atomically increment attempts_used via CAS. Used by discovery to consume
-// one attempt from the shared 21-attempt budget.
+// one attempt from the shared 21-attempt budget. Refuses if the allowance is
+// already exhausted (attempts_used >= max_attempts) so discovery cannot push
+// the total past 21.
 export async function incrementAttempts(base44, amount: number): Promise<{ ok: boolean; allowance: any }> {
   const existing = await ensureAllowance(base44);
+  const current = existing.attempts_used || 0;
+  const max = existing.max_attempts || RH_MAX_ATTEMPTS;
+  if (current + amount > max) {
+    return { ok: false, allowance: existing };
+  }
   const result = await base44.asServiceRole.entities.RobinhoodValidationAllowance.updateMany(
-    { id: existing.id, version: existing.version },
+    { id: existing.id, attempts_used: current, version: existing.version },
     {
       $inc: { attempts_used: amount, version: 1 },
       $set: { updated_at: new Date().toISOString() }
@@ -228,4 +261,145 @@ export async function incrementAttempts(base44, amount: number): Promise<{ ok: b
   }
   // CAS failed — re-read and return current state
   return { ok: false, allowance: await getAllowance(base44) };
+}
+
+// ---- Cross-invocation advance lock ----
+
+// Generate a unique invocation ID for the advance lock.
+export function newInvocationId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return "rhinv_" + crypto.randomUUID();
+  }
+  return "rhinv_" + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+}
+
+// Acquire the advance lock via CAS. Only one invocation can hold the lock at a
+// time. If the lock is held but stale (acquired_at older than
+// ADVANCE_LOCK_STALE_TIMEOUT_MS), it is reclaimed. Returns { acquired, stale }
+// so the caller knows whether a stale lock was recovered.
+export async function acquireAdvanceLock(
+  base44,
+  invocationId: string,
+  now: number = Date.now()
+): Promise<{ acquired: boolean; stale: boolean }> {
+  const existing = await ensureAllowance(base44);
+
+  // If lock is not held, try to acquire it
+  if (!existing.advance_lock_held) {
+    const result = await base44.asServiceRole.entities.RobinhoodValidationAllowance.updateMany(
+      { id: existing.id, advance_lock_held: false, version: existing.version },
+      {
+        $set: {
+          advance_lock_held: true,
+          advance_lock_acquired_at: new Date().toISOString(),
+          advance_lock_invocation_id: invocationId
+        },
+        $inc: { version: 1 }
+      }
+    );
+    return { acquired: !!(result && result.updated === 1), stale: false };
+  }
+
+  // Lock is held — check if it's stale
+  const acquiredAtMs = existing.advance_lock_acquired_at
+    ? new Date(existing.advance_lock_acquired_at).getTime()
+    : 0;
+  const isStale = (now - acquiredAtMs) > ADVANCE_LOCK_STALE_TIMEOUT_MS;
+
+  if (isStale) {
+    // Reclaim the stale lock
+    const result = await base44.asServiceRole.entities.RobinhoodValidationAllowance.updateMany(
+      { id: existing.id, advance_lock_held: true, version: existing.version },
+      {
+        $set: {
+          advance_lock_held: true,
+          advance_lock_acquired_at: new Date().toISOString(),
+          advance_lock_invocation_id: invocationId
+        },
+        $inc: { version: 1 }
+      }
+    );
+    return { acquired: !!(result && result.updated === 1), stale: true };
+  }
+
+  return { acquired: false, stale: false };
+}
+
+// Release the advance lock. Only the invocation that holds the lock can
+// release it (validated via advance_lock_invocation_id in the CAS filter).
+export async function releaseAdvanceLock(base44, invocationId: string): Promise<boolean> {
+  const existing = await getAllowance(base44);
+  if (!existing) return false;
+  const result = await base44.asServiceRole.entities.RobinhoodValidationAllowance.updateMany(
+    { id: existing.id, advance_lock_invocation_id: invocationId },
+    {
+      $set: {
+        advance_lock_held: false,
+        advance_lock_acquired_at: null,
+        advance_lock_invocation_id: null
+      },
+      $inc: { version: 1 }
+    }
+  );
+  return !!(result && result.updated === 1);
+}
+
+// ---- Persistent per-attempt reservation ----
+
+// Atomically reserve one physical attempt by incrementing attempts_used via
+// CAS. The CAS filter checks that attempts_used is still the expected value,
+// preventing two concurrent invocations from both reserving the same slot.
+// Refuses if attempts_used is already at max_attempts. This is the persistent
+// equivalent of the local counter — it survives across serverless invocations.
+export async function reserveAttemptPersistently(
+  base44,
+  maxAttempts: number
+): Promise<{ allowed: boolean; newCount: number }> {
+  const existing = await ensureAllowance(base44);
+  const current = existing.attempts_used || 0;
+  if (current >= maxAttempts) {
+    return { allowed: false, newCount: current };
+  }
+  // CAS: only increment if attempts_used is still `current`
+  const result = await base44.asServiceRole.entities.RobinhoodValidationAllowance.updateMany(
+    { id: existing.id, attempts_used: current },
+    {
+      $inc: { attempts_used: 1, version: 1 },
+      $set: { updated_at: new Date().toISOString() }
+    }
+  );
+  if (result && result.updated === 1) {
+    return { allowed: true, newCount: current + 1 };
+  }
+  // CAS failed — re-read and check
+  const refreshed = await getAllowance(base44);
+  const refreshedCount = refreshed?.attempts_used || 0;
+  if (refreshedCount >= maxAttempts) {
+    return { allowed: false, newCount: refreshedCount };
+  }
+  // Retry once with the refreshed value
+  const retryResult = await base44.asServiceRole.entities.RobinhoodValidationAllowance.updateMany(
+    { id: refreshed.id, attempts_used: refreshedCount },
+    {
+      $inc: { attempts_used: 1, version: 1 },
+      $set: { updated_at: new Date().toISOString() }
+    }
+  );
+  if (retryResult && retryResult.updated === 1) {
+    return { allowed: true, newCount: refreshedCount + 1 };
+  }
+  return { allowed: false, newCount: refreshedCount };
+}
+
+// Create a persistent budget guard that reserves each physical attempt via CAS
+// before allowing the outbound Nansen request. Unlike the local-counter guard,
+// this is safe across serverless invocations, multiple tabs, and double-clicks.
+export function createPersistentRobinhoodBudgetGuard(base44, maxAttempts: number): BudgetGuard {
+  return async (): Promise<BudgetGuardResult> => {
+    const result = await reserveAttemptPersistently(base44, maxAttempts);
+    if (!result.allowed) {
+      return { allowed: false, verifiedTotal: result.newCount, reason: `Robinhood allowance exhausted (${maxAttempts} attempts).` };
+    }
+    return { allowed: true, verifiedTotal: result.newCount, reason: "" };
+  };
 }

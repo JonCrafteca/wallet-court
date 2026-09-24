@@ -44,7 +44,7 @@ import { walletFingerprint } from "../../shared/calibration.ts";
 import { newDiscoveryId } from "../../shared/calibrationCampaign.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
-import { ensureAllowance, incrementAttempts, isExhausted } from "../../shared/robinhoodAllowance.ts";
+import { ensureAllowance, reserveAttemptPersistently, isExhausted } from "../../shared/robinhoodAllowance.ts";
 
 const PROVIDER = "nansen";
 const TIMEOUT_MS = 20000;
@@ -129,15 +129,25 @@ export default async function (req) {
       return Response.json({ error: "Provider is in Court Recess. Try again later.", court_recess: true }, { status: 423 });
     }
 
-    // ---- Robinhood allowance check ----
+    // ---- Robinhood allowance check + persistent reservation ----
     // Robinhood discovery consumes 1 attempt from the isolated 21-attempt
-    // allowance. If the allowance is exhausted, refuse before any Nansen call.
-    // Discovery cannot start wallet analyses automatically — candidates still
-    // require explicit admin approval.
+    // allowance. The attempt is reserved persistently via CAS BEFORE the
+    // outbound Nansen request, so two concurrent discoveries cannot both
+    // consume the same slot. If the allowance is exhausted, refuse before any
+    // Nansen call. Discovery cannot start wallet analyses automatically —
+    // candidates still require explicit admin approval.
     let rhAllowance = null;
     if (discoveryReq.network === "robinhood") {
       rhAllowance = await ensureAllowance(base44);
       if (isExhausted(rhAllowance)) {
+        return Response.json({
+          error: `Robinhood validation allowance exhausted (${rhAllowance.max_attempts} attempts used). Discovery not available.`,
+          allowance_exhausted: true
+        }, { status: 423 });
+      }
+      // Reserve 1 attempt persistently before the outbound Nansen request
+      const reservation = await reserveAttemptPersistently(base44, rhAllowance.max_attempts);
+      if (!reservation.allowed) {
         return Response.json({
           error: `Robinhood validation allowance exhausted (${rhAllowance.max_attempts} attempts used). Discovery not available.`,
           allowance_exhausted: true
@@ -188,11 +198,8 @@ export default async function (req) {
     });
 
     if (!result.ok) {
-      // Consume 1 attempt from the Robinhood allowance even on failure
-      // (the physical Nansen call was made).
-      if (discoveryReq.network === "robinhood") {
-        await incrementAttempts(base44, 1).catch(() => {});
-      }
+      // The Robinhood allowance attempt was already reserved before the call.
+      // No post-call increment needed.
       trackSafe(base44, "calibration_discovery_failed", {
         network: discoveryReq.network,
         cohort: discoveryReq.cohort,
@@ -210,12 +217,10 @@ export default async function (req) {
       }, { status: result.status >= 500 ? 502 : 422 });
     }
 
-    // Consume 1 attempt from the Robinhood allowance (success or failure).
-    // A discovery request consumes no more than 1 of the 21 allowed attempts,
+    // The Robinhood allowance attempt was already reserved before the call.
+    // A discovery request consumes exactly 1 of the 21 allowed attempts,
     // regardless of retries — the retry is part of the same logical call.
-    if (discoveryReq.network === "robinhood") {
-      await incrementAttempts(base44, 1).catch(() => {});
-    }
+    // No post-call increment needed.
 
     // Parse response
     const parsed = await parseDiscoveryResponse(result.json, discoveryReq.network, discoveryReq.cohort);

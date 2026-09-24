@@ -8,6 +8,7 @@ import { ensureAllowance, sanitizeAllowance } from "../../shared/robinhoodAllowa
 import { getVerifiedTotal } from "../../shared/calibrationStore.ts";
 import { getCircuit } from "../../shared/circuitStore.ts";
 import { isCircuitOpen } from "../../shared/circuitBreaker.ts";
+import { isRobinhoodPublicEnabled } from "../../shared/featureFlags.ts";
 
 const PROVIDER = "nansen";
 
@@ -40,17 +41,22 @@ export default async function (req) {
     if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
     if (user.role !== "admin") return Response.json({ error: "Admin access required." }, { status: 403 });
 
-    const [allowance, wallets, verifiedTotal, circuit] = await Promise.all([
+    const [allowance, wallets, verifiedTotal, circuit, rhPublicEnabled] = await Promise.all([
       ensureAllowance(base44),
       base44.asServiceRole.entities.RobinhoodValidationWallet.list("sequence_order", 50),
       getVerifiedTotal(base44),
-      getCircuit(base44, PROVIDER)
+      getCircuit(base44, PROVIDER),
+      isRobinhoodPublicEnabled(base44)
     ]);
 
     const circuitOpen = isCircuitOpen(circuit, Date.now());
+    const sanitized = sanitizeAllowance(allowance);
+    // Merge the feature flag from the separate FeatureFlag entity so the
+    // admin dashboard can show the public toggle state.
+    sanitized.robinhood_public_enabled = rhPublicEnabled;
 
     return Response.json({
-      allowance: sanitizeAllowance(allowance),
+      allowance: sanitized,
       wallets: (wallets || []).map(sanitizeWallet),
       current_global_total: verifiedTotal,
       circuit_open: circuitOpen,

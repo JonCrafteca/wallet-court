@@ -38,7 +38,7 @@
     "attempts_used": {
       "type": "number",
       "default": 0,
-      "description": "Total physical outbound Nansen attempts consumed, including retries and failed attempts. Capped at max_attempts (21). Includes both wallet-analysis calls and discovery calls."
+      "description": "Total physical outbound Nansen attempts consumed, including retries and failed attempts. Capped at max_attempts (21). Includes both wallet-analysis calls and discovery calls. Each attempt is reserved persistently via CAS before the outbound HTTP request."
     },
     "max_wallets": {
       "type": "number",
@@ -83,7 +83,21 @@
     },
     "starting_global_total": {
       "type": "number",
-      "description": "Verified NansenApiCallAudit global total when the allowance was first started. Used to show the starting point on the dashboard."
+      "description": "Verified NansenApiCallAudit global total when the allowance was first started. Used to show the starting point on the dashboard and to compute the validation maximum global total (starting_global_total + max_attempts)."
+    },
+    "advance_lock_held": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when an advance operation is in progress. CAS-guarded so two concurrent advance invocations cannot both proceed. Acquired at the start of advanceRobinhoodValidation and released in the finally block. A stale lock (held longer than ADVANCE_LOCK_STALE_TIMEOUT_MS) can be reclaimed by a new invocation."
+    },
+    "advance_lock_acquired_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the advance lock was acquired. Used for stale-lock recovery. Null when no lock is held."
+    },
+    "advance_lock_invocation_id": {
+      "type": "string",
+      "description": "Unique ID of the invocation currently holding the advance lock. Null when no lock is held. NEVER exposed in dashboard responses."
     },
     "started_at": {
       "type": "string",
