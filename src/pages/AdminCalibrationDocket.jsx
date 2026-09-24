@@ -77,9 +77,14 @@ export default function AdminCalibrationDocket() {
 
   return (
     <section className="mx-auto max-w-5xl px-4 pt-10 sm:pt-14 pb-24">
-      <Link to="/admin/contest-control" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors mb-4">
-        <ArrowLeft className="h-4 w-4" /> Contest Control
-      </Link>
+      <div className="flex items-center justify-between mb-4">
+        <Link to="/admin/contest-control" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Contest Control
+        </Link>
+        <Link to="/admin/robinhood-validation" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors border-2 border-court-chart/40 px-3 py-1.5">
+          Robinhood Validation →
+        </Link>
+      </div>
 
       <header className="mb-6">
         <h1 className="font-display uppercase leading-[0.86] text-court-ice" style={{ fontSize: "clamp(1.8rem, 5vw, 3rem)" }}>

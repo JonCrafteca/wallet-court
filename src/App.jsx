@@ -20,6 +20,7 @@ import AdminDefenses from '@/pages/AdminDefenses';
 import AdminContestControl from '@/pages/AdminContestControl';
 import AdminCalibrationDocket from '@/pages/AdminCalibrationDocket';
 import AdminAttribution from '@/pages/AdminAttribution';
+import AdminRobinhoodValidation from '@/pages/AdminRobinhoodValidation';
 import Account from '@/pages/Account';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
@@ -49,6 +50,7 @@ function App() {
                 <Route path="/admin/defenses" element={<AdminDefenses />} />
                 <Route path="/admin/contest-control" element={<AdminContestControl />} />
                 <Route path="/admin/calibration-docket" element={<AdminCalibrationDocket />} />
+                <Route path="/admin/robinhood-validation" element={<AdminRobinhoodValidation />} />
                 <Route path="/admin/attribution" element={<AdminAttribution />} />
               </Route>
             </Route>

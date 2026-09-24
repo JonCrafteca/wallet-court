@@ -6,7 +6,8 @@ import LoadingStage from "@/components/walletcourt/LoadingStage";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import CourtRecess from "@/components/walletcourt/CourtRecess";
 import { validateWalletForChain } from "@/lib/walletValidation";
-import { NETWORK_OPTIONS as NETWORKS } from "@/lib/chains";
+import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
+import { getPublicFeatureFlags } from "@/lib/featureFlags";
 
 export default function Home() {
   const [network, setNetwork] = useState("ethereum");
@@ -17,8 +18,18 @@ export default function Home() {
   const [recess, setRecess] = useState(null);
   const [subjectType, setSubjectType] = useState("anonymous");
   const [proposedHandle, setProposedHandle] = useState("");
+  const [networks, setNetworks] = useState(ALL_NETWORKS);
 
-  useEffect(() => { captureReferral(); }, []);
+  useEffect(() => {
+    captureReferral();
+    // Fetch public feature flags to filter the network selector. Robinhood
+    // is hidden from public visitors when robinhood_public_enabled is false.
+    getPublicFeatureFlags().then((flags) => {
+      if (!flags?.robinhood_public_enabled) {
+        setNetworks(ALL_NETWORKS.filter((n) => n.id !== "robinhood"));
+      }
+    });
+  }, []);
 
   async function runAnalysis(addr, net) {
     const ctx = getAttributionContext();
@@ -44,9 +55,6 @@ export default function Home() {
       setError("A wallet address is required for the summons.");
       return;
     }
-    // Frontend validation: immediate feedback before any request. The backend
-    // is authoritative, but this prevents a round-trip for obvious mismatches
-    // (e.g. an EVM 0x address with Solana selected).
     const validation = validateWalletForChain(network, address.trim());
     if (!validation.ok) {
       setError(validation.message);
@@ -70,7 +78,6 @@ export default function Home() {
   }
 
   async function handleRetry() {
-    // Re-submit the same wallet after a Court Recess.
     setError("");
     if (!address.trim()) {
       setStatus("idle");
@@ -121,7 +128,7 @@ export default function Home() {
       <IntakeStage
         network={network}
         setNetwork={setNetwork}
-        networks={NETWORKS}
+        networks={networks}
         address={address}
         setAddress={setAddress}
         onSubmit={handleSubmit}

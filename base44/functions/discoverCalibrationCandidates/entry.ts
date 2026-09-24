@@ -210,6 +210,13 @@ export default async function (req) {
       }, { status: result.status >= 500 ? 502 : 422 });
     }
 
+    // Consume 1 attempt from the Robinhood allowance (success or failure).
+    // A discovery request consumes no more than 1 of the 21 allowed attempts,
+    // regardless of retries — the retry is part of the same logical call.
+    if (discoveryReq.network === "robinhood") {
+      await incrementAttempts(base44, 1).catch(() => {});
+    }
+
     // Parse response
     const parsed = await parseDiscoveryResponse(result.json, discoveryReq.network, discoveryReq.cohort);
     const totalReturned = parsed.length;
