@@ -81,9 +81,14 @@ export default function AdminCalibrationDocket() {
         <Link to="/admin/contest-control" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors">
           <ArrowLeft className="h-4 w-4" /> Contest Control
         </Link>
-        <Link to="/admin/robinhood-validation" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors border-2 border-court-chart/40 px-3 py-1.5">
-          Robinhood Validation →
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/admin/robinhood-validation" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors border-2 border-court-chart/40 px-3 py-1.5">
+            Robinhood Validation →
+          </Link>
+          <Link to="/admin/owner-notifications" className="inline-flex items-center gap-1.5 font-mono text-sm uppercase tracking-[0.12em] text-court-chart hover:text-court-ice transition-colors border-2 border-court-chart/40 px-3 py-1.5">
+            Owner Notifications →
+          </Link>
+        </div>
       </div>
 
       <header className="mb-6">

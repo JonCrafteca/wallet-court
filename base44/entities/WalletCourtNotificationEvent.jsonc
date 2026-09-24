@@ -1,0 +1,132 @@
+{
+  "name": "WalletCourtNotificationEvent",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Globally unique stable event ID. Generated once at enqueue time and reused for every retry. Never regenerated."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "signup",
+        "claim",
+        "verdict"
+      ],
+      "description": "The notification-worthy event type."
+    },
+    "event_key": {
+      "type": "string",
+      "description": "Exactly-once dedup key. Format: walletcourt:{event_type}:{source_record_id}. Any existing event_key is a permanent duplicate/no-op \u2014 the atomic enqueue ensures only one record per key."
+    },
+    "source_entity": {
+      "type": "string",
+      "description": "The entity that triggered this notification: User, WalletClaim, or WalletTrial."
+    },
+    "source_record_id": {
+      "type": "string",
+      "description": "The built-in id of the source record (user_id, claim id, or trial id)."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "processing",
+        "sent",
+        "failed",
+        "dead_letter"
+      ],
+      "default": "pending",
+      "description": "Outbox delivery state. pending = awaiting first delivery; processing = claimed by a worker; sent = email accepted; failed = delivery failed, awaiting retry; dead_letter = max attempts reached, no more retries."
+    },
+    "recipient_email": {
+      "type": "string",
+      "description": "Email address this event will be sent to. Copied from settings at enqueue time so a settings change after enqueue does not affect in-flight events."
+    },
+    "metadata_json": {
+      "type": "string",
+      "description": "JSON-encoded sanitized metadata for email rendering. Never contains full wallet addresses, API keys, or secrets."
+    },
+    "attempt_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of delivery attempts made."
+    },
+    "max_attempts": {
+      "type": "number",
+      "default": 3,
+      "description": "Maximum delivery attempts before dead-lettering."
+    },
+    "last_attempt_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the most recent delivery attempt occurred."
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the email was successfully sent. Null until sent."
+    },
+    "last_error": {
+      "type": "string",
+      "description": "Sanitized error message from the most recent failed delivery attempt."
+    },
+    "next_retry_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the next delivery attempt should occur. Set to the enqueue time for pending events, and to now + backoff for failed events."
+    },
+    "processing_lock_id": {
+      "type": "string",
+      "description": "Unique token held by the worker currently processing this event. Null when not being processed. Used for atomic claiming so two concurrent workers cannot process the same event."
+    },
+    "processing_lock_acquired_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the processing lock was acquired. Used for stale-lock recovery. Null when not being processed."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "event_key",
+    "source_entity",
+    "source_record_id",
+    "status",
+    "recipient_email",
+    "metadata_json",
+    "attempt_count",
+    "max_attempts",
+    "created_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

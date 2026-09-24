@@ -38,6 +38,9 @@ import {
 import { getCircuit, openCircuit, closeCircuitWithVersion } from "../../shared/circuitStore.ts";
 import { waitUntil } from "base44:runtime";
 import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
+import { enqueueNotification } from "../../shared/ownerNotificationStore.ts";
+import { EVENT_TYPES } from "../../shared/ownerNotifications.ts";
+import { shortAddr } from "../../shared/walletClaim.ts";
 import { isRobinhoodPublicEnabled } from "../../shared/featureFlags.ts";
 
 const PROVIDER = "nansen";
@@ -263,6 +266,24 @@ export default async function (req) {
       effective_analysis_end: nansen.meta?.effective_analysis_end ?? null,
       coverage_limited: nansen.meta?.coverage_limited ?? false
     });
+    // Enqueue owner notification for live verdicts only (exactly-once,
+    // non-blocking). Trigger only after the WalletTrial and public case have
+    // been committed. Does NOT fire for dismissed, mistrial, or demo cases.
+    waitUntil(enqueueNotification(base44, {
+      event_type: EVENT_TYPES.VERDICT,
+      source_entity: "WalletTrial",
+      source_record_id: record.id,
+      metadata: {
+        verdict_name: record.verdict_name,
+        network: record.network,
+        address_short: shortAddr(record.normalized_wallet_address),
+        severity_score: record.severity_score,
+        confidence_score: record.confidence_score,
+        physical_calls: nansen.physicalCallCount || 0,
+        public_slug: record.public_slug,
+        analyzed_at: record.analyzed_at
+      }
+    }).catch(() => {}));
     if (!durableTelemetry) {
       enqueueTrialAttribution(base44, record, refCode, visitorId, body?.source_route);
     }

@@ -1,0 +1,89 @@
+{
+  "name": "WalletCourtOwnerNotificationSettings",
+  "type": "object",
+  "properties": {
+    "control_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every save. Used as a compare-and-set guard so two concurrent admin saves cannot both succeed."
+    },
+    "recipient_email": {
+      "type": "string",
+      "default": "",
+      "description": "Email address that owner notifications are sent to. Empty by default \u2014 no notifications are sent until the admin sets this."
+    },
+    "master_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Master kill switch. When false, no owner notifications are enqueued or sent, regardless of individual event toggles."
+    },
+    "signup_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true (and master is enabled), a signup notification is enqueued for genuinely new accounts."
+    },
+    "claim_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true (and master is enabled), a claim notification is enqueued after a wallet ownership claim is verified and committed."
+    },
+    "verdict_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true (and master is enabled), a verdict notification is enqueued after a live verdict and public case are committed."
+    },
+    "last_test_status": {
+      "type": "string",
+      "description": "Result of the last Send Test Email action: 'success', 'failed', or null if no test has been run."
+    },
+    "last_test_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the last Send Test Email action was executed."
+    },
+    "last_test_error": {
+      "type": "string",
+      "description": "Error message from the last failed test email, or null on success."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "control_key",
+    "version",
+    "recipient_email",
+    "master_enabled",
+    "signup_enabled",
+    "claim_enabled",
+    "verdict_enabled",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

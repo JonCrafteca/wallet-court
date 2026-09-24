@@ -1,0 +1,43 @@
+{
+  "description": "Enqueues an owner notification when a genuinely new Wallet Court account is created (signup only \u2014 never login).",
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "app_user_auth",
+      "events": [
+        "signup"
+      ]
+    }
+  },
+  "name": "On Wallet Court Signup",
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "on_walletcourt_signup",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "enqueue_signup_notification": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "onWalletCourtSignup",
+            "args": {
+              "user_id": "${ .trigger.user_id }",
+              "email": "${ .trigger.email }",
+              "auth_method": "${ .trigger.auth_method }",
+              "full_name": "${ .trigger.full_name }",
+              "occurred_at": "${ .trigger.occurred_at }"
+            }
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Enqueue signup notification",
+            "description": "Exactly-once per user_id"
+          }
+        }
+      }
+    ]
+  }
+}

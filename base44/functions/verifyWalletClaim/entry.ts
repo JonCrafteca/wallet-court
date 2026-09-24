@@ -17,6 +17,8 @@ import { makeNonceDataAccess } from "../../shared/claimDataAccess.ts";
 import { findCaseBySlug } from "../../shared/caseUtils.ts";
 import { waitUntil } from "base44:runtime";
 import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
+import { enqueueNotification } from "../../shared/ownerNotificationStore.ts";
+import { EVENT_TYPES } from "../../shared/ownerNotifications.ts";
 
 export default async function (req) {
   try {
@@ -112,6 +114,20 @@ export default async function (req) {
       profile_visibility: "private", show_trial_history: false, show_badges: true,
       latest_trial_slug: trial.public_slug
     });
+    // Enqueue owner notification (exactly-once, non-blocking). Trigger only
+    // after the claim has been cryptographically verified and committed.
+    waitUntil(enqueueNotification(base44, {
+      event_type: EVENT_TYPES.CLAIM,
+      source_entity: "WalletClaim",
+      source_record_id: claim.id,
+      metadata: {
+        court_name: claim.court_name || null,
+        network: claim.network,
+        address_short: claim.address_short,
+        verified_at: claim.verified_at,
+        claim_slug: claim.claim_slug
+      }
+    }).catch(() => {}));
     if (refCode && visitorId) {
       waitUntil(enqueueAttributionEvent(base44, {
         event_type: "wallet_claimed",
