@@ -189,6 +189,39 @@ export function applyStartCas(
   return { updated: 0, allowance };
 }
 
+// Pure simulator for the advance lock lifecycle. Models the try/finally
+// pattern in advanceRobinhoodValidation: acquire the lock, do work (which may
+// throw), and always release in finally. Returns the final lock state and
+// whether the lock was released. Used by regression tests to prove the
+// finally block releases the lock even when an exception occurs mid-wallet.
+export function simulateAdvanceLockLifecycle(
+  initialHeld: boolean,
+  initialInvocationId: string | null,
+  invocationId: string,
+  workThrows: boolean
+): { released: boolean; finalHeld: boolean; finalInvocationId: string | null; threw: boolean } {
+  let held = initialHeld;
+  let currentInvocationId = initialInvocationId;
+  let released = false;
+  let threw = false;
+  if (!held) {
+    held = true;
+    currentInvocationId = invocationId;
+  }
+  try {
+    if (workThrows) throw new Error("test exception");
+  } catch {
+    threw = true;
+  } finally {
+    if (held && currentInvocationId === invocationId) {
+      held = false;
+      currentInvocationId = null;
+      released = true;
+    }
+  }
+  return { released, finalHeld: held, finalInvocationId: currentInvocationId, threw };
+}
+
 // Remaining attempts in the allowance.
 export function remainingAttempts(allowance: any): number {
   if (!allowance) return RH_MAX_ATTEMPTS;

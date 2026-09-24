@@ -78,7 +78,7 @@ export async function fetchAddressLabels(apiKey, network, address, timeoutMs = 2
 }
 
 // Canonical chain → Nansen-chain mapping is centralized in ./chains.ts.
-import { CHAIN_BY_NETWORK, coverageStartFor, computeCoverageWindow } from "./chains.ts";
+import { CHAIN_BY_NETWORK, computeCoverageWindow } from "./chains.ts";
 export { CHAIN_BY_NETWORK };
 
 export const ERR = {
@@ -477,7 +477,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     effective_analysis_start: dateFromIso,
     effective_analysis_end: dateToIso,
     coverage_limited,
-    coverage_start: coverageStart ? coverageStart.toISOString() : null,
+    coverage_start: coverageWindow.coverage_start,
     freshness: to.toISOString(),
     snapshot_note: "Current balance is a point-in-time snapshot with no date range.",
     labels_ok: false,
