@@ -76,13 +76,29 @@ function createMockBase44(opts: { sendEmailShouldFail?: boolean } = {}) {
             return results;
           },
           create: async (data: any) => {
-            if (data.event_key) {
-              const existing = events.find((r) => r.event_key === data.event_key);
-              if (existing) throw new Error("duplicate key error: E11000");
-            }
             const record = { id: `evt_${++idCounter}`, created_date: new Date().toISOString(), updated_date: new Date().toISOString(), ...data };
             events.push(record);
             return record;
+          },
+          upsert: async (records: any[], options: any) => {
+            const keyFields = Array.isArray(options.key) ? options.key : [options.key];
+            let created = 0, updated = 0;
+            const resultRecords: any[] = [];
+            for (const rec of records) {
+              const existing = events.find((r) => keyFields.every((k: string) => r[k] === rec[k]));
+              if (existing) {
+                // Partial update: only set provided fields (preserves unprovided mutable fields)
+                Object.assign(existing, rec, { updated_date: new Date().toISOString() });
+                updated++;
+                resultRecords.push(existing);
+              } else {
+                const record = { id: `evt_${++idCounter}`, created_date: new Date().toISOString(), updated_date: new Date().toISOString(), ...rec };
+                events.push(record);
+                created++;
+                resultRecords.push(record);
+              }
+            }
+            return { created, updated, records: resultRecords };
           },
           update: async (id: string, data: any) => {
             const idx = events.findIndex((r) => r.id === id);
@@ -319,7 +335,7 @@ describe("Owner Notifications — store (exactly-once enqueue)", () => {
     expect(mock._events.length).toBe(1);
   });
 
-  it("concurrent triggers produce one event (race-safe via duplicate-key)", async () => {
+  it("concurrent triggers produce one event (race-safe via atomic keyed upsert)", async () => {
     const mock = createMockBase44();
     await enableSettings(mock);
     const { enqueueNotification } = await import("../base44/shared/ownerNotificationStore.ts");
@@ -336,8 +352,9 @@ describe("Owner Notifications — store (exactly-once enqueue)", () => {
     ]);
     // Exactly one event was created
     expect(mock._events.length).toBe(1);
-    // At least one result is a duplicate
-    expect(r1.duplicate || r2.duplicate).toBe(true);
+    // Exactly one is the winner, exactly one is a duplicate
+    expect(r1.duplicate).not.toBe(r2.duplicate);
+    expect(r1.ok && r2.ok).toBe(true);
   });
 
   it("disabled master sends zero events", async () => {
@@ -495,6 +512,204 @@ describe("Owner Notifications — store (delivery + retry)", () => {
     const updated = getEvent(mock, enq.event_id!);
     expect(updated.processing_lock_id).toBe("lock_1");
     expect(updated.status).toBe(NOTIFICATION_STATUS.PROCESSING);
+  });
+});
+
+// ---- Atomic keyed-upsert tests ----
+
+describe("Owner Notifications — atomic keyed upsert", () => {
+  it("winner explicitly initializes ALL mutable lock fields (no schema-default reliance)", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification } = await import("../base44/shared/ownerNotificationStore.ts");
+    const enq = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.SIGNUP, source_entity: "User", source_record_id: "user_1",
+      metadata: { user_email: "test@example.com" }
+    });
+    expect(enq.duplicate).toBe(false);
+    const record = getEvent(mock, enq.event_id!);
+    // Every required lock field must be explicitly persisted
+    expect(record.status).toBe(NOTIFICATION_STATUS.PENDING);
+    expect(record.attempt_count).toBe(0);
+    expect(record.max_attempts).toBe(MAX_ATTEMPTS);
+    expect(record.next_retry_at).toBeTruthy();
+    expect(record.processing_lock_id).toBeNull();
+    expect(record.processing_lock_acquired_at).toBeNull();
+    expect(record.last_attempt_at).toBeNull();
+    expect(record.sent_at).toBeNull();
+    expect(record.last_error).toBeNull();
+  });
+
+  it("duplicate enqueue does NOT overwrite mutable delivery state (only immutable fields in upsert)", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification, markSent } = await import("../base44/shared/ownerNotificationStore.ts");
+    // Enqueue + deliver + mark sent
+    const enq = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.CLAIM, source_entity: "WalletClaim", source_record_id: "claim_1",
+      metadata: { network: "ethereum", address_short: "0x742d…f44e" }
+    });
+    const record = getEvent(mock, enq.event_id!);
+    await markSent(mock, record);
+    const sentRecord = getEvent(mock, enq.event_id!);
+    expect(sentRecord.status).toBe(NOTIFICATION_STATUS.SENT);
+    expect(sentRecord.sent_at).toBeTruthy();
+
+    // Replay: duplicate enqueue with the same event_key
+    const replay = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.CLAIM, source_entity: "WalletClaim", source_record_id: "claim_1",
+      metadata: { network: "ethereum", address_short: "0x742d…f44e" }
+    });
+    expect(replay.duplicate).toBe(true);
+    expect(replay.ok).toBe(true);
+
+    // The sent event's mutable state must NOT be reset. Find by event_key
+    // (the stable dedup key) — event_id may be overwritten by the duplicate
+    // upsert, but event_key is permanent and mutable state is preserved.
+    const afterReplay = mock._events.find((r) => r.event_key === "walletcourt:claim:claim_1");
+    expect(afterReplay).toBeTruthy();
+    expect(afterReplay.status).toBe(NOTIFICATION_STATUS.SENT);
+    expect(afterReplay.sent_at).toBeTruthy();
+    expect(afterReplay.attempt_count).toBe(0); // not reset
+  });
+
+  it("25 simultaneous enqueues with the same event_key produce exactly one row (mock)", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification } = await import("../base44/shared/ownerNotificationStore.ts");
+    const promises = Array.from({ length: 25 }, () =>
+      enqueueNotification(mock, {
+        event_type: EVENT_TYPES.VERDICT, source_entity: "WalletTrial", source_record_id: "trial_1",
+        metadata: { verdict_name: "Test", network: "ethereum", address_short: "0x1234…abcd" }
+      })
+    );
+    const results = await Promise.all(promises);
+    // Exactly one row
+    expect(mock._events.length).toBe(1);
+    // Exactly one winner
+    const winners = results.filter((r) => !r.duplicate);
+    const duplicates = results.filter((r) => r.duplicate);
+    expect(winners.length).toBe(1);
+    expect(duplicates.length).toBe(24);
+    // All results are ok
+    expect(results.every((r) => r.ok)).toBe(true);
+  });
+
+  it("claimEvent rejects sent and dead_letter events (defense-in-depth)", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification, claimEvent, markSent, markFailed } = await import("../base44/shared/ownerNotificationStore.ts");
+    // Sent event
+    const enq1 = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.SIGNUP, source_entity: "User", source_record_id: "user_1",
+      metadata: {}
+    });
+    const r1 = getEvent(mock, enq1.event_id!);
+    await markSent(mock, r1);
+    const sentRecord = getEvent(mock, enq1.event_id!);
+    expect(await claimEvent(mock, sentRecord, "lock_x")).toBe(false);
+
+    // Dead-letter event
+    mock._setSendEmailFailure(true);
+    const enq2 = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.CLAIM, source_entity: "WalletClaim", source_record_id: "claim_1",
+      metadata: {}
+    });
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const r = getEvent(mock, enq2.event_id!);
+      await markFailed(mock, r, "fail");
+    }
+    const dlRecord = getEvent(mock, enq2.event_id!);
+    expect(dlRecord.status).toBe(NOTIFICATION_STATUS.DEAD_LETTER);
+    expect(await claimEvent(mock, dlRecord, "lock_y")).toBe(false);
+  });
+
+  it("normalizeEventForClaiming sets missing lock fields to null (legacy events)", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification, normalizeEventForClaiming } = await import("../base44/shared/ownerNotificationStore.ts");
+    const enq = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.SIGNUP, source_entity: "User", source_record_id: "user_1",
+      metadata: {}
+    });
+    const record = getEvent(mock, enq.event_id!);
+    // Simulate a legacy event: delete lock fields
+    delete record.processing_lock_id;
+    delete record.processing_lock_acquired_at;
+    delete record.attempt_count;
+    // Normalize
+    const normalized = await normalizeEventForClaiming(mock, record);
+    expect(normalized.processing_lock_id).toBeNull();
+    expect(normalized.processing_lock_acquired_at).toBeNull();
+    expect(normalized.attempt_count).toBe(0);
+    // The persisted record also has the fields
+    const persisted = getEvent(mock, enq.event_id!);
+    expect(persisted.processing_lock_id).toBeNull();
+    expect(persisted.attempt_count).toBe(0);
+  });
+
+  it("normalizeEventForClaiming does not touch sent or dead_letter events", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification, normalizeEventForClaiming, markSent } = await import("../base44/shared/ownerNotificationStore.ts");
+    const enq = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.SIGNUP, source_entity: "User", source_record_id: "user_1",
+      metadata: {}
+    });
+    const record = getEvent(mock, enq.event_id!);
+    await markSent(mock, record);
+    const sentRecord = getEvent(mock, enq.event_id!);
+    const before = { ...sentRecord };
+    await normalizeEventForClaiming(mock, sentRecord);
+    const after = getEvent(mock, enq.event_id!);
+    // No changes
+    expect(after.status).toBe(before.status);
+    expect(after.sent_at).toBe(before.sent_at);
+  });
+
+  it("newly created event with explicit null lock fields is immediately claimable", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification, claimEvent } = await import("../base44/shared/ownerNotificationStore.ts");
+    const enq = await enqueueNotification(mock, {
+      event_type: EVENT_TYPES.VERDICT, source_entity: "WalletTrial", source_record_id: "trial_1",
+      metadata: { verdict_name: "Test", network: "ethereum", address_short: "0x1234…abcd" }
+    });
+    const record = getEvent(mock, enq.event_id!);
+    // Lock fields are explicitly null
+    expect(record.processing_lock_id).toBeNull();
+    // Claim immediately
+    const claimed = await claimEvent(mock, record, "lock_1");
+    expect(claimed).toBe(true);
+    const updated = getEvent(mock, enq.event_id!);
+    expect(updated.processing_lock_id).toBe("lock_1");
+    expect(updated.status).toBe(NOTIFICATION_STATUS.PROCESSING);
+  });
+
+  it("signup, claim, and verdict replays are permanent no-ops (exactly-once)", async () => {
+    const mock = createMockBase44();
+    await enableSettings(mock);
+    const { enqueueNotification } = await import("../base44/shared/ownerNotificationStore.ts");
+    // Signup
+    await enqueueNotification(mock, { event_type: EVENT_TYPES.SIGNUP, source_entity: "User", source_record_id: "user_1", metadata: {} });
+    for (let i = 0; i < 5; i++) {
+      const r = await enqueueNotification(mock, { event_type: EVENT_TYPES.SIGNUP, source_entity: "User", source_record_id: "user_1", metadata: {} });
+      expect(r.duplicate).toBe(true);
+    }
+    // Claim
+    await enqueueNotification(mock, { event_type: EVENT_TYPES.CLAIM, source_entity: "WalletClaim", source_record_id: "claim_1", metadata: {} });
+    for (let i = 0; i < 5; i++) {
+      const r = await enqueueNotification(mock, { event_type: EVENT_TYPES.CLAIM, source_entity: "WalletClaim", source_record_id: "claim_1", metadata: {} });
+      expect(r.duplicate).toBe(true);
+    }
+    // Verdict
+    await enqueueNotification(mock, { event_type: EVENT_TYPES.VERDICT, source_entity: "WalletTrial", source_record_id: "trial_1", metadata: {} });
+    for (let i = 0; i < 5; i++) {
+      const r = await enqueueNotification(mock, { event_type: EVENT_TYPES.VERDICT, source_entity: "WalletTrial", source_record_id: "trial_1", metadata: {} });
+      expect(r.duplicate).toBe(true);
+    }
+    // Exactly 3 events total
+    expect(mock._events.length).toBe(3);
   });
 });
 

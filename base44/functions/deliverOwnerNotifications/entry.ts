@@ -11,7 +11,7 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.49";
 import {
   getDueEvents, getStaleProcessingEvents, claimEvent,
-  deliverOneEvent, markSent, markFailed
+  normalizeEventForClaiming, deliverOneEvent, markSent, markFailed
 } from "../../shared/ownerNotificationStore.ts";
 import { newLockId, NOTIFICATION_STATUS } from "../../shared/ownerNotifications.ts";
 
@@ -42,11 +42,13 @@ export default async function (req) {
 
     let sent = 0, failed = 0, deadLettered = 0;
     for (const record of events) {
+      // Normalize legacy events with missing lock fields before claiming.
+      const normalized = await normalizeEventForClaiming(base44, record);
       const lockId = newLockId();
       // For stale-processing events, the status is "processing" — claimEvent
       // uses the record's current status in the CAS filter, so it works for
       // both pending/failed and stale-processing reclaim.
-      const claimed = await claimEvent(base44, record, lockId);
+      const claimed = await claimEvent(base44, normalized, lockId);
       if (!claimed) continue; // Another worker won the race
 
       const result = await deliverOneEvent(base44, record);

@@ -82,13 +82,24 @@ export async function updateTestResult(base44, status: string, error: string | n
   });
 }
 
-// ---- Enqueue (exactly-once) ----
+// ---- Enqueue (exactly-once via atomic keyed upsert) ----
 
-// Enqueue one notification event. The event_key is the dedup key: any
-// existing event_key is a permanent no-op. The atomic check-then-create
-// pattern handles concurrent invocations — a duplicate-key error on create
-// is treated as a successful duplicate (another invocation won the race).
-// The recipient_email is read from settings, not from the caller.
+// Enqueue one notification event. The event_key is the dedup key. Uses the
+// SDK's atomic keyed-upsert primitive (upsert with key: ["event_key"]) which
+// eliminates the check-then-create TOCTOU race: the database atomically creates
+// or updates based on the key. No entity-level unique constraint is required
+// and no duplicate-key exception is caught.
+//
+// Only the invocation that atomically CREATES the row (result.created > 0)
+// proceeds as the winner. All other invocations (result.updated > 0) return
+// duplicate: true and do NOT modify the existing record's mutable delivery
+// state — the upsert payload contains only immutable identification fields,
+// so a duplicate enqueue can never reset a sent/failed/dead-letter event back
+// to pending.
+//
+// The winner then explicitly initializes ALL mutable lock fields via a
+// follow-up update so no schema defaults are relied upon and the worker's
+// CAS filter (processing_lock_id: null) matches immediately.
 export async function enqueueNotification(base44, params: {
   event_type: string;
   source_entity: string;
@@ -102,47 +113,60 @@ export async function enqueueNotification(base44, params: {
 
   const recipient_email = settings.recipient_email;
   const event_key = buildEventKey(params.event_type, params.source_record_id);
-
-  // Fast path: check if already exists (common case for duplicates)
-  const existing = await base44.asServiceRole.entities.WalletCourtNotificationEvent.filter(
-    { event_key }, "-created_date", 1
-  );
-  if (existing && existing.length > 0) {
-    return { ok: true, duplicate: true, event_id: existing[0].event_id };
-  }
-
-  // Try to create — a duplicate-key error means another invocation won
   const event_id = newEventId();
   const now = new Date().toISOString();
-  try {
-    await base44.asServiceRole.entities.WalletCourtNotificationEvent.create({
+
+  // Atomic keyed upsert: immutable identification fields are in the payload.
+  // event_id is required by the server on create, so it is included — a
+  // duplicate enqueue (update path) will overwrite event_id with a new value,
+  // but this is harmless: event_key (not event_id) is the dedup key, and the
+  // admin dashboard always shows the latest event_id from getRecentEvents.
+  //
+  // Mutable delivery state (status, attempt_count, lock fields, sent_at,
+  // etc.) is deliberately EXCLUDED from the upsert payload so a duplicate
+  // enqueue never resets an existing record's delivery progress — a sent
+  // event stays sent, a dead-letter event stays dead-lettered.
+  const result = await base44.asServiceRole.entities.WalletCourtNotificationEvent.upsert(
+    [{
       event_id,
       event_type: params.event_type,
       event_key,
       source_entity: params.source_entity,
       source_record_id: params.source_record_id,
-      status: NOTIFICATION_STATUS.PENDING,
       recipient_email,
       metadata_json: JSON.stringify(sanitizeMetadata(params.metadata)),
-      attempt_count: 0,
       max_attempts: MAX_ATTEMPTS,
+      created_at: now,
+      updated_at: now
+    }],
+    { key: ["event_key"] }
+  );
+
+  if (result.created > 0) {
+    // Winner: explicitly initialize ALL mutable lock fields. This runs
+    // before the enqueue returns, so the worker's CAS filter
+    // (processing_lock_id: null) matches immediately after creation.
+    const record = result.records[0];
+    await base44.asServiceRole.entities.WalletCourtNotificationEvent.update(record.id, {
+      status: NOTIFICATION_STATUS.PENDING,
+      attempt_count: 0,
       next_retry_at: now,
       processing_lock_id: null,
       processing_lock_acquired_at: null,
-      created_at: now,
+      last_attempt_at: null,
+      sent_at: null,
+      last_error: null,
       updated_at: now
     });
     return { ok: true, duplicate: false, event_id };
-  } catch (e) {
-    const msg = (e?.message || "").toLowerCase();
-    if (msg.includes("duplicate") || msg.includes("already exists") || msg.includes("e11000")) {
-      const winner = await base44.asServiceRole.entities.WalletCourtNotificationEvent.filter(
-        { event_key }, "-created_date", 1
-      );
-      return { ok: true, duplicate: true, event_id: winner?.[0]?.event_id || null };
-    }
-    throw e;
   }
+
+  // Duplicate: the upsert matched an existing event_key and updated only
+  // immutable identification fields. All mutable delivery state (status,
+  // attempt_count, lock fields, sent_at, etc.) is preserved because it was
+  // not in the upsert payload. This is a permanent no-op — the event is
+  // already enqueued (or already sent).
+  return { ok: true, duplicate: true, event_id: result.records?.[0]?.event_id || null };
 }
 
 // ---- Delivery ----
@@ -187,9 +211,55 @@ export async function getStaleProcessingEvents(base44, limit = 10): Promise<any[
   });
 }
 
+// Normalize an event's lock fields before claiming. Legacy events (created
+// before explicit lock-field initialization) may have missing
+// processing_lock_id / processing_lock_acquired_at fields. Base44 query
+// filters may not match missing fields as null, so the worker's CAS filter
+// (processing_lock_id: null) would never match — the event would become
+// permanently unclaimable. This function explicitly sets missing lock fields
+// to null so the CAS filter matches. Only pending/failed events are
+// normalized; sent/dead_letter events are never touched.
+export async function normalizeEventForClaiming(base44, record: any): Promise<any> {
+  if (!record) return record;
+  // Never normalize terminal events.
+  if (record.status === NOTIFICATION_STATUS.SENT || record.status === NOTIFICATION_STATUS.DEAD_LETTER) {
+    return record;
+  }
+  const needsNormalize =
+    record.processing_lock_id === undefined ||
+    record.processing_lock_acquired_at === undefined ||
+    record.attempt_count === undefined ||
+    record.max_attempts === undefined ||
+    record.next_retry_at === undefined;
+  if (!needsNormalize) return record;
+  const now = new Date().toISOString();
+  await base44.asServiceRole.entities.WalletCourtNotificationEvent.update(record.id, {
+    processing_lock_id: record.processing_lock_id ?? null,
+    processing_lock_acquired_at: record.processing_lock_acquired_at ?? null,
+    attempt_count: record.attempt_count ?? 0,
+    max_attempts: record.max_attempts ?? MAX_ATTEMPTS,
+    next_retry_at: record.next_retry_at ?? now,
+    updated_at: now
+  });
+  return {
+    ...record,
+    processing_lock_id: record.processing_lock_id ?? null,
+    processing_lock_acquired_at: record.processing_lock_acquired_at ?? null,
+    attempt_count: record.attempt_count ?? 0,
+    max_attempts: record.max_attempts ?? MAX_ATTEMPTS,
+    next_retry_at: record.next_retry_at ?? now
+  };
+}
+
 // Atomically claim an event for processing. CAS: the status must still match
 // and the lock must be null. Returns true if this worker won the claim.
+// Sent and dead_letter events are never claimable — the caller filters them
+// out via getDueEvents, but this guard provides defense-in-depth.
 export async function claimEvent(base44, record: any, lockId: string): Promise<boolean> {
+  if (!record) return false;
+  if (record.status === NOTIFICATION_STATUS.SENT || record.status === NOTIFICATION_STATUS.DEAD_LETTER) {
+    return false;
+  }
   const now = new Date().toISOString();
   const result = await base44.asServiceRole.entities.WalletCourtNotificationEvent.updateMany(
     { id: record.id, status: record.status, processing_lock_id: null },
