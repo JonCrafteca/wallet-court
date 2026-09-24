@@ -28,7 +28,9 @@ import {
   sanitizeAllowance,
   createLocalAttemptRef,
   createRobinhoodBudgetGuard,
-  ADVANCE_LOCK_STALE_TIMEOUT_MS
+  ADVANCE_LOCK_STALE_TIMEOUT_MS,
+  resolveStartAction,
+  applyStartCas
 } from "../base44/shared/robinhoodAllowance.ts";
 import { computeCoverageWindow } from "../base44/shared/chains.ts";
 import { checkCeilingBudgetWithLimit, CALIBRATION_CEILING } from "../base44/shared/calibration.ts";
@@ -262,5 +264,172 @@ describe("Robinhood Validation — 15 regression scenarios", () => {
   // ---- Bonus: verify stale-lock timeout is 5 minutes ----
   it("advance lock stale timeout is 5 minutes (300000ms)", () => {
     expect(ADVANCE_LOCK_STALE_TIMEOUT_MS).toBe(300000);
+  });
+});
+
+// ---- Start decision: resolveStartAction (pure) ----
+
+describe("Robinhood Validation — start decision (resolveStartAction)", () => {
+  it("proceeds from not_started, capturing verifiedTotal as starting_global_total", () => {
+    const a = makeAllowance({ status: RH_STATUS.NOT_STARTED, starting_global_total: null });
+    const d = resolveStartAction(a, 1001);
+    expect(d.action).toBe("proceed");
+    expect(d.startingTotal).toBe(1001);
+    expect(d.httpStatus).toBe(200);
+  });
+
+  it("runtime derivation: 1001 + 21 = 1022 at start time", () => {
+    const a = makeAllowance({ status: RH_STATUS.NOT_STARTED, starting_global_total: null });
+    const d = resolveStartAction(a, 1001);
+    const started = { ...a, starting_global_total: d.startingTotal, status: RH_STATUS.RUNNING };
+    expect(computeValidationMaxTotal(started)).toBe(1022);
+  });
+
+  it("duplicate start while running returns already_running (idempotent, 200) and keeps original starting total", () => {
+    const a = makeAllowance({ status: RH_STATUS.RUNNING, starting_global_total: 1001 });
+    // verifiedTotal has since moved to 1005 — must NOT overwrite the original 1001
+    const d = resolveStartAction(a, 1005);
+    expect(d.action).toBe("already_running");
+    expect(d.httpStatus).toBe(200);
+    expect(d.startingTotal).toBe(1001);
+  });
+
+  it("terminal states (exhausted / circuit_open / error) cannot restart (409)", () => {
+    for (const status of [RH_STATUS.EXHAUSTED, RH_STATUS.CIRCUIT_OPEN, RH_STATUS.ERROR]) {
+      const a = makeAllowance({ status, starting_global_total: 1001 });
+      const d = resolveStartAction(a, 1001);
+      expect(d.action).toBe("terminal");
+      expect(d.httpStatus).toBe(409);
+    }
+  });
+
+  it("restart from stopped preserves the original starting_global_total (does not adopt new verified total)", () => {
+    const a = makeAllowance({
+      status: RH_STATUS.STOPPED,
+      starting_global_total: 1001,
+      attempts_used: 4,
+      wallets_started: 1,
+      wallets_completed: 1
+    });
+    const d = resolveStartAction(a, 1010);
+    expect(d.action).toBe("proceed");
+    expect(d.startingTotal).toBe(1001);
+  });
+
+  it("null allowance proceeds with verifiedTotal as the starting total", () => {
+    const d = resolveStartAction(null, 1001);
+    expect(d.action).toBe("proceed");
+    expect(d.startingTotal).toBe(1001);
+  });
+});
+
+// ---- Start CAS: applyStartCas (pure) ----
+
+describe("Robinhood Validation — start CAS (applyStartCas)", () => {
+  it("transitions not_started → running on matching status + version", () => {
+    const a = makeAllowance({ status: RH_STATUS.NOT_STARTED, version: 0, starting_global_total: null });
+    const r = applyStartCas(a, RH_STATUS.NOT_STARTED, 0, 1001, "admin_1", "2026-09-24T00:00:00Z");
+    expect(r.updated).toBe(1);
+    expect(r.allowance.status).toBe(RH_STATUS.RUNNING);
+    expect(r.allowance.starting_global_total).toBe(1001);
+    expect(r.allowance.version).toBe(1);
+    expect(r.allowance.started_by_user_id).toBe("admin_1");
+    expect(r.allowance.stop_reason).toBeNull();
+  });
+
+  it("does not reset counters on start (attempts/wallets preserved)", () => {
+    const a = makeAllowance({ status: RH_STATUS.NOT_STARTED, version: 0, attempts_used: 0, wallets_started: 0, wallets_completed: 0 });
+    const r = applyStartCas(a, RH_STATUS.NOT_STARTED, 0, 1001, "admin_1", "now");
+    expect(r.allowance.attempts_used).toBe(0);
+    expect(r.allowance.wallets_started).toBe(0);
+    expect(r.allowance.wallets_completed).toBe(0);
+  });
+
+  it("concurrent start: only the first CAS wins; the second is rejected against the committed state", () => {
+    const a = makeAllowance({ status: RH_STATUS.NOT_STARTED, version: 0, starting_global_total: null });
+    // Both invocations read version 0. The first CAS commits (version 0 → 1).
+    const r1 = applyStartCas(a, RH_STATUS.NOT_STARTED, 0, 1001, "admin_1", "t1");
+    expect(r1.updated).toBe(1);
+    expect(r1.allowance.version).toBe(1);
+    expect(r1.allowance.started_by_user_id).toBe("admin_1");
+    // The second invocation's CAS runs against the now-committed row (r1.allowance,
+    // version 1) but still expects version 0 → mismatch → rejected, no overwrite.
+    const r2 = applyStartCas(r1.allowance, RH_STATUS.NOT_STARTED, 0, 1001, "admin_2", "t2");
+    expect(r2.updated).toBe(0);
+    expect(r2.allowance.status).toBe(RH_STATUS.RUNNING);
+    expect(r2.allowance.version).toBe(1);
+    expect(r2.allowance.started_by_user_id).toBe("admin_1");
+  });
+
+  it("restart from stopped preserves counters and original starting total via CAS", () => {
+    const a = makeAllowance({
+      status: RH_STATUS.STOPPED,
+      version: 3,
+      starting_global_total: 1001,
+      attempts_used: 4,
+      wallets_started: 1,
+      wallets_completed: 1
+    });
+    const r = applyStartCas(a, RH_STATUS.STOPPED, 3, 1001, "admin_2", "t");
+    expect(r.updated).toBe(1);
+    expect(r.allowance.status).toBe(RH_STATUS.RUNNING);
+    expect(r.allowance.starting_global_total).toBe(1001);
+    expect(r.allowance.attempts_used).toBe(4);
+    expect(r.allowance.wallets_started).toBe(1);
+    expect(r.allowance.wallets_completed).toBe(1);
+  });
+
+  it("CAS rejects when the status no longer matches (e.g. already flipped to running)", () => {
+    const a = makeAllowance({ status: RH_STATUS.RUNNING, version: 1, starting_global_total: 1001 });
+    const r = applyStartCas(a, RH_STATUS.NOT_STARTED, 0, 1001, "admin_2", "t");
+    expect(r.updated).toBe(0);
+    expect(r.allowance.status).toBe(RH_STATUS.RUNNING);
+  });
+});
+
+// ---- Structural guarantees: start function must not call Nansen or touch the campaign ----
+
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const startFnSource = readFileSync(
+  join(__dirname, "../base44/functions/startRobinhoodValidation/entry.ts"),
+  "utf-8"
+);
+
+describe("Robinhood Validation — start function structural guarantees", () => {
+  it("rejects unauthenticated and non-admin users before any write", () => {
+    expect(startFnSource).toContain('user.role !== "admin"');
+    expect(startFnSource).toMatch(/Unauthorized|401/);
+  });
+
+  it("does not import or invoke the Nansen evidence pipeline", () => {
+    expect(startFnSource).not.toContain("fetchNansenEvidence");
+    expect(startFnSource).not.toContain("getNansenApiKey");
+    expect(startFnSource).not.toContain("InvokeLLM");
+  });
+
+  it("does not create NansenApiCallAudit records during start", () => {
+    expect(startFnSource).not.toContain("NansenApiCallAudit.create");
+    expect(startFnSource).not.toContain("NansenApiCallAudit.bulkCreate");
+  });
+
+  it("does not touch the original calibration campaign entities", () => {
+    expect(startFnSource).not.toContain("CalibrationControl");
+    expect(startFnSource).not.toContain("CalibrationRun");
+    expect(startFnSource).not.toContain("CalibrationDocketItem");
+  });
+
+  it("does not enable the public Robinhood feature flag", () => {
+    expect(startFnSource).not.toContain("FeatureFlag");
+    expect(startFnSource).not.toContain("robinhood_public_enabled");
+  });
+
+  it("does not queue or process a RobinhoodValidationWallet during start", () => {
+    expect(startFnSource).not.toContain("RobinhoodValidationWallet.create");
+    expect(startFnSource).not.toContain("RobinhoodValidationWallet.update");
+    expect(startFnSource).not.toContain("RobinhoodValidationWallet.list");
   });
 });

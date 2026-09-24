@@ -112,6 +112,83 @@ export function computeValidationMaxTotal(allowance: any): number | null {
   return allowance.starting_global_total + (allowance.max_attempts || RH_MAX_ATTEMPTS);
 }
 
+// ---- Start decision (pure, testable) ----
+
+// Decide what a start request should do given the current allowance state and
+// the current verified global total. Pure: no DB, no network.
+//   - already_running: validation is RUNNING → return existing status (idempotent, 200)
+//   - terminal: exhausted / circuit_open / error → cannot restart (409)
+//   - proceed: not_started or stopped → flip to running, capturing the starting
+//     total only when it was null (first start). A restart from "stopped"
+//     preserves the original starting_global_total.
+export interface StartDecision {
+  action: "proceed" | "already_running" | "terminal";
+  reason: string;
+  startingTotal: number | null;
+  httpStatus: number;
+}
+
+export function resolveStartAction(allowance: any, verifiedTotal: number): StartDecision {
+  if (!allowance) {
+    return { action: "proceed", reason: "", startingTotal: verifiedTotal, httpStatus: 200 };
+  }
+  if (allowance.status === RH_STATUS.RUNNING) {
+    return {
+      action: "already_running",
+      reason: "Validation is already running.",
+      startingTotal: allowance.starting_global_total ?? null,
+      httpStatus: 200
+    };
+  }
+  if (RH_TERMINAL_STATUSES.has(allowance.status) && allowance.status !== RH_STATUS.STOPPED) {
+    return {
+      action: "terminal",
+      reason: `Validation is in terminal state: ${allowance.status}.`,
+      startingTotal: allowance.starting_global_total ?? null,
+      httpStatus: 409
+    };
+  }
+  // not_started or stopped → proceed. Preserve an existing starting_global_total
+  // (restart from stopped); only capture verifiedTotal on the first start.
+  return {
+    action: "proceed",
+    reason: "",
+    startingTotal: allowance.starting_global_total ?? verifiedTotal,
+    httpStatus: 200
+  };
+}
+
+// Pure CAS simulator for the start transition. Mirrors the updateMany CAS the
+// backend performs: only transitions if the status and version still match.
+// Returns the post-update allowance (updated: 1) or the unchanged allowance
+// (updated: 0) when a concurrent invocation already won the race. NEVER resets
+// attempts_used, wallets_started, or wallets_completed.
+export function applyStartCas(
+  allowance: any,
+  expectedStatus: string,
+  expectedVersion: number,
+  startingTotal: number,
+  userId: string,
+  now: string
+): { updated: number; allowance: any } {
+  if (allowance && allowance.status === expectedStatus && allowance.version === expectedVersion) {
+    return {
+      updated: 1,
+      allowance: {
+        ...allowance,
+        status: RH_STATUS.RUNNING,
+        stop_reason: null,
+        starting_global_total: startingTotal,
+        started_at: allowance.started_at || now,
+        started_by_user_id: userId,
+        updated_at: now,
+        version: allowance.version + 1
+      }
+    };
+  }
+  return { updated: 0, allowance };
+}
+
 // Remaining attempts in the allowance.
 export function remainingAttempts(allowance: any): number {
   if (!allowance) return RH_MAX_ATTEMPTS;

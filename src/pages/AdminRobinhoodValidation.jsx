@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
+import { extractApiError } from "@/lib/apiError";
 import {
   AlertTriangle, Loader2, Play, Square, Plus, ChevronRight,
   Check, X, Activity, Zap, RefreshCw, ToggleLeft, ToggleRight
@@ -32,7 +33,7 @@ export default function AdminRobinhoodValidation() {
         setData(res.data);
       }
     } catch (e) {
-      setError(e?.message || "Failed to load validation status.");
+      setError(extractApiError(e, "Failed to load validation status.").message);
     } finally {
       setLoading(false);
     }
@@ -61,7 +62,7 @@ export default function AdminRobinhoodValidation() {
         await load();
       }
     } catch (e) {
-      setActionError(e?.message || "Failed to add wallet.");
+      setActionError(extractApiError(e, "Failed to add wallet.").message);
     } finally {
       setSubmitting(false);
     }
@@ -71,10 +72,12 @@ export default function AdminRobinhoodValidation() {
     setActionError("");
     try {
       const res = await base44.functions.invoke("startRobinhoodValidation", {});
-      if (res?.data?.error) setActionError(res.data.error);
+      if (res?.data?.error) {
+        setActionError(res.data.code ? `${res.data.error} [${res.data.code}]` : res.data.error);
+      }
       await load();
     } catch (e) {
-      setActionError(e?.message || "Failed to start validation.");
+      setActionError(extractApiError(e, "Failed to start validation.").message);
     }
   }
 
@@ -95,7 +98,7 @@ export default function AdminRobinhoodValidation() {
       }
       await load();
     } catch (e) {
-      setActionError(e?.message || "Wallet processing failed.");
+      setActionError(extractApiError(e, "Wallet processing failed.").message);
     } finally {
       setAdvancing(false);
     }
@@ -109,7 +112,7 @@ export default function AdminRobinhoodValidation() {
       if (res?.data?.error) setActionError(res.data.error);
       await load();
     } catch (e) {
-      setActionError(e?.message || "Failed to stop validation.");
+      setActionError(extractApiError(e, "Failed to stop validation.").message);
     } finally {
       setStopping(false);
     }
@@ -125,7 +128,7 @@ export default function AdminRobinhoodValidation() {
       if (res?.data?.error) setActionError(res.data.error);
       await load();
     } catch (e) {
-      setActionError(e?.message || "Failed to toggle feature flag.");
+      setActionError(extractApiError(e, "Failed to toggle feature flag.").message);
     } finally {
       setTogglingFlag(false);
     }
