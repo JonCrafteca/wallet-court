@@ -113,6 +113,68 @@ describe("wallet validation — valid EVM address + Base succeeds", () => {
   });
 });
 
+// Regression: robinhood is an EVM chain (family: "evm", chainId: 4663, 0x
+// addresses). validateWalletForChain MUST accept a valid 0x address for
+// robinhood. Previously, robinhood passed the NETWORKS check but had no
+// address-format branch, falling through to UNSUPPORTED_CHAIN — which
+// blocked all Robinhood wallet submissions with "The selected network is
+// not supported." even though the address was valid.
+describe("wallet validation — Robinhood (EVM) accepted through the full path", () => {
+  it("accepts a real EVM address for Robinhood", () => {
+    const r = validateWalletForChain("robinhood", VALID_EVM);
+    expect(r.ok).toBe(true);
+    expect(r.chain).toBe("robinhood");
+  });
+
+  it("accepts a lowercase EVM address for Robinhood", () => {
+    const r = validateWalletForChain("robinhood", "0x742d35cc6634c0532925a3b844bc454e4438f44e");
+    expect(r.ok).toBe(true);
+    expect(r.chain).toBe("robinhood");
+  });
+
+  it("accepts an uppercase EVM address for Robinhood", () => {
+    const r = validateWalletForChain("robinhood", "0x742D35CC6634C0532925A3B844BC454E4438F44E");
+    expect(r.ok).toBe(true);
+  });
+
+  it("does NOT return UNSUPPORTED_CHAIN for a valid Robinhood address", () => {
+    const r = validateWalletForChain("robinhood", VALID_EVM);
+    expect(r.code).not.toBe("UNSUPPORTED_CHAIN");
+  });
+
+  it("rejects a Solana address for Robinhood with INVALID_WALLET_FOR_CHAIN", () => {
+    const r = validateWalletForChain("robinhood", VALID_SOLANA);
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_WALLET_FOR_CHAIN");
+    expect(r.suggestedChain).toBe("solana");
+    expect(r.message).toContain("Robinhood");
+  });
+
+  it("rejects a too-short 0x address for Robinhood", () => {
+    const r = validateWalletForChain("robinhood", EVM_SHORT);
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_WALLET_FOR_CHAIN");
+  });
+
+  it("rejects a 0x address with non-hex characters for Robinhood", () => {
+    const r = validateWalletForChain("robinhood", EVM_BAD_HEX);
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_WALLET_FOR_CHAIN");
+  });
+
+  it("rejects an address without 0x prefix for Robinhood", () => {
+    const r = validateWalletForChain("robinhood", "742d35Cc6634C0532925a3b844Bc454e4438f44e");
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_WALLET_FOR_CHAIN");
+  });
+
+  it("rejects a missing address for Robinhood with MISSING_ADDRESS", () => {
+    const r = validateWalletForChain("robinhood", "");
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("MISSING_ADDRESS");
+  });
+});
+
 describe("wallet validation — Solana address + Ethereum is rejected", () => {
   it("rejects a Solana address for Ethereum with INVALID_WALLET_FOR_CHAIN", () => {
     const r = validateWalletForChain("ethereum", VALID_SOLANA);
@@ -194,9 +256,10 @@ describe("wallet validation — detectChainFamily", () => {
 });
 
 describe("wallet validation — NETWORKS list", () => {
-  it("contains ethereum, base, solana", () => {
+  it("contains ethereum, base, solana, robinhood", () => {
     expect(NETWORKS).toContain("ethereum");
     expect(NETWORKS).toContain("base");
     expect(NETWORKS).toContain("solana");
+    expect(NETWORKS).toContain("robinhood");
   });
 });

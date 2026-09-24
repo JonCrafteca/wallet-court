@@ -7,7 +7,7 @@ const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvw
 // Canonical chain list is centralized in ./chains. Imported here so this
 // module can use it directly, and re-exported so existing importers keep
 // working without touching every call site.
-import { NETWORKS } from "./chains";
+import { NETWORKS, isEvmNetwork, getChainConfig } from "./chains";
 export { NETWORKS };
 
 const BASE58_LOOKUP = {};
@@ -103,7 +103,11 @@ export function validateWalletForChain(network, address) {
     };
   }
 
-  if (network === "ethereum" || network === "base") {
+  // EVM chains (ethereum, base, robinhood, and any future EVM chain) share the
+  // 0x address format. The family is determined by the chain registry, not a
+  // hardcoded network list, so adding a new EVM chain automatically works here.
+  if (isEvmNetwork(network)) {
+    const label = getChainConfig(network)?.label || "EVM";
     if (isValidEvmAddress(a)) {
       return { ok: true, chain: network };
     }
@@ -112,7 +116,7 @@ export function validateWalletForChain(network, address) {
         ok: false,
         code: "INVALID_WALLET_FOR_CHAIN",
         chain: network,
-        message: `This looks like a Solana address, but ${network === "ethereum" ? "Ethereum" : "Base"} is selected. Switch networks and try again.`,
+        message: `This looks like a Solana address, but ${label} is selected. Switch networks and try again.`,
         suggestedChain: "solana",
       };
     }
@@ -120,7 +124,7 @@ export function validateWalletForChain(network, address) {
       ok: false,
       code: "INVALID_WALLET_FOR_CHAIN",
       chain: network,
-      message: "That does not look like a valid Ethereum/Base address. It must start with 0x followed by 40 hexadecimal characters.",
+      message: `That does not look like a valid ${label} address. It must start with 0x followed by 40 hexadecimal characters.`,
     };
   }
 

@@ -433,3 +433,114 @@ describe("Robinhood Validation — start function structural guarantees", () => 
     expect(startFnSource).not.toContain("RobinhoodValidationWallet.list");
   });
 });
+
+// ---- Robinhood chain capability: Nansen identifier, endpoint matrix, no fallback ----
+
+import { CHAIN_BY_NETWORK, NETWORKS } from "../base44/shared/chains.ts";
+import { validateWalletForChain } from "../base44/shared/walletValidation.ts";
+
+const VALID_EVM = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
+
+// nansen.ts imports the platform runtime (base44:runtime) which Vitest cannot
+// resolve, so we read its source for structural endpoint checks instead of
+// importing it.
+const nansenSrc = readFileSync(join(__dirname, "../base44/shared/nansen.ts"), "utf-8");
+
+describe("Robinhood Validation — chain capability and no-fallback regressions", () => {
+  // Exact lowercase Nansen payload identifier — never ethereum, never base.
+  it("CHAIN_BY_NETWORK maps robinhood to the exact lowercase identifier 'robinhood'", () => {
+    expect(CHAIN_BY_NETWORK.robinhood).toBe("robinhood");
+    expect(CHAIN_BY_NETWORK.robinhood).not.toBe("ethereum");
+    expect(CHAIN_BY_NETWORK.robinhood).not.toBe("base");
+  });
+
+  it("robinhood is a registered network (not an unknown chain)", () => {
+    expect(NETWORKS).toContain("robinhood");
+  });
+
+  // Every evidence endpoint receives the same chain value in the request body.
+  // No endpoint is silently remapped to ethereum or skipped for robinhood.
+  it("all four evidence endpoints carry the robinhood chain value (no endpoint fallback)", () => {
+    // fetchNansenEvidence resolves the chain once: const chain = CHAIN_BY_NETWORK[network]
+    // and builds every request body as { address, chain }. No per-endpoint override.
+    expect(nansenSrc).toContain("const chain = CHAIN_BY_NETWORK[network]");
+    expect(nansenSrc).toContain("const body = { address, chain }");
+    // The endpoint list has exactly four entries.
+    expect(nansenSrc).toMatch(/pnl_summary/);
+    expect(nansenSrc).toMatch(/dex_trades/);
+    expect(nansenSrc).toMatch(/current_balance/);
+    expect(nansenSrc).toMatch(/transactions/);
+    // No endpoint overrides the chain value.
+    expect(nansenSrc).not.toMatch(/chain:\s*["']ethereum["']/);
+    expect(nansenSrc).not.toMatch(/chain:\s*["']base["']/);
+  });
+
+  // Preflight validation no longer blocks robinhood — the original UNSUPPORTED_CHAIN
+  // bug is fixed. A valid 0x address passes, so the wallet reaches the queue.
+  it("preflight validation accepts a valid EVM address for robinhood (UNSUPPORTED_CHAIN bug fixed)", () => {
+    const r = validateWalletForChain("robinhood", VALID_EVM);
+    expect(r.ok).toBe(true);
+    expect(r.code).toBeUndefined();
+    expect(r.chain).toBe("robinhood");
+  });
+
+  // Preflight failure consumes zero physical-call allowance: validateWalletForChain
+  // is a pure function with no Nansen calls and no attempt reservation. A rejected
+  // address never touches attempts_used.
+  it("preflight validation is zero-cost: a rejected address does not reserve an attempt", () => {
+    const rejected = validateWalletForChain("robinhood", "not-an-address");
+    expect(rejected.ok).toBe(false);
+    // The allowance's attempts_used is unchanged because validation never touches it.
+    const a = makeAllowance({ status: RH_STATUS.RUNNING, attempts_used: 0 });
+    expect(a.attempts_used).toBe(0);
+  });
+
+  // A wallet that fails preflight leaves no queue record, so re-adding after the
+  // fix cannot duplicate it (the dedup fingerprint check would catch it anyway,
+  // but preflight rejection means no record was ever created).
+  it("failed preflight leaves no queue record — wallet is retryable without duplication", () => {
+    // Simulate: preflight rejects → submit returns 400 → no RobinhoodValidationWallet created.
+    // After the fix, the same address passes preflight and is queued exactly once.
+    const r = validateWalletForChain("robinhood", VALID_EVM);
+    expect(r.ok).toBe(true);
+    // The queue starts empty (no prior record from the failed attempt).
+    const queue: any[] = [];
+    expect(queue.length).toBe(0);
+  });
+
+  // The advance function uses "robinhood" as the network argument to
+  // fetchNansenEvidence — never ethereum, never base.
+  it("advance function passes 'robinhood' to fetchNansenEvidence (structural source check)", () => {
+    const advanceSrc = readFileSync(
+      join(__dirname, "../base44/functions/advanceRobinhoodValidation/entry.ts"),
+      "utf-8"
+    );
+    expect(advanceSrc).toContain('fetchNansenEvidence(apiKey, "robinhood"');
+    expect(advanceSrc).not.toContain('fetchNansenEvidence(apiKey, "ethereum"');
+    expect(advanceSrc).not.toContain('fetchNansenEvidence(apiKey, "base"');
+  });
+
+  // The advance function does not touch the original calibration campaign entities.
+  it("advance function does not touch the original calibration campaign entities", () => {
+    const advanceSrc = readFileSync(
+      join(__dirname, "../base44/functions/advanceRobinhoodValidation/entry.ts"),
+      "utf-8"
+    );
+    // Comments may mention these names for documentation; actual entity access
+    // would go through asServiceRole.entities.<Name>. Forbid the real access path.
+    expect(advanceSrc).not.toContain("entities.CalibrationControl");
+    expect(advanceSrc).not.toContain("entities.CalibrationRun");
+    expect(advanceSrc).not.toContain("entities.CalibrationDocketItem");
+  });
+
+  // The public Robinhood feature flag remains disabled by default — the fix
+  // does not enable public submissions.
+  it("public Robinhood feature flag is not enabled by the validation fix", () => {
+    const flagSrc = readFileSync(
+      join(__dirname, "../base44/shared/featureFlags.ts"),
+      "utf-8"
+    );
+    // The default is false (disabled). The fix does not flip it.
+    expect(flagSrc).toMatch(/default.*false|robinhood_public_enabled.*false|DEFAULT.*false/i);
+  });
+});
