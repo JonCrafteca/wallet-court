@@ -116,6 +116,25 @@
     "rescore_audit_json": {
       "type": "string",
       "description": "JSON audit note for deterministic re-score / evidence-gate migrations. Records phase, operation, evidence source, migration type, timestamp, and previous/next state. Internal-only; never exposed on the public case page."
+    },
+    "requested_window_days": {
+      "type": "number",
+      "description": "The analysis window (in days) originally requested by the visitor or admin. Null on pre-coverage-metadata records. Used with effective_analysis_start/end to show the limited-history disclosure on Robinhood cases."
+    },
+    "effective_analysis_start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The actual start of the evidence window after coverage-start clamping. May be later than requested_window_days would imply when the chain's Nansen coverage starts after the requested window. Null on pre-coverage-metadata records."
+    },
+    "effective_analysis_end": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The actual end of the evidence window (always the current time for live analyses). Null on pre-coverage-metadata records."
+    },
+    "coverage_limited": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when the evidence window was clamped to the chain's Nansen coverage start date. Triggers the limited-history disclosure on the case page. False or absent on pre-coverage-metadata records and non-clamped chains."
     }
   },
   "required": [

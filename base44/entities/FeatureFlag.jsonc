@@ -1,0 +1,52 @@
+{
+  "name": "FeatureFlag",
+  "type": "object",
+  "properties": {
+    "control_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every update."
+    },
+    "robinhood_public_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "When false, public Robinhood wallet submissions are rejected before any Nansen call. Admin calibration and Robinhood validation are unaffected \u2014 they use separate admin-authenticated paths. Existing admin-created Robinhood cases remain viewable."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "control_key",
+    "version",
+    "robinhood_public_enabled",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

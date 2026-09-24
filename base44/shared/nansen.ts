@@ -295,7 +295,7 @@ async function persistAuditRecord(base44, rec) {
 // awaited before returning so the campaign cannot advance until telemetry
 // health is confirmed.
 export async function fetchNansenEvidence(apiKey, network, address, opts) {
-  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false } = opts || {};
+  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false, extraBudgetGuard = null, onPhysicalCall = null } = opts || {};
 
   if (!apiKey || !apiKey.trim()) {
     return { outcome: "demo", errorCategory: ERR.MISSING_KEY, partial: false, failedSources: NANSEN_ENDPOINTS.map((e) => e.key), evidence: [], metrics: {}, sources: [], meta: null, nansenCalls: 0 };
@@ -313,11 +313,19 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // an unfair "Dismissed" verdict for a wallet that simply predates the
   // chain's data availability.
   const coverageStart = coverageStartFor(network);
+  const originalFrom = new Date(from);
+  const coverage_limited = !!(coverageStart && originalFrom < coverageStart);
   if (coverageStart && from < coverageStart) {
     from = coverageStart;
   }
   const dateFromIso = from.toISOString();
   const dateToIso = to.toISOString();
+  // Effective window days: the actual span of the evidence window after
+  // coverage-start clamping. Frequency metrics (tx/day) use this, not the
+  // originally requested windowDays, so Robinhood cases don't understate
+  // frequency when the window was clamped from 180 days to ~147.
+  const effectiveWindowMs = Math.max(0, to.getTime() - from.getTime());
+  const effectiveWindowDays = effectiveWindowMs / 86400000;
   const dateFromDay = dateFromIso.slice(0, 10);
   const dateToDay = dateToIso.slice(0, 10);
 
@@ -347,15 +355,30 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // check, not by this per-attempt guard.
   const budgetGuard = base44
     ? async () => {
+        // 1. Global ceiling check (1,020 absolute safety limit).
         try {
           const total = await getVerifiedTotal(base44);
           const budget = checkCeilingBudget(total);
-          return { allowed: budget.allowed, verifiedTotal: total, reason: budget.reason };
+          if (!budget.allowed) {
+            return { allowed: false, verifiedTotal: total, reason: budget.reason };
+          }
         } catch {
           // Guard check failed — be conservative and allow the request. The
           // audit record will still be written and the next attempt re-checks.
-          return { allowed: true, verifiedTotal: 0, reason: "" };
         }
+        // 2. Extra budget guard (e.g. Robinhood 21-attempt allowance).
+        //    Composed after the global ceiling so both limits are enforced.
+        if (extraBudgetGuard) {
+          try {
+            const extra = await extraBudgetGuard();
+            if (!extra.allowed) {
+              return extra;
+            }
+          } catch {
+            // Extra guard failed — be conservative and allow the request.
+          }
+        }
+        return { allowed: true, verifiedTotal: 0, reason: "" };
       }
     : undefined;
 
@@ -368,6 +391,9 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     persistAudit: base44
       ? (rec) => {
           physicalCallCount++;
+          if (typeof onPhysicalCall === "function") {
+            try { onPhysicalCall(physicalCallCount); } catch {}
+          }
           const persistPromise = (async () => {
             const outcome = await persistWithRetry(rec, (r) => persistAuditRecord(base44, r));
             if (!outcome.succeeded) {
@@ -442,7 +468,7 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   let evidence = [];
   let metrics = {};
   if (requiredOk) {
-    const mapped = mapEvidence(calls, windowDays);
+    const mapped = mapEvidence(calls, effectiveWindowDays);
     evidence = mapped.evidence;
     metrics = mapped.metrics;
   }
@@ -451,7 +477,13 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     partial: outcome === "partial",
     failed_sources: failedSources,
     window_days: windowDays,
+    effective_window_days: effectiveWindowDays,
     evidence_date_range: { from: dateFromIso, to: dateToIso },
+    requested_window_days: windowDays,
+    effective_analysis_start: dateFromIso,
+    effective_analysis_end: dateToIso,
+    coverage_limited,
+    coverage_start: coverageStart ? coverageStart.toISOString() : null,
     freshness: to.toISOString(),
     snapshot_note: "Current balance is a point-in-time snapshot with no date range.",
     labels_ok: false,

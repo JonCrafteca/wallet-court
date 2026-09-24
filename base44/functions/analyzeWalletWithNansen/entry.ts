@@ -38,6 +38,7 @@ import {
 import { getCircuit, openCircuit, closeCircuitWithVersion } from "../../shared/circuitStore.ts";
 import { waitUntil } from "base44:runtime";
 import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
+import { isRobinhoodPublicEnabled } from "../../shared/featureFlags.ts";
 
 const PROVIDER = "nansen";
 
@@ -91,6 +92,29 @@ export default async function (req) {
     // Court Recess. Only genuine provider operational failures open the circuit.
     if (!CHAIN_BY_NETWORK[network]) {
       return Response.json({ error: "The selected network is not currently supported." }, { status: 400 });
+    }
+
+    // ---- Server-enforced Robinhood public feature flag ----
+    // When robinhood_public_enabled is false (the default), public Robinhood
+    // wallet submissions are rejected BEFORE any Nansen call, circuit check,
+    // trial creation, or demo fallback. This is the authoritative backend
+    // enforcement — the frontend also hides Robinhood from the selector, but
+    // a manually crafted request cannot bypass this check.
+    //
+    // Admin calibration and the isolated Robinhood validation allowance use
+    // separate admin-authenticated paths that call fetchNansenEvidence
+    // directly, NOT through this function. Existing admin-created Robinhood
+    // cases remain viewable via getTrialBySlug (which does not call this
+    // function).
+    if (network === "robinhood") {
+      const enabled = await isRobinhoodPublicEnabled(base44);
+      if (!enabled) {
+        return Response.json({
+          error: "Robinhood chain analysis is not yet available to the public.",
+          code: "ROBINHOOD_NOT_PUBLIC",
+          network: "robinhood"
+        }, { status: 400 });
+      }
     }
 
     const normalized = normalizeAddress(network, wallet_address);
@@ -195,7 +219,11 @@ export default async function (req) {
         metrics_json: JSON.stringify({ ...nansen.metrics, _meta: nansen.meta }),
         source_endpoints_json: JSON.stringify(nansen.sources),
         public_slug,
-        analyzed_at: new Date().toISOString()
+        analyzed_at: new Date().toISOString(),
+        requested_window_days: nansen.meta?.requested_window_days ?? null,
+        effective_analysis_start: nansen.meta?.effective_analysis_start ?? null,
+        effective_analysis_end: nansen.meta?.effective_analysis_end ?? null,
+        coverage_limited: nansen.meta?.coverage_limited ?? false
       });
       if (!durableTelemetry) {
         enqueueTrialAttribution(base44, record, refCode, visitorId, body?.source_route);
@@ -229,7 +257,11 @@ export default async function (req) {
       case_outcome: "verdict",
       ...payload,
       public_slug,
-      analyzed_at: new Date().toISOString()
+      analyzed_at: new Date().toISOString(),
+      requested_window_days: nansen.meta?.requested_window_days ?? null,
+      effective_analysis_start: nansen.meta?.effective_analysis_start ?? null,
+      effective_analysis_end: nansen.meta?.effective_analysis_end ?? null,
+      coverage_limited: nansen.meta?.coverage_limited ?? false
     });
     if (!durableTelemetry) {
       enqueueTrialAttribution(base44, record, refCode, visitorId, body?.source_route);

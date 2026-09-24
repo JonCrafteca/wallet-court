@@ -1,0 +1,132 @@
+{
+  "name": "RobinhoodValidationAllowance",
+  "type": "object",
+  "properties": {
+    "control_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every state transition. Used as a compare-and-set guard so two concurrent admin actions cannot both succeed."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "not_started",
+        "running",
+        "paused",
+        "stopped",
+        "exhausted",
+        "circuit_open",
+        "error"
+      ],
+      "default": "not_started",
+      "description": "Validation lifecycle state. not_started = default, no live calls made; running = actively processing wallets; paused = admin paused after current wallet; stopped = admin stopped; exhausted = 21-attempt allowance consumed; circuit_open = shared Nansen circuit opened during validation; error = unexpected error."
+    },
+    "wallets_started": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of wallets that have begun processing."
+    },
+    "wallets_completed": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of wallets that reached a terminal state (completed, failed, or stopped)."
+    },
+    "attempts_used": {
+      "type": "number",
+      "default": 0,
+      "description": "Total physical outbound Nansen attempts consumed, including retries and failed attempts. Capped at max_attempts (21). Includes both wallet-analysis calls and discovery calls."
+    },
+    "max_wallets": {
+      "type": "number",
+      "default": 5,
+      "description": "Maximum number of wallets allowed in this validation allowance."
+    },
+    "max_attempts": {
+      "type": "number",
+      "default": 21,
+      "description": "Maximum physical outbound Nansen attempts allowed. Retries and failed attempts count against this limit."
+    },
+    "current_wallet_address": {
+      "type": "string",
+      "description": "Full wallet address of the wallet currently being processed. NEVER exposed in dashboard responses, logs, or analytics."
+    },
+    "current_address_short": {
+      "type": "string",
+      "description": "Abbreviated address of the current wallet. Safe for display."
+    },
+    "current_wallet_started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the current wallet began processing."
+    },
+    "current_calls_used": {
+      "type": "number",
+      "description": "Physical Nansen calls used by the current wallet so far. Null while idle."
+    },
+    "stop_reason": {
+      "type": "string",
+      "description": "Safe, non-identifying reason when validation stopped or paused."
+    },
+    "endpoint_successes": {
+      "type": "number",
+      "default": 0,
+      "description": "Total successful Nansen endpoint calls across all wallets."
+    },
+    "endpoint_failures": {
+      "type": "number",
+      "default": 0,
+      "description": "Total failed Nansen endpoint calls across all wallets, including retries and refused attempts."
+    },
+    "starting_global_total": {
+      "type": "number",
+      "description": "Verified NansenApiCallAudit global total when the allowance was first started. Used to show the starting point on the dashboard."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the validation was first started."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_by_user_id": {
+      "type": "string",
+      "description": "Admin user id who started the validation. NEVER exposed in dashboard responses."
+    }
+  },
+  "required": [
+    "control_key",
+    "version",
+    "status",
+    "max_wallets",
+    "max_attempts",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

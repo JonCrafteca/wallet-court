@@ -1,0 +1,124 @@
+{
+  "name": "RobinhoodValidationWallet",
+  "type": "object",
+  "properties": {
+    "wallet_id": {
+      "type": "string",
+      "description": "Permanent unique ID. Format: rhv_<random>."
+    },
+    "wallet_address": {
+      "type": "string",
+      "description": "Full wallet address as submitted. Required internally to run the analysis. NEVER exposed in dashboard responses, logs, exports, or analytics."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased address. NEVER exposed publicly."
+    },
+    "address_short": {
+      "type": "string",
+      "description": "Abbreviated address (0x1234\u2026abcd) for safe display."
+    },
+    "wallet_fingerprint": {
+      "type": "string",
+      "description": "Irreversible SHA-256 fingerprint of 'robinhood:' + normalized_wallet_address. Safe to expose for dedup display."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        "stopped"
+      ],
+      "default": "pending",
+      "description": "Wallet lifecycle state. pending = queued; processing = currently being analyzed; completed = analysis finished; failed = analysis error; stopped = allowance exhausted mid-wallet."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "Optimistic-concurrency CAS token. Incremented on every state transition."
+    },
+    "sequence_order": {
+      "type": "number",
+      "description": "Order in which this wallet should be processed (1-based)."
+    },
+    "case_slug": {
+      "type": "string",
+      "description": "public_slug of the WalletTrial created by the analysis. Null if no trial was created."
+    },
+    "verdict_code": {
+      "type": "string",
+      "description": "Verdict code copied from the created WalletTrial. Null for dismissed/mistrial or unprocessed wallets."
+    },
+    "verdict_name": {
+      "type": "string",
+      "description": "Verdict display name copied from the created WalletTrial."
+    },
+    "case_outcome": {
+      "type": "string",
+      "description": "Case outcome copied from the created WalletTrial: verdict, dismissed_no_evidence, mistrial_insufficient_evidence. Null if unprocessed."
+    },
+    "data_mode": {
+      "type": "string",
+      "description": "Data mode copied from the created WalletTrial: live or demo."
+    },
+    "calls_used": {
+      "type": "number",
+      "description": "Physical Nansen calls consumed by this wallet's analysis."
+    },
+    "failure_category": {
+      "type": "string",
+      "description": "Safe failure category: validation, provider_recess, provider_error, allowance_exhausted, circuit_open, invocation_error."
+    },
+    "failure_message_safe": {
+      "type": "string",
+      "description": "Sanitized failure message. Never includes wallet addresses, API keys, or credentials."
+    },
+    "queued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "wallet_id",
+    "wallet_address",
+    "normalized_wallet_address",
+    "address_short",
+    "wallet_fingerprint",
+    "status",
+    "version",
+    "sequence_order",
+    "queued_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}
