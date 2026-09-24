@@ -294,6 +294,9 @@ export async function ensureAllowance(base44): Promise<any> {
       max_attempts: RH_MAX_ATTEMPTS,
       endpoint_successes: 0,
       endpoint_failures: 0,
+      advance_lock_held: false,
+      advance_lock_acquired_at: null,
+      advance_lock_invocation_id: null,
       updated_at: new Date().toISOString()
     });
   } catch {
