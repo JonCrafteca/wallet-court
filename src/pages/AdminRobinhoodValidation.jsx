@@ -85,7 +85,11 @@ export default function AdminRobinhoodValidation() {
     try {
       const res = await base44.functions.invoke("advanceRobinhoodValidation", {});
       if (res?.data?.error) {
-        setActionError(res.data.error);
+        if (res.data.code === "VALIDATION_ALREADY_PROCESSING") {
+          setActionError("Another advance is in progress. Wait for it to complete, then try again.");
+        } else {
+          setActionError(res.data.error);
+        }
       } else {
         setLastResult(res.data);
       }
@@ -233,6 +237,30 @@ export default function AdminRobinhoodValidation() {
             Started at global total {allowance.starting_global_total} · Current: {data?.current_global_total ?? "—"}
           </p>
         )}
+      </div>
+
+      {/* Ceiling protections */}
+      <div className="border-2 border-court-ice bg-court-navy p-4 sm:p-5">
+        <h2 className="font-display uppercase tracking-[0.06em] text-court-chart text-lg mb-4">Ceiling Protections</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="border-2 border-court-mute/40 p-3">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute">Legacy Calibration Ceiling</p>
+            <p className="font-display text-2xl mt-1 text-court-ice">{allowance.legacy_ceiling ?? 1020}</p>
+            <p className="font-mono text-xs text-court-mute mt-0.5">Applies to all ordinary traffic (ETH, Base, Solana, calibration campaign)</p>
+          </div>
+          <div className="border-2 border-court-chart p-3">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-court-mute">Validation Max Total</p>
+            <p className="font-display text-2xl mt-1 text-court-chart">{allowance.validation_max_total ?? "—"}</p>
+            <p className="font-mono text-xs text-court-mute mt-0.5">
+              {allowance.starting_global_total != null
+                ? `Derived: ${allowance.starting_global_total} + ${allowance.max_attempts ?? 21}`
+                : "Not yet started — will be derived on start"}
+            </p>
+          </div>
+        </div>
+        <p className="mt-3 font-mono text-xs text-court-mute leading-relaxed">
+          The validation ceiling is computed at runtime from the allowance's immutable <span className="text-court-ice">starting_global_total</span> + <span className="text-court-ice">max_attempts</span>. It is never hardcoded. Only authenticated robinhood_validation context may exceed the legacy 1,020 ceiling; all other traffic remains bound by it.
+        </p>
       </div>
 
       {/* Controls */}
