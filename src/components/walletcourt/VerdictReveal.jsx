@@ -9,6 +9,7 @@ import CaseDismissed from "./CaseDismissed";
 import CaseMistrial from "./CaseMistrial";
 import SummonsSection from "./SummonsSection";
 import CourtReceiptPreview from "./CourtReceiptPreview";
+import CoverageNotice from "./CoverageNotice";
 import { getCaseOutcome } from "@/lib/caseOutcome";
 import { displayAddressShort } from "@/lib/wallet";
 
@@ -32,6 +33,9 @@ export default function VerdictReveal({ trial, onReset, subjectType, proposedHan
           {isLive ? "Live · Nansen" : "Demo Mode"}
         </span>
       </div>
+
+      {/* Coverage-limited disclosure (Robinhood cases) */}
+      <CoverageNotice trial={trial} />
 
       {/* 1. Verdict */}
       <VerdictStamp trial={trial} />

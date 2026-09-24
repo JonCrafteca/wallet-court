@@ -37,7 +37,11 @@ export function sanitizeTrialForPublicCase(trial) {
     source_endpoints_json: scrubAddrFromString(trial.source_endpoints_json, addrsToScrub, address_short),
     analyzed_at: trial.analyzed_at,
     created_date: trial.created_date,
-    address_short
+    address_short,
+    requested_window_days: trial.requested_window_days,
+    effective_analysis_start: trial.effective_analysis_start,
+    effective_analysis_end: trial.effective_analysis_end,
+    coverage_limited: trial.coverage_limited
   };
 }
 
