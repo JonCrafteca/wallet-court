@@ -28,6 +28,17 @@ const BACKOFF_DELAYS = [60, 300, 900];
 // leaves an event in "processing" — a new worker can reclaim it after this.
 export const STALE_LOCK_TIMEOUT_MS = 300000;
 
+// Enqueue mutex stale-lock timeout: 30 seconds. An enqueue that crashes while
+// holding the enqueue lock leaves it held — a new enqueue can reclaim it after
+// this. Normal enqueues (filter + create) complete in well under 1 second.
+export const ENQUEUE_LOCK_STALE_TIMEOUT_MS = 30000;
+
+// Retry delay when the enqueue lock is held by another invocation.
+export const ENQUEUE_LOCK_RETRY_DELAY_MS = 150;
+
+// Maximum enqueue-lock acquisition attempts before giving up.
+export const ENQUEUE_LOCK_MAX_ATTEMPTS = 3;
+
 export const APP_URL = "https://wallet-court-roast.base44.app";
 
 // ---- Key + ID generation ----
@@ -48,6 +59,55 @@ export function newLockId(): string {
     return "wnlk_" + crypto.randomUUID();
   }
   return "wnlk_" + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+}
+
+// Generate a unique enqueue-lock token. Used as the mutex value in the
+// settings record's enqueue_lock_id field.
+export function newEnqueueLockId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return "enq_" + crypto.randomUUID();
+  }
+  return "enq_" + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+}
+
+// ---- Enqueue lock pure decision logic ----
+
+// Decide whether a stale enqueue lock can be reclaimed. Pure: no DB, no side
+// effects. Returns true if the lock is either free (null/missing) or stale
+// (held longer than ENQUEUE_LOCK_STALE_TIMEOUT_MS).
+export function canReclaimEnqueueLock(settings: any, now: number = Date.now()): boolean {
+  if (!settings) return true;
+  if (!settings.enqueue_lock_id) return true;
+  if (!settings.enqueue_lock_acquired_at) return true;
+  const acquiredAt = new Date(settings.enqueue_lock_acquired_at).getTime();
+  if (isNaN(acquiredAt)) return true;
+  return (now - acquiredAt) > ENQUEUE_LOCK_STALE_TIMEOUT_MS;
+}
+
+// Build the CAS filter for acquiring the enqueue lock. If the lock is free
+// or stale, the filter matches; otherwise it does not. Returns null when the
+// lock cannot be acquired (fresh lock held by another invocation).
+//
+// Uses a simple enqueue_lock_id: null match (not $or/$exists) because the
+// Base44 updateMany CAS may not correctly combine $or with the version guard.
+// The settings record's enqueue_lock_id field is always initialized to null
+// on creation (saveSettings) and on every release, so the null match is
+// reliable.
+export function buildEnqueueLockCasFilter(settings: any, now: number = Date.now()): Record<string, any> | null {
+  if (!settings) return null;
+  if (!canReclaimEnqueueLock(settings, now)) return null;
+  const filter: Record<string, any> = {
+    control_key: "main",
+    version: settings.version
+  };
+  if (settings.enqueue_lock_id) {
+    // Stale lock — reclaim by matching the specific lock value
+    filter.enqueue_lock_id = settings.enqueue_lock_id;
+  } else {
+    // Free lock — match null
+    filter.enqueue_lock_id = null;
+  }
+  return filter;
 }
 
 // ---- Backoff ----

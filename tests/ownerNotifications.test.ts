@@ -17,8 +17,12 @@ import {
   NOTIFICATION_STATUS,
   MAX_ATTEMPTS,
   STALE_LOCK_TIMEOUT_MS,
+  ENQUEUE_LOCK_STALE_TIMEOUT_MS,
   buildEventKey,
   newEventId,
+  newEnqueueLockId,
+  canReclaimEnqueueLock,
+  buildEnqueueLockCasFilter,
   computeBackoff,
   sanitizeMetadata,
   defaultSettings,
@@ -42,17 +46,38 @@ function createMockBase44(opts: { sendEmailShouldFail?: boolean } = {}) {
   const sendEmailCalls: any[] = [];
   let idCounter = 0;
 
-  function filterArr(arr: any[], query: any): any[] {
-    return arr.filter((r) => {
-      for (const [key, value] of Object.entries(query)) {
-        if (value !== null && typeof value === "object" && "$lte" in value) {
+  function matchesQuery(r: any, query: any): boolean {
+    for (const [key, value] of Object.entries(query)) {
+      if (key === "$or") {
+        if (!Array.isArray(value) || !value.some((sub: any) => matchesQuery(r, sub))) return false;
+        continue;
+      }
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        if ("$lte" in value) {
           if (!r[key] || r[key] > value.$lte) return false;
-        } else if (r[key] !== value) {
-          return false;
+          continue;
+        }
+        if ("$exists" in value) {
+          const has = r[key] !== undefined;
+          if (has !== value.$exists) return false;
+          continue;
+        }
+        if ("$in" in value) {
+          if (!Array.isArray(value.$in) || !value.$in.includes(r[key])) return false;
+          continue;
+        }
+        if ("$ne" in value) {
+          if (r[key] === value.$ne) return false;
+          continue;
         }
       }
-      return true;
-    });
+      if (r[key] !== value) return false;
+    }
+    return true;
+  }
+
+  function filterArr(arr: any[], query: any): any[] {
+    return arr.filter((r) => matchesQuery(r, query));
   }
 
   function sortArr(arr: any[], sort?: string): any[] {
@@ -109,11 +134,7 @@ function createMockBase44(opts: { sendEmailShouldFail?: boolean } = {}) {
           updateMany: async (query: any, update: any) => {
             let updated = 0;
             for (const r of events) {
-              let matches = true;
-              for (const [key, value] of Object.entries(query)) {
-                if (r[key] !== value) { matches = false; break; }
-              }
-              if (matches) {
+              if (matchesQuery(r, query)) {
                 if (update.$set) Object.assign(r, update.$set);
                 if (update.$inc) {
                   for (const [key, amount] of Object.entries(update.$inc)) {
@@ -124,6 +145,16 @@ function createMockBase44(opts: { sendEmailShouldFail?: boolean } = {}) {
               }
             }
             return { updated };
+          },
+          deleteMany: async (query: any) => {
+            let deleted = 0;
+            for (let i = events.length - 1; i >= 0; i--) {
+              if (matchesQuery(events[i], query)) {
+                events.splice(i, 1);
+                deleted++;
+              }
+            }
+            return { deleted };
           },
           list: async (sort?: string, limit?: number) => {
             let results = sortArr([...events], sort);
@@ -147,6 +178,21 @@ function createMockBase44(opts: { sendEmailShouldFail?: boolean } = {}) {
             if (idx === -1) throw new Error("not found");
             settings[idx] = { ...settings[idx], ...data };
             return settings[idx];
+          },
+          updateMany: async (query: any, update: any) => {
+            let updated = 0;
+            for (const r of settings) {
+              if (matchesQuery(r, query)) {
+                if (update.$set) Object.assign(r, update.$set);
+                if (update.$inc) {
+                  for (const [key, amount] of Object.entries(update.$inc)) {
+                    r[key] = (r[key] || 0) + (amount as number);
+                  }
+                }
+                updated++;
+              }
+            }
+            return { updated };
           },
         },
       },
@@ -247,6 +293,100 @@ describe("Owner Notifications — pure logic", () => {
   });
 });
 
+// ---- Enqueue lock pure-logic tests ----
+
+describe("Owner Notifications — enqueue lock pure logic", () => {
+  it("newEnqueueLockId starts with enq_", () => {
+    const id = newEnqueueLockId();
+    expect(id).toMatch(/^enq_/);
+    expect(id.length).toBeGreaterThan(10);
+  });
+
+  it("canReclaimEnqueueLock returns true when lock is free (null/missing)", () => {
+    expect(canReclaimEnqueueLock(null)).toBe(true);
+    expect(canReclaimEnqueueLock({})).toBe(true);
+    expect(canReclaimEnqueueLock({ enqueue_lock_id: null })).toBe(true);
+    expect(canReclaimEnqueueLock({ enqueue_lock_id: undefined })).toBe(true);
+    expect(canReclaimEnqueueLock({ enqueue_lock_id: "", enqueue_lock_acquired_at: null })).toBe(true);
+  });
+
+  it("canReclaimEnqueueLock returns false when lock is freshly held", () => {
+    const now = Date.now();
+    const settings = {
+      enqueue_lock_id: "enq_123",
+      enqueue_lock_acquired_at: new Date(now).toISOString()
+    };
+    expect(canReclaimEnqueueLock(settings, now)).toBe(false);
+    expect(canReclaimEnqueueLock(settings, now + 1000)).toBe(false);
+  });
+
+  it("canReclaimEnqueueLock returns true when lock is stale (held > ENQUEUE_LOCK_STALE_TIMEOUT_MS)", () => {
+    const now = Date.now();
+    const staleAcquired = new Date(now - ENQUEUE_LOCK_STALE_TIMEOUT_MS - 1000).toISOString();
+    const settings = {
+      enqueue_lock_id: "enq_stale",
+      enqueue_lock_acquired_at: staleAcquired
+    };
+    expect(canReclaimEnqueueLock(settings, now)).toBe(true);
+  });
+
+  it("canReclaimEnqueueLock returns true when acquired_at is missing or invalid", () => {
+    expect(canReclaimEnqueueLock({ enqueue_lock_id: "enq_x", enqueue_lock_acquired_at: null }, Date.now())).toBe(true);
+    expect(canReclaimEnqueueLock({ enqueue_lock_id: "enq_x", enqueue_lock_acquired_at: "not-a-date" }, Date.now())).toBe(true);
+  });
+
+  it("buildEnqueueLockCasFilter returns null when lock is freshly held", () => {
+    const now = Date.now();
+    const settings = {
+      control_key: "main",
+      version: 5,
+      enqueue_lock_id: "enq_fresh",
+      enqueue_lock_acquired_at: new Date(now).toISOString()
+    };
+    expect(buildEnqueueLockCasFilter(settings, now)).toBeNull();
+  });
+
+  it("buildEnqueueLockCasFilter returns null-match filter when lock is free", () => {
+    const settings = {
+      control_key: "main",
+      version: 3,
+      enqueue_lock_id: null,
+      enqueue_lock_acquired_at: null
+    };
+    const filter = buildEnqueueLockCasFilter(settings, Date.now());
+    expect(filter).toBeTruthy();
+    expect(filter.control_key).toBe("main");
+    expect(filter.version).toBe(3);
+    expect(filter.enqueue_lock_id).toBeNull();
+    expect(filter.$or).toBeUndefined();
+  });
+
+  it("buildEnqueueLockCasFilter returns specific-lock filter when lock is stale (reclaim)", () => {
+    const now = Date.now();
+    const staleAcquired = new Date(now - ENQUEUE_LOCK_STALE_TIMEOUT_MS - 5000).toISOString();
+    const settings = {
+      control_key: "main",
+      version: 7,
+      enqueue_lock_id: "enq_stale_one",
+      enqueue_lock_acquired_at: staleAcquired
+    };
+    const filter = buildEnqueueLockCasFilter(settings, now);
+    expect(filter).toBeTruthy();
+    expect(filter.control_key).toBe("main");
+    expect(filter.version).toBe(7);
+    expect(filter.enqueue_lock_id).toBe("enq_stale_one");
+    expect(filter.$or).toBeUndefined();
+  });
+
+  it("buildEnqueueLockCasFilter returns null for null settings", () => {
+    expect(buildEnqueueLockCasFilter(null)).toBeNull();
+  });
+
+  it("ENQUEUE_LOCK_STALE_TIMEOUT_MS is 30 seconds", () => {
+    expect(ENQUEUE_LOCK_STALE_TIMEOUT_MS).toBe(30000);
+  });
+});
+
 // ---- Sanitization tests ----
 
 describe("Owner Notifications — sanitization", () => {
@@ -335,7 +475,7 @@ describe("Owner Notifications — store (exactly-once enqueue)", () => {
     expect(mock._events.length).toBe(1);
   });
 
-  it("concurrent triggers produce one event (race-safe via atomic keyed upsert)", async () => {
+  it("concurrent triggers produce one event (race-safe via CAS mutex lock)", async () => {
     const mock = createMockBase44();
     await enableSettings(mock);
     const { enqueueNotification } = await import("../base44/shared/ownerNotificationStore.ts");
@@ -515,9 +655,9 @@ describe("Owner Notifications — store (delivery + retry)", () => {
   });
 });
 
-// ---- Atomic keyed-upsert tests ----
+// ---- CAS mutex-lock tests ----
 
-describe("Owner Notifications — atomic keyed upsert", () => {
+describe("Owner Notifications — CAS mutex lock", () => {
   it("winner explicitly initializes ALL mutable lock fields (no schema-default reliance)", async () => {
     const mock = createMockBase44();
     await enableSettings(mock);
@@ -540,7 +680,7 @@ describe("Owner Notifications — atomic keyed upsert", () => {
     expect(record.last_error).toBeNull();
   });
 
-  it("duplicate enqueue does NOT overwrite mutable delivery state (only immutable fields in upsert)", async () => {
+  it("duplicate enqueue does NOT overwrite mutable delivery state (lock-serialized check-then-find)", async () => {
     const mock = createMockBase44();
     await enableSettings(mock);
     const { enqueueNotification, markSent } = await import("../base44/shared/ownerNotificationStore.ts");
@@ -563,9 +703,9 @@ describe("Owner Notifications — atomic keyed upsert", () => {
     expect(replay.duplicate).toBe(true);
     expect(replay.ok).toBe(true);
 
-    // The sent event's mutable state must NOT be reset. Find by event_key
-    // (the stable dedup key) — event_id may be overwritten by the duplicate
-    // upsert, but event_key is permanent and mutable state is preserved.
+    // The sent event's mutable state must NOT be reset. The lock-serialized
+    // enqueue finds the existing event by event_key and returns duplicate
+    // without modifying any fields.
     const afterReplay = mock._events.find((r) => r.event_key === "walletcourt:claim:claim_1");
     expect(afterReplay).toBeTruthy();
     expect(afterReplay.status).toBe(NOTIFICATION_STATUS.SENT);
@@ -573,7 +713,7 @@ describe("Owner Notifications — atomic keyed upsert", () => {
     expect(afterReplay.attempt_count).toBe(0); // not reset
   });
 
-  it("25 simultaneous enqueues with the same event_key produce exactly one row (mock)", async () => {
+  it("25 simultaneous enqueues with the same event_key produce exactly one row via CAS mutex lock (mock)", async () => {
     const mock = createMockBase44();
     await enableSettings(mock);
     const { enqueueNotification } = await import("../base44/shared/ownerNotificationStore.ts");

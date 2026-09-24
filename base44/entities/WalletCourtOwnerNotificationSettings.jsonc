@@ -9,7 +9,7 @@
     "version": {
       "type": "number",
       "default": 0,
-      "description": "CAS version. Incremented on every save. Used as a compare-and-set guard so two concurrent admin saves cannot both succeed."
+      "description": "CAS version. Incremented on every save and every enqueue-lock transition. Used as a compare-and-set guard so two concurrent admin saves or enqueue attempts cannot both succeed."
     },
     "recipient_email": {
       "type": "string",
@@ -48,6 +48,15 @@
     "last_test_error": {
       "type": "string",
       "description": "Error message from the last failed test email, or null on success."
+    },
+    "enqueue_lock_id": {
+      "type": "string",
+      "description": "Mutex lock token held by the invocation currently performing an enqueue. Null when no enqueue is in progress. Acquired atomically via CAS (updateMany with enqueue_lock_id: null filter) so two concurrent enqueues cannot both proceed. A stale lock (held longer than ENQUEUE_LOCK_STALE_TIMEOUT_MS) can be reclaimed."
+    },
+    "enqueue_lock_acquired_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the enqueue lock was acquired. Used for stale-lock recovery. Null when no lock is held."
     },
     "updated_at": {
       "type": "string",

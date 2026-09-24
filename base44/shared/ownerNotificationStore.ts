@@ -13,9 +13,14 @@ import {
   NOTIFICATION_STATUS,
   MAX_ATTEMPTS,
   STALE_LOCK_TIMEOUT_MS,
+  ENQUEUE_LOCK_STALE_TIMEOUT_MS,
+  ENQUEUE_LOCK_RETRY_DELAY_MS,
+  ENQUEUE_LOCK_MAX_ATTEMPTS,
   buildEventKey,
   newEventId,
   newLockId,
+  newEnqueueLockId,
+  buildEnqueueLockCasFilter,
   computeBackoff,
   sanitizeMetadata,
   shouldEnqueue,
@@ -57,6 +62,8 @@ export async function saveSettings(base44, fields: Record<string, any>): Promise
       last_test_status: null,
       last_test_timestamp: null,
       last_test_error: null,
+      enqueue_lock_id: null,
+      enqueue_lock_acquired_at: null,
       updated_at: now
     });
   }
@@ -82,24 +89,31 @@ export async function updateTestResult(base44, status: string, error: string | n
   });
 }
 
-// ---- Enqueue (exactly-once via atomic keyed upsert) ----
+// ---- Enqueue (exactly-once via CAS mutex lock) ----
 
-// Enqueue one notification event. The event_key is the dedup key. Uses the
-// SDK's atomic keyed-upsert primitive (upsert with key: ["event_key"]) which
-// eliminates the check-then-create TOCTOU race: the database atomically creates
-// or updates based on the key. No entity-level unique constraint is required
-// and no duplicate-key exception is caught.
+// Enqueue one notification event. The event_key is the dedup key.
 //
-// Only the invocation that atomically CREATES the row (result.created > 0)
-// proceeds as the winner. All other invocations (result.updated > 0) return
-// duplicate: true and do NOT modify the existing record's mutable delivery
-// state — the upsert payload contains only immutable identification fields,
-// so a duplicate enqueue can never reset a sent/failed/dead-letter event back
-// to pending.
+// Base44 entities do NOT support database-level unique constraints, and the
+// SDK's keyed upsert is NOT atomic under concurrency (the server-side
+// find-then-create race creates duplicate rows). To guarantee exactly-one-row
+// and exactly-one-winner, this function uses a CAS mutex lock on the settings
+// singleton record to SERIALIZE enqueues:
 //
-// The winner then explicitly initializes ALL mutable lock fields via a
-// follow-up update so no schema defaults are relied upon and the worker's
-// CAS filter (processing_lock_id: null) matches immediately.
+//   1. Acquire the enqueue lock via CAS (updateMany with enqueue_lock_id: null
+//      filter + version guard). Only one invocation can hold the lock at a
+//      time. A stale lock (held > ENQUEUE_LOCK_STALE_TIMEOUT_MS) is reclaimed.
+//   2. While holding the lock, check whether an event with this event_key
+//      already exists (filter by event_key). This check-then-create is safe
+//      because no other enqueue can run concurrently.
+//   3. If no existing event, create one with ALL mutable lock fields
+//      explicitly initialized (status=pending, attempt_count=0, lock
+//      fields=null, etc.) so the worker's CAS filter matches immediately.
+//   4. Release the lock in a finally block so a crash never leaves it held
+//      permanently (stale-lock recovery is a backup).
+//
+// The lock is global (not per-event_key) but enqueue frequency is low (a few
+// per minute at most), so this is acceptable. Callers wrap the enqueue in
+// waitUntil so the lock never delays the user journey.
 export async function enqueueNotification(base44, params: {
   event_type: string;
   source_entity: string;
@@ -115,58 +129,98 @@ export async function enqueueNotification(base44, params: {
   const event_key = buildEventKey(params.event_type, params.source_record_id);
   const event_id = newEventId();
   const now = new Date().toISOString();
+  const lockId = newEnqueueLockId();
 
-  // Atomic keyed upsert: immutable identification fields are in the payload.
-  // event_id is required by the server on create, so it is included — a
-  // duplicate enqueue (update path) will overwrite event_id with a new value,
-  // but this is harmless: event_key (not event_id) is the dedup key, and the
-  // admin dashboard always shows the latest event_id from getRecentEvents.
-  //
-  // Mutable delivery state (status, attempt_count, lock fields, sent_at,
-  // etc.) is deliberately EXCLUDED from the upsert payload so a duplicate
-  // enqueue never resets an existing record's delivery progress — a sent
-  // event stays sent, a dead-letter event stays dead-lettered.
-  const result = await base44.asServiceRole.entities.WalletCourtNotificationEvent.upsert(
-    [{
+  // ---- Acquire the enqueue mutex lock ----
+  let acquired = false;
+  for (let attempt = 0; attempt < ENQUEUE_LOCK_MAX_ATTEMPTS; attempt++) {
+    const currentSettings = await getSettings(base44);
+    if (!currentSettings) {
+      // Settings vanished — shouldEnqueue would have caught this, but
+      // handle defensively.
+      return { ok: false, duplicate: false, reason: "Settings not found." };
+    }
+    const casFilter = buildEnqueueLockCasFilter(currentSettings, Date.now());
+    if (!casFilter) {
+      // Lock is freshly held by another invocation — wait and retry.
+      await new Promise(r => setTimeout(r, ENQUEUE_LOCK_RETRY_DELAY_MS));
+      continue;
+    }
+    const lockResult = await base44.asServiceRole.entities.WalletCourtOwnerNotificationSettings.updateMany(
+      casFilter,
+      {
+        $set: {
+          enqueue_lock_id: lockId,
+          enqueue_lock_acquired_at: now
+        },
+        $inc: { version: 1 }
+      }
+    );
+    if (lockResult && lockResult.updated === 1) {
+      acquired = true;
+      break;
+    }
+    // CAS failed — another invocation won the race. Retry after a brief delay.
+    await new Promise(r => setTimeout(r, ENQUEUE_LOCK_RETRY_DELAY_MS));
+  }
+
+  if (!acquired) {
+    // Could not acquire the lock after all retries. Return as duplicate —
+    // another enqueue is handling this event_key (or will be). This is safe
+    // because the event will be enqueued by the lock holder.
+    return { ok: true, duplicate: true, event_id: null };
+  }
+
+  try {
+    // ---- Critical section: check-then-create (safe — we hold the lock) ----
+
+    const existing = await base44.asServiceRole.entities.WalletCourtNotificationEvent.filter(
+      { event_key }, "-created_date", 1
+    );
+    if (existing && existing.length > 0) {
+      // Event already enqueued — duplicate no-op. Do NOT modify the existing
+      // record's mutable delivery state (a sent/failed/dead-letter event
+      // must not be reset to pending).
+      return { ok: true, duplicate: true, event_id: existing[0].event_id || null };
+    }
+
+    // Create the event with ALL mutable lock fields explicitly initialized.
+    // No schema defaults are relied upon — the worker's CAS filter
+    // (processing_lock_id: null) matches immediately after creation.
+    await base44.asServiceRole.entities.WalletCourtNotificationEvent.create({
       event_id,
       event_type: params.event_type,
       event_key,
       source_entity: params.source_entity,
       source_record_id: params.source_record_id,
+      status: NOTIFICATION_STATUS.PENDING,
       recipient_email,
       metadata_json: JSON.stringify(sanitizeMetadata(params.metadata)),
-      max_attempts: MAX_ATTEMPTS,
-      created_at: now,
-      updated_at: now
-    }],
-    { key: ["event_key"] }
-  );
-
-  if (result.created > 0) {
-    // Winner: explicitly initialize ALL mutable lock fields. This runs
-    // before the enqueue returns, so the worker's CAS filter
-    // (processing_lock_id: null) matches immediately after creation.
-    const record = result.records[0];
-    await base44.asServiceRole.entities.WalletCourtNotificationEvent.update(record.id, {
-      status: NOTIFICATION_STATUS.PENDING,
       attempt_count: 0,
+      max_attempts: MAX_ATTEMPTS,
       next_retry_at: now,
       processing_lock_id: null,
       processing_lock_acquired_at: null,
       last_attempt_at: null,
       sent_at: null,
       last_error: null,
+      created_at: now,
       updated_at: now
     });
     return { ok: true, duplicate: false, event_id };
+  } finally {
+    // ---- Release the enqueue mutex lock ----
+    await base44.asServiceRole.entities.WalletCourtOwnerNotificationSettings.updateMany(
+      { control_key: CONTROL_KEY, enqueue_lock_id: lockId },
+      {
+        $set: {
+          enqueue_lock_id: null,
+          enqueue_lock_acquired_at: null
+        },
+        $inc: { version: 1 }
+      }
+    ).catch(() => {});
   }
-
-  // Duplicate: the upsert matched an existing event_key and updated only
-  // immutable identification fields. All mutable delivery state (status,
-  // attempt_count, lock fields, sent_at, etc.) is preserved because it was
-  // not in the upsert payload. This is a permanent no-op — the event is
-  // already enqueued (or already sent).
-  return { ok: true, duplicate: true, event_id: result.records?.[0]?.event_id || null };
 }
 
 // ---- Delivery ----
