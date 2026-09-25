@@ -63,7 +63,13 @@ export async function findOrCreateTrial(base44, fields: Record<string, any>): Pr
 
   try {
     // ---- Critical section: check-then-create (safe — we hold the lock) ----
-    const existing = await findByFingerprint(base44, fields.trade_fingerprint);
+    // Double-check with a brief retry to handle read-after-write inconsistency
+    // from a previous lock holder whose create may not yet be visible to our read.
+    let existing = await findByFingerprint(base44, fields.trade_fingerprint);
+    if (!existing) {
+      await new Promise(r => setTimeout(r, 50));
+      existing = await findByFingerprint(base44, fields.trade_fingerprint);
+    }
     if (existing) {
       return { created: false, trial: existing, duplicate: true };
     }
@@ -76,6 +82,30 @@ export async function findOrCreateTrial(base44, fields: Record<string, any>): Pr
       analysis_started_at: now,
       analysis_lock_id: lockId
     });
+
+    // ---- Post-create dedup: re-read to catch duplicates from read-after-write ----
+    // If another trial with the same fingerprint was created by a previous lock
+    // holder but wasn't visible in our pre-create read, we delete our duplicate
+    // and return the original. The brief delay gives the database time to make
+    // the prior write visible to our read.
+    await new Promise(r => setTimeout(r, 100));
+    const allTrials = await base44.asServiceRole.entities[ENTITY].filter(
+      { trade_fingerprint: fields.trade_fingerprint }, "created_date", 10
+    );
+    if (allTrials && allTrials.length > 1) {
+      // Keep the first (oldest by created_date ascending), delete the rest.
+      const first = allTrials[0];
+      for (const t of allTrials) {
+        if (t.id !== first.id) {
+          await base44.asServiceRole.entities[ENTITY].delete(t.id).catch(() => {});
+        }
+      }
+      if (first.id !== trial.id) {
+        return { created: false, trial: first, duplicate: true };
+      }
+      return { created: true, trial: first, duplicate: false };
+    }
+
     return { created: true, trial, duplicate: false };
   } finally {
     // ---- Release the creation mutex lock ----

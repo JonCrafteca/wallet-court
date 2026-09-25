@@ -124,7 +124,8 @@ function createMockBase44() {
             }
             return { updated };
           },
-          get: async (id: string) => { const r = trials.find((r) => r.id === id); return r ? { ...r } : null; }
+          get: async (id: string) => { const r = trials.find((r) => r.id === id); return r ? { ...r } : null; },
+          delete: async (id: string) => { const i = trials.findIndex((r) => r.id === id); if (i !== -1) trials.splice(i, 1); }
         },
         SingleTradePurchaseSelection: {
           filter: async (q: any, sort?: string, limit?: number) => {
