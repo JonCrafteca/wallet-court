@@ -80,7 +80,7 @@ function createMockBase44() {
     asServiceRole: {
       entities: {
         SingleTradeUsagePolicy: {
-          filter: async (q: any) => filterArr(policy, q),
+          filter: async (q: any) => filterArr(policy, q).map((r: any) => ({ ...r })),
           create: async (d: any) => { const r = { id: `pol_${++idCounter}`, ...d }; policy.push(r); return r; },
           update: async (id: string, d: any) => {
             const i = policy.findIndex((r) => r.id === id);
@@ -98,11 +98,11 @@ function createMockBase44() {
             }
             return { updated };
           },
-          get: async (id: string) => policy.find((r) => r.id === id) || null
+          get: async (id: string) => { const r = policy.find((r) => r.id === id); return r ? { ...r } : null; }
         },
         SingleTradeTrial: {
           filter: async (q: any, sort?: string, limit?: number) => {
-            let results = filterArr(trials, q);
+            let results = filterArr(trials, q).map((r: any) => ({ ...r }));
             if (sort && sort.startsWith("-")) results = [...results].reverse();
             if (limit) results = results.slice(0, limit);
             return results;
@@ -124,11 +124,11 @@ function createMockBase44() {
             }
             return { updated };
           },
-          get: async (id: string) => trials.find((r) => r.id === id) || null
+          get: async (id: string) => { const r = trials.find((r) => r.id === id); return r ? { ...r } : null; }
         },
         SingleTradePurchaseSelection: {
           filter: async (q: any, sort?: string, limit?: number) => {
-            let results = filterArr(selections, q);
+            let results = filterArr(selections, q).map((r: any) => ({ ...r }));
             if (sort && sort.startsWith("-")) results = [...results].reverse();
             if (limit) results = results.slice(0, limit);
             return results;
@@ -149,7 +149,8 @@ function createMockBase44() {
               }
             }
             return { updated };
-          }
+          },
+          get: async (id: string) => { const r = selections.find((r) => r.id === id); return r ? { ...r } : null; }
         }
       }
     },
