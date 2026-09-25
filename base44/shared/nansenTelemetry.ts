@@ -39,13 +39,13 @@ export type AuditOutcome = typeof AUDIT_OUTCOMES[keyof typeof AUDIT_OUTCOMES];
 // so a caller typo can never leak a raw path or query string.
 const ALLOWED_ENDPOINT_KEYS = new Set([
   "pnl_summary", "dex_trades", "current_balance", "transactions", "address_labels",
-  "pnl_leaderboard"
+  "pnl_leaderboard", "token_ohlcv"
 ]);
 // Canonical allowed-networks set is centralized in ./chains.ts.
 import { ALLOWED_NETWORKS } from "./chains.ts";
 const ALLOWED_WORKFLOWS = new Set([
   "trial_analysis", "label_enrichment", "admin_health_check", "admin_verification",
-  "calibration_discovery"
+  "calibration_discovery", "single_trade_analysis"
 ]);
 const ALLOWED_ENVIRONMENTS = new Set(["production", "preview", "development"]);
 

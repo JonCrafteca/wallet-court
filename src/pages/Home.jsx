@@ -2,14 +2,18 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { captureReferral, getAttributionContext } from "@/lib/attribution";
 import IntakeStage from "@/components/walletcourt/IntakeStage";
+import SingleTradeIntake from "@/components/walletcourt/SingleTradeIntake";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import CourtRecess from "@/components/walletcourt/CourtRecess";
 import { validateWalletForChain } from "@/lib/walletValidation";
 import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
 import { getPublicFeatureFlags } from "@/lib/featureFlags";
+import { cn } from "@/lib/utils";
+import { Wallet, Coins } from "lucide-react";
 
 export default function Home() {
+  const [trialMode, setTrialMode] = useState("wallet"); // wallet | single_trade
   const [network, setNetwork] = useState("ethereum");
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
@@ -123,8 +127,19 @@ export default function Home() {
     );
   }
 
+  // Single Trade Trial mode — self-contained component handles its own flow.
+  if (trialMode === "single_trade") {
+    return (
+      <div className="relative">
+        <ModeToggle trialMode={trialMode} setTrialMode={setTrialMode} />
+        <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
+      </div>
+    );
+  }
+
   return (
     <div className="relative">
+      <ModeToggle trialMode={trialMode} setTrialMode={setTrialMode} />
       <IntakeStage
         network={network}
         setNetwork={setNetwork}
@@ -139,6 +154,37 @@ export default function Home() {
         setProposedHandle={setProposedHandle}
       />
       <LoadingStage visible={status === "loading"} />
+    </div>
+  );
+}
+
+function ModeToggle({ trialMode, setTrialMode }) {
+  return (
+    <div className="mx-auto max-w-3xl px-4 pt-6 flex gap-2 justify-center">
+      <button
+        type="button"
+        onClick={() => setTrialMode("wallet")}
+        className={cn(
+          "inline-flex items-center gap-2 px-4 py-2 border-2 font-display uppercase tracking-[0.08em] text-sm transition-all",
+          trialMode === "wallet"
+            ? "bg-court-chart text-court-navy border-court-chart shadow-[3px_3px_0_0_#FF3B30]"
+            : "bg-court-navy text-court-ice border-court-mute/40 hover:border-court-ice"
+        )}
+      >
+        <Wallet className="h-4 w-4" /> Whole Wallet
+      </button>
+      <button
+        type="button"
+        onClick={() => setTrialMode("single_trade")}
+        className={cn(
+          "inline-flex items-center gap-2 px-4 py-2 border-2 font-display uppercase tracking-[0.08em] text-sm transition-all",
+          trialMode === "single_trade"
+            ? "bg-court-chart text-court-navy border-court-chart shadow-[3px_3px_0_0_#FF3B30]"
+            : "bg-court-navy text-court-ice border-court-mute/40 hover:border-court-ice"
+        )}
+      >
+        <Coins className="h-4 w-4" /> Single Trade
+      </button>
     </div>
   );
 }

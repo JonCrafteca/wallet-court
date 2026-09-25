@@ -63,6 +63,13 @@ export const LABELS_EP = { key: "address_labels", path: "/api/v1/profiler/addres
 // over a selectable timeframe (1, 7, 30, 90, 180 days).
 export const DISCOVERY_EP = { key: "pnl_leaderboard", path: "/api/v1/smart-money/pnl-leaderboard" };
 
+// The Token OHLCV endpoint, used by Single Trade Trial. Returns historical
+// OHLCV candles WITH market cap (open/high/low/close) for one token over a
+// date range at a selectable timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M).
+// Supports solana and all other Nansen chains. History goes back to the first
+// price Nansen recorded for the token.
+export const TOKEN_OHLCV_EP = { key: "token_ohlcv", path: "/api/v1/tgm/token-ohlcv", paginated: false };
+
 // Fetch Address Labels for a single wallet (admin-triggered only). Returns the
 // safe wallet class, raw labels, and the call result (for usage logging). Never
 // called by fetchNansenEvidence or any automatic path.
@@ -288,6 +295,50 @@ async function persistAuditRecord(base44, rec) {
   }
 }
 
+// Build a telemetry context with the global ceiling budget guard + audit
+// persistence. Used by Single Trade Trial functions (and reusable by any future
+// Nansen-calling function). Returns { telemetryCtx, budgetGuard, correlationId,
+// getPhysicalCallCount }. The ceiling guard blocks at CALIBRATION_CEILING (1,020).
+export function buildTelemetryContext(base44, opts) {
+  const { workflow, network, caseSlug, durableTelemetry = false } = opts || {};
+  const correlationId = newCorrelationId();
+  let physicalCallCount = 0;
+
+  const budgetGuard = base44
+    ? async () => {
+        try {
+          const total = await getVerifiedTotal(base44);
+          const budget = checkCeilingBudgetWithLimit(total, CALIBRATION_CEILING);
+          if (!budget.allowed) return { allowed: false, verifiedTotal: total, reason: budget.reason };
+        } catch {}
+        return { allowed: true, verifiedTotal: 0, reason: "" };
+      }
+    : undefined;
+
+  const telemetryCtx = {
+    workflow,
+    network,
+    caseSlug: caseSlug || null,
+    correlationId,
+    environment: detectEnvironment(),
+    persistAudit: base44
+      ? (rec) => {
+          physicalCallCount++;
+          const persistPromise = (async () => {
+            const outcome = await persistWithRetry(rec, (r) => persistAuditRecord(base44, r));
+            if (!outcome.succeeded) {
+              console.error("[nansen-telemetry] audit persist failed:", outcome.finalError);
+            }
+          })();
+          if (durableTelemetry) return persistPromise;
+          waitUntil(persistPromise);
+        }
+      : undefined
+  };
+
+  return { telemetryCtx, budgetGuard, correlationId, getPhysicalCallCount: () => physicalCallCount };
+}
+
 // Orchestrates the four-endpoint pipeline for one wallet. Returns normalized
 // evidence + an honest outcome (live | partial | demo) + a sanitized error
 // category. Logs one sanitized NansenApiUsage record per call (via waitUntil).
@@ -506,3 +557,61 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
 
 // assessRecess now lives in ./recessAssessment.ts (pure, unit-testable) and is
 // re-exported above. The blocking rules are documented there.
+
+// ---- Single Trade Trial: token-filtered DEX trades + token OHLCV ----
+
+// Fetch purchases of a specific token by a wallet. Calls the dex-trades
+// endpoint with filters.token_bought_address = tokenMint. Returns the raw
+// call result (caller normalizes via singleTradeEvidence.normalizePurchases).
+// All physical attempts route through the instrumented telemetry transport.
+export async function fetchTokenPurchases(apiKey, network, address, tokenMint, opts) {
+  const { from, to, timeoutMs = 20000, telemetryCtx, budgetGuard } = opts || {};
+  const chain = CHAIN_BY_NETWORK[network];
+  if (!chain) return { ok: false, status: 0, errorCategory: ERR.UNSUPPORTED_CHAIN, json: null, requestId: null, key: "dex_trades" };
+  const ep = NANSEN_ENDPOINTS.find((e) => e.key === "dex_trades");
+  const body = { address, chain };
+  if (from && to) {
+    body.date = { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  }
+  body.filters = { token_bought_address: tokenMint };
+  body.pagination = { page: 1, per_page: 100 };
+  const r = await callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx, budgetGuard);
+  r.chain = chain;
+  return r;
+}
+
+// Fetch sells of a specific token by a wallet (after the entry purchase). Calls
+// dex-trades with filters.token_sold_address = tokenMint.
+export async function fetchTokenSells(apiKey, network, address, tokenMint, opts) {
+  const { from, to, timeoutMs = 20000, telemetryCtx, budgetGuard } = opts || {};
+  const chain = CHAIN_BY_NETWORK[network];
+  if (!chain) return { ok: false, status: 0, errorCategory: ERR.UNSUPPORTED_CHAIN, json: null, requestId: null, key: "dex_trades" };
+  const ep = NANSEN_ENDPOINTS.find((e) => e.key === "dex_trades");
+  const body = { address, chain };
+  if (from && to) {
+    body.date = { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  }
+  body.filters = { token_sold_address: tokenMint };
+  body.pagination = { page: 1, per_page: 100 };
+  const r = await callEndpoint(apiKey, ep, body, timeoutMs, telemetryCtx, budgetGuard);
+  r.chain = chain;
+  return r;
+}
+
+// Fetch historical OHLCV candles (with market cap) for one token. Calls the
+// token-ohlcv endpoint. timeframe: "1m"|"5m"|"15m"|"30m"|"1h"|"4h"|"1d"|"1w"|"1M".
+// Returns the raw call result (caller normalizes via singleTradeEvidence.extractCandles).
+export async function fetchTokenOhlcv(apiKey, network, tokenMint, opts) {
+  const { from, to, timeframe = "1h", timeoutMs = 20000, telemetryCtx, budgetGuard } = opts || {};
+  const chain = CHAIN_BY_NETWORK[network];
+  if (!chain) return { ok: false, status: 0, errorCategory: ERR.UNSUPPORTED_CHAIN, json: null, requestId: null, key: "token_ohlcv" };
+  const body = {
+    chain,
+    token_address: tokenMint,
+    date: { from: from.toISOString(), to: to.toISOString() },
+    timeframe
+  };
+  const r = await callEndpoint(apiKey, TOKEN_OHLCV_EP, body, timeoutMs, telemetryCtx, budgetGuard);
+  r.chain = chain;
+  return r;
+}

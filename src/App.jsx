@@ -9,6 +9,7 @@ import ReownMount from '@/components/walletcourt/ReownMount';
 import CourtLayout from '@/components/walletcourt/CourtLayout';
 import Home from '@/pages/Home';
 import Case from '@/pages/Case';
+import SingleTradeCase from '@/pages/SingleTradeCase';
 import Hall from '@/pages/Hall';
 import HallCategory from '@/pages/HallCategory';
 import About from '@/pages/About';
@@ -39,6 +40,7 @@ function App() {
             <Route element={<CourtLayout />}>
               <Route path="/" element={<Home />} />
               <Route path="/case/:slug" element={<Case />} />
+              <Route path="/trade/:slug" element={<SingleTradeCase />} />
               <Route path="/hall" element={<Hall />} />
               <Route path="/hall/:categorySlug" element={<HallCategory />} />
               <Route path="/about" element={<About />} />

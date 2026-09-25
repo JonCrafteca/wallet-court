@@ -1,0 +1,213 @@
+{
+  "name": "SingleTradeTrial",
+  "type": "object",
+  "properties": {
+    "trial_type": {
+      "type": "string",
+      "enum": [
+        "single_trade"
+      ],
+      "default": "single_trade",
+      "description": "Always 'single_trade'. Distinguishes from whole-wallet WalletTrial records."
+    },
+    "wallet_address": {
+      "type": "string",
+      "description": "Wallet address as submitted. NEVER exposed publicly \u2014 only address_short is returned."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) address. NEVER exposed publicly."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "solana"
+      ],
+      "description": "Chain the trade was analyzed on. Solana-only at launch."
+    },
+    "token_mint": {
+      "type": "string",
+      "description": "Token contract/mint address that was purchased."
+    },
+    "token_symbol": {
+      "type": "string",
+      "description": "Display symbol of the purchased token, e.g. JEANPHIL."
+    },
+    "transaction_hash": {
+      "type": "string",
+      "description": "Immutable identity of the selected purchase. The trial is permanently pinned to this on-chain transaction."
+    },
+    "trade_fingerprint": {
+      "type": "string",
+      "description": "SHA-256 of network + ':' + normalized_wallet_address + ':' + transaction_hash. Idempotency key \u2014 prevents duplicate trials and duplicate paid Nansen calls."
+    },
+    "purchase_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "block_timestamp of the purchase, from the dex-trades response."
+    },
+    "entry_price_usd": {
+      "type": "number",
+      "description": "Implied execution price: purchase_cost_usd / tokens_received."
+    },
+    "entry_market_cap_usd": {
+      "type": "number",
+      "description": "token_bought_market_cap at the time of purchase, from dex-trades."
+    },
+    "tokens_received": {
+      "type": "number",
+      "description": "token_bought_amount \u2014 quantity of tokens acquired in the purchase."
+    },
+    "purchase_cost_usd": {
+      "type": "number",
+      "description": "trade_value_usd \u2014 USD cost of the purchase."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "analyzing",
+        "completed",
+        "failed"
+      ],
+      "default": "pending"
+    },
+    "data_mode": {
+      "type": "string",
+      "enum": [
+        "demo",
+        "live"
+      ],
+      "default": "live",
+      "description": "live = real Nansen evidence; demo = fixture (no paid calls)."
+    },
+    "case_outcome": {
+      "type": "string",
+      "enum": [
+        "verdict",
+        "dismissed_no_evidence",
+        "mistrial_insufficient_evidence",
+        "demo"
+      ],
+      "description": "verdict = trade-level verdict issued; dismissed = no evidence found; mistrial = insufficient evidence; demo = fixture."
+    },
+    "verdict_code": {
+      "type": "string",
+      "description": "Machine code of the trade-level verdict. Null for dismissed/mistrial."
+    },
+    "verdict_name": {
+      "type": "string",
+      "description": "Display name of the verdict. Null for dismissed/mistrial."
+    },
+    "severity_score": {
+      "type": "number",
+      "description": "0-100. Higher = more egregious trade behavior. Null for dismissed/mistrial."
+    },
+    "confidence_score": {
+      "type": "number",
+      "description": "0-100. How confident the court is in the trade verdict. Null for dismissed/mistrial."
+    },
+    "headline": {
+      "type": "string"
+    },
+    "roast": {
+      "type": "string",
+      "description": "The courtroom roast of the trade. Null for dismissed/mistrial."
+    },
+    "defense_statement": {
+      "type": "string",
+      "description": "The imagined defense. Null for dismissed/mistrial."
+    },
+    "sentence": {
+      "type": "string"
+    },
+    "evidence_items_json": {
+      "type": "string",
+      "description": "JSON array of trade-level evidence exhibit objects."
+    },
+    "metrics_json": {
+      "type": "string",
+      "description": "JSON object of trade-level metrics (drawdown, trough, recovery, time underwater, unrealized PnL, conviction, etc.) with _meta."
+    },
+    "ohlcv_snapshot_json": {
+      "type": "string",
+      "description": "Immutable OHLCV candle series captured at verdict time. The authoritative evidence. Never overwritten by refreshes."
+    },
+    "refresh_snapshots_json": {
+      "type": "string",
+      "description": "JSON array of optional later refresh snapshots. Each entry: { refreshed_at, current_price_usd, current_value_usd, current_unrealized_pnl_pct, recovery_pct, current_market_cap_usd }. Never overwrites ohlcv_snapshot_json."
+    },
+    "source_endpoints_json": {
+      "type": "string",
+      "description": "JSON array of Nansen endpoint source strings."
+    },
+    "public_slug": {
+      "type": "string",
+      "description": "Unique slug for the permanent public case page at /trade/:slug."
+    },
+    "submitted_by_user_id": {
+      "type": "string",
+      "description": "Base44 user id of the signed-in account that submitted this trial. Set server-side from session. Null for anonymous."
+    },
+    "later_sells_json": {
+      "type": "string",
+      "description": "JSON array of sells of this token after the entry purchase. Empty array if still holding."
+    },
+    "later_buys_json": {
+      "type": "string",
+      "description": "JSON array of additional buys (averaging down) after the entry purchase. Empty array if none."
+    },
+    "current_price_usd": {
+      "type": "number",
+      "description": "Current token price at analysis time, from current-balance."
+    },
+    "current_value_usd": {
+      "type": "number",
+      "description": "Current USD value of the remaining position, from current-balance."
+    },
+    "current_token_amount": {
+      "type": "number",
+      "description": "Current token balance at analysis time, from current-balance."
+    },
+    "analyzed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "error_message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "wallet_address",
+    "network",
+    "token_mint",
+    "transaction_hash",
+    "trade_fingerprint",
+    "public_slug"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}
