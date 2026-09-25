@@ -105,7 +105,7 @@ describe("Single Trade — purchase normalization", () => {
   it("sanitizes purchase for public (no full wallet address)", () => {
     const purchases = normalizePurchases(MOCK_DEX_TRADES, JEANPHIL_MINT);
     const pub = sanitizePurchaseForPublic(purchases[0]);
-    expect(pub.transaction_hash).toBe("tx_abc_001");
+    expect(pub.transaction_hash).toBeUndefined();
     expect(pub.transaction_hash_short).toBeTruthy();
     expect(pub.purchase_cost_usd).toBeCloseTo(1044.42, 2);
     expect(pub.entry_market_cap_usd).toBe(9300000);
@@ -439,7 +439,7 @@ describe("Single Trade — public sanitization", () => {
     expect(pub.normalized_wallet_address).toBeUndefined();
     expect(pub.address_short).toBeTruthy();
     expect(pub.token_symbol).toBe("JEANPHIL");
-    expect(pub.transaction_hash).toBe("tx_abc_001");
+    expect(pub.transaction_hash).toBeUndefined();
     expect(pub.transaction_hash_short).toBeTruthy();
   });
 
