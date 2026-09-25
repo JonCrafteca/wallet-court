@@ -98,7 +98,6 @@ export function normalizePurchases(dexTradesJson: any, tokenMint: string): Purch
 export function sanitizePurchaseForPublic(p: PurchaseRecord): Record<string, any> {
   if (!p) return null;
   return {
-    transaction_hash: p.transaction_hash,
     transaction_hash_short: p.transaction_hash
       ? (p.transaction_hash.length > 12
         ? `${p.transaction_hash.slice(0, 6)}…${p.transaction_hash.slice(-4)}`
@@ -466,7 +465,6 @@ export function sanitizeSingleTrialForPublicCase(trial: any): Record<string, any
     address_short,
     token_symbol: trial.token_symbol,
     token_mint: trial.token_mint,
-    transaction_hash: trial.transaction_hash,
     transaction_hash_short: trial.transaction_hash
       ? (trial.transaction_hash.length > 12
         ? `${trial.transaction_hash.slice(0, 6)}…${trial.transaction_hash.slice(-4)}`

@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
+import { RefreshCw, Loader2 } from "lucide-react";
 
 export default function SingleTradeCase() {
   const { slug } = useParams();
@@ -65,7 +66,16 @@ export default function SingleTradeCase() {
 
   if (status === "loading") return <LoadingStage visible />;
   if (status === "done" && trial) {
-    return <VerdictReveal trial={trial} onReset={() => navigate("/")} />;
+    return (
+      <div className="relative">
+        <VerdictReveal trial={trial} onReset={() => navigate("/")} />
+        {trial.case_outcome === "verdict" && (
+          <div className="mx-auto max-w-3xl px-4 pb-12 -mt-4">
+            <RefreshButton slug={trial.public_slug} onRefreshed={(updated) => setTrial(updated)} />
+          </div>
+        )}
+      </div>
+    );
   }
   return (
     <div className="mx-auto max-w-xl px-4 pt-20 pb-24">
@@ -93,6 +103,42 @@ export default function SingleTradeCase() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function RefreshButton({ slug, onRefreshed }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleRefresh() {
+    setRefreshing(true); setError("");
+    try {
+      const res = await base44.functions.invoke("refreshSingleTrade", { slug });
+      if (res?.data?.error) {
+        setError(res.data.error);
+      } else if (res?.data?.trial) {
+        onRefreshed(res.data.trial);
+      }
+    } catch (e) {
+      setError(e?.message || "Refresh failed. Sign in to refresh a trade case.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <button
+        type="button"
+        onClick={handleRefresh}
+        disabled={refreshing}
+        className="inline-flex items-center gap-2 border-2 border-court-chart/70 text-court-chart font-display uppercase tracking-[0.08em] text-sm px-4 py-2.5 hover:bg-court-chart hover:text-court-navy transition-colors disabled:opacity-50"
+      >
+        {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+        Refresh Current Status
+      </button>
+      {error && <p className="font-mono text-xs text-court-red text-center">{error}</p>}
     </div>
   );
 }

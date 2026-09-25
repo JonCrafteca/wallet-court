@@ -339,6 +339,60 @@ export function buildTelemetryContext(base44, opts) {
   return { telemetryCtx, budgetGuard, correlationId, getPhysicalCallCount: () => physicalCallCount };
 }
 
+// Build a telemetry context for Single Trade Trial that uses the SEPARATE
+// Single Trade usage policy budget guard instead of the legacy 1,020
+// calibration ceiling. Physical calls still write NansenApiCallAudit records
+// (the audit is shared), but the budget is governed by the Single Trade
+// daily limit, NOT by checkCeilingBudget or getVerifiedTotal.
+//
+// The budget guard calls reservePhysicalCall BEFORE each physical request.
+// If the daily limit is reached or emergency stop is active, the request is
+// blocked. The counter is incremented atomically via CAS — if the CAS fails
+// (concurrent reservation), the request is blocked (conservative).
+export function buildSingleTradeTelemetryContext(base44, opts) {
+  const { workflow, network, caseSlug } = opts || {};
+  const correlationId = newCorrelationId();
+  let physicalCallCount = 0;
+
+  const budgetGuard = base44
+    ? async () => {
+        try {
+          const { reservePhysicalCall } = await import("./singleTradeUsageStore.ts");
+          const reservation = await reservePhysicalCall(base44);
+          if (!reservation.allowed) {
+            return { allowed: false, verifiedTotal: 0, reason: reservation.reason };
+          }
+        } catch (e) {
+          // If the usage store fails, be conservative and block the request.
+          return { allowed: false, verifiedTotal: 0, reason: "Usage policy check failed." };
+        }
+        return { allowed: true, verifiedTotal: 0, reason: "" };
+      }
+    : undefined;
+
+  const telemetryCtx = {
+    workflow: workflow || "single_trade_analysis",
+    network,
+    caseSlug: caseSlug || null,
+    correlationId,
+    environment: detectEnvironment(),
+    persistAudit: base44
+      ? (rec) => {
+          physicalCallCount++;
+          const persistPromise = (async () => {
+            const outcome = await persistWithRetry(rec, (r) => persistAuditRecord(base44, r));
+            if (!outcome.succeeded) {
+              console.error("[nansen-telemetry] single-trade audit persist failed:", outcome.finalError);
+            }
+          })();
+          waitUntil(persistPromise);
+        }
+      : undefined
+  };
+
+  return { telemetryCtx, budgetGuard, correlationId, getPhysicalCallCount: () => physicalCallCount };
+}
+
 // Orchestrates the four-endpoint pipeline for one wallet. Returns normalized
 // evidence + an honest outcome (live | partial | demo) + a sanitized error
 // category. Logs one sanitized NansenApiUsage record per call (via waitUntil).

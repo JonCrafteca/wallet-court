@@ -1,0 +1,109 @@
+{
+  "name": "SingleTradePurchaseSelection",
+  "type": "object",
+  "properties": {
+    "selection_id": {
+      "type": "string",
+      "description": "Opaque selection token (format: sel_<random>). The ONLY value the browser receives to identify a purchase. Never reveals the transaction hash, wallet, or mint. Consumed atomically via CAS during analysis."
+    },
+    "normalized_wallet_address": {
+      "type": "string",
+      "description": "Lowercased (EVM) or canonical (Solana) wallet address that discovered this purchase. NEVER exposed to the browser. Used to verify the analyzing caller matches the discovering caller."
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "solana"
+      ],
+      "description": "Chain the purchase was discovered on."
+    },
+    "token_mint": {
+      "type": "string",
+      "description": "Token contract/mint address. Used to verify the analyzing caller matches the discovering caller. NEVER exposed to the browser."
+    },
+    "transaction_hash": {
+      "type": "string",
+      "description": "Full on-chain transaction hash of the purchase. NEVER exposed to the browser \u2014 only the selection_id is. Resolved server-side during analysis to build the trade fingerprint."
+    },
+    "purchase_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "block_timestamp of the purchase, from the dex-trades response."
+    },
+    "purchase_cost_usd": {
+      "type": "number",
+      "description": "USD cost of the purchase (trade_value_usd)."
+    },
+    "tokens_received": {
+      "type": "number",
+      "description": "Quantity of tokens acquired (token_bought_amount)."
+    },
+    "entry_market_cap_usd": {
+      "type": "number",
+      "description": "Market cap at the time of purchase (token_bought_market_cap)."
+    },
+    "entry_price_usd": {
+      "type": "number",
+      "description": "Implied execution price: purchase_cost_usd / tokens_received."
+    },
+    "token_symbol": {
+      "type": "string",
+      "description": "Display symbol of the purchased token."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the selection expires. Default 15 minutes after creation. Expired selections are rejected during analysis."
+    },
+    "consumed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the selection was atomically consumed by an analysis invocation. Null while unconsumed. Consumed via CAS (version guard + consumed_at: null filter) so two concurrent analyses cannot both consume the same selection."
+    },
+    "consumed_by_trial_id": {
+      "type": "string",
+      "description": "ID of the SingleTradeTrial that consumed this selection. Null until consumed."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version for atomic consumption. Incremented on every state transition."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "selection_id",
+    "normalized_wallet_address",
+    "network",
+    "token_mint",
+    "transaction_hash",
+    "expires_at",
+    "version",
+    "created_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

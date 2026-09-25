@@ -3,15 +3,18 @@
 // Used by the frontend IntakeStage to hide Robinhood from the network selector
 // when robinhood_public_enabled is false.
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.44";
-import { isRobinhoodPublicEnabled } from "../../shared/featureFlags.ts";
+import { isRobinhoodPublicEnabled, isSingleTradePublicEnabled } from "../../shared/featureFlags.ts";
 
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
-    const robinhood_public_enabled = await isRobinhoodPublicEnabled(base44);
-    return Response.json({ robinhood_public_enabled });
+    const [robinhood_public_enabled, single_trade_public_enabled] = await Promise.all([
+      isRobinhoodPublicEnabled(base44),
+      isSingleTradePublicEnabled(base44)
+    ]);
+    return Response.json({ robinhood_public_enabled, single_trade_public_enabled });
   } catch {
-    // On any error, return the safe default (false).
-    return Response.json({ robinhood_public_enabled: false });
+    // On any error, return the safe defaults (false).
+    return Response.json({ robinhood_public_enabled: false, single_trade_public_enabled: false });
   }
 }

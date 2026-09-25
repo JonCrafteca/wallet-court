@@ -1,0 +1,96 @@
+{
+  "name": "SingleTradeUsagePolicy",
+  "type": "object",
+  "properties": {
+    "control_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every save, budget reservation, and creation-lock transition."
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Master switch for Single Trade Trial. When false, no Single Trade Nansen calls are permitted (public or admin). Must be explicitly enabled by an admin."
+    },
+    "daily_physical_call_limit": {
+      "type": "number",
+      "default": 100,
+      "description": "Maximum physical Nansen calls per UTC day across all Single Trade workflows (discovery + analysis + refresh). Independent of the legacy 1,020 calibration ceiling."
+    },
+    "physical_calls_used_today": {
+      "type": "number",
+      "default": 0,
+      "description": "Physical Nansen calls consumed today (UTC date). Reset to 0 when usage_date changes. Incremented atomically via CAS before each physical request."
+    },
+    "usage_date": {
+      "type": "string",
+      "description": "UTC date string (YYYY-MM-DD) for the current usage period. When this differs from today's UTC date, the counter is reset."
+    },
+    "discoveries_per_wallet_per_hour": {
+      "type": "number",
+      "default": 3,
+      "description": "Maximum discovery calls per wallet per rolling hour. Prevents a single wallet from burning the daily budget on discovery alone."
+    },
+    "analyses_per_wallet_per_day": {
+      "type": "number",
+      "default": 5,
+      "description": "Maximum trade analyses per wallet per UTC day. Prevents a single wallet from monopolizing analysis capacity."
+    },
+    "emergency_stop": {
+      "type": "boolean",
+      "default": false,
+      "description": "Emergency kill switch. When true, all Single Trade Nansen calls are immediately blocked, regardless of enabled state or daily budget. Use to halt all Single Trade activity in an incident."
+    },
+    "creation_lock_id": {
+      "type": "string",
+      "description": "Mutex lock token held by the invocation currently performing trial creation. Null when no creation is in progress. Acquired atomically via CAS (version guard) so two concurrent creations cannot both proceed. A stale lock (held longer than CREATION_LOCK_STALE_TIMEOUT_MS) can be reclaimed."
+    },
+    "creation_lock_acquired_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the creation lock was acquired. Used for stale-lock recovery. Null when no lock is held."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "control_key",
+    "version",
+    "enabled",
+    "daily_physical_call_limit",
+    "physical_calls_used_today",
+    "usage_date",
+    "discoveries_per_wallet_per_hour",
+    "analyses_per_wallet_per_day",
+    "emergency_stop",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

@@ -9,13 +9,13 @@ let cached = null;
 export async function getPublicFeatureFlags() {
   try {
     const res = await base44.functions.invoke("getPublicFeatureFlags", {});
-    cached = res?.data || { robinhood_public_enabled: false };
+    cached = res?.data || { robinhood_public_enabled: false, single_trade_public_enabled: false };
     return cached;
   } catch {
-    return { robinhood_public_enabled: false };
+    return { robinhood_public_enabled: false, single_trade_public_enabled: false };
   }
 }
 
 export function getCachedFeatureFlags() {
-  return cached || { robinhood_public_enabled: false };
+  return cached || { robinhood_public_enabled: false, single_trade_public_enabled: false };
 }

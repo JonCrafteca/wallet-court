@@ -58,3 +58,23 @@ export async function setRobinhoodPublicEnabled(base44, enabled: boolean): Promi
     updated_at: new Date().toISOString()
   });
 }
+
+// Check if Single Trade Trial is publicly enabled. Returns false when the
+// flag record doesn't exist yet (safe default). When false, public users
+// cannot discover or analyze; authenticated admins may still test.
+export async function isSingleTradePublicEnabled(base44): Promise<boolean> {
+  const flag = await getFeatureFlag(base44);
+  return !!(flag && flag.single_trade_public_enabled === true);
+}
+
+// Set the single_trade_public_enabled flag. Admin-only (caller must verify
+// auth). Uses CAS on the canonical record.
+export async function setSingleTradePublicEnabled(base44, enabled: boolean): Promise<any> {
+  const existing = await ensureFeatureFlag(base44);
+  const newVersion = (existing?.version || 0) + 1;
+  return base44.asServiceRole.entities.FeatureFlag.update(existing.id, {
+    single_trade_public_enabled: enabled,
+    version: newVersion,
+    updated_at: new Date().toISOString()
+  });
+}

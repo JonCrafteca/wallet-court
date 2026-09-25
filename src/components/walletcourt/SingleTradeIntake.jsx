@@ -15,7 +15,7 @@ export default function SingleTradeIntake({ onReset }) {
   const [error, setError] = useState("");
   const [phase, setPhase] = useState("intake"); // intake | discovering | select | analyzing | done | recess
   const [purchases, setPurchases] = useState([]);
-  const [selectedTx, setSelectedTx] = useState(null);
+  const [selectedSelection, setSelectedSelection] = useState(null);
   const [trial, setTrial] = useState(null);
   const [recess, setRecess] = useState(null);
 
@@ -44,6 +44,7 @@ export default function SingleTradeIntake({ onReset }) {
         return;
       }
       setPurchases(res.data.purchases);
+      setSelectedSelection(null);
       setPhase("select");
     } catch (e) {
       setError(e?.message || "Discovery failed. Try again.");
@@ -53,7 +54,7 @@ export default function SingleTradeIntake({ onReset }) {
 
   async function handleAnalyze() {
     setError("");
-    if (!selectedTx) { setError("Select a purchase to put on trial."); return; }
+    if (!selectedSelection) { setError("Select a purchase to put on trial."); return; }
     setPhase("analyzing");
     try {
       const [res] = await Promise.all([
@@ -61,7 +62,7 @@ export default function SingleTradeIntake({ onReset }) {
           wallet_address: address.trim(),
           network,
           token_mint: tokenMint.trim(),
-          transaction_hash: selectedTx,
+          selection_token: selectedSelection,
         }),
         new Promise((r) => setTimeout(r, 2800)),
       ]);
@@ -80,7 +81,7 @@ export default function SingleTradeIntake({ onReset }) {
     setTrial(null);
     setRecess(null);
     setPurchases([]);
-    setSelectedTx(null);
+    setSelectedSelection(null);
     setError("");
     if (onReset) onReset();
   }
@@ -227,15 +228,15 @@ export default function SingleTradeIntake({ onReset }) {
                 key={p.transaction_hash}
                 className={cn(
                   "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors",
-                  selectedTx === p.transaction_hash ? "bg-court-chart/10" : "hover:bg-court-uv/30"
+                  selectedSelection === p.selection_id ? "bg-court-chart/10" : "hover:bg-court-uv/30"
                 )}
               >
                 <input
                   type="radio"
                   name="purchase"
-                  value={p.transaction_hash}
-                  checked={selectedTx === p.transaction_hash}
-                  onChange={(e) => setSelectedTx(e.target.value)}
+                  value={p.selection_id}
+                  checked={selectedSelection === p.selection_id}
+                  onChange={(e) => setSelectedSelection(e.target.value)}
                   className="h-5 w-5 accent-court-chart shrink-0"
                 />
                 <div className="flex-1 min-w-0">
@@ -272,7 +273,7 @@ export default function SingleTradeIntake({ onReset }) {
             <button
               type="button"
               onClick={handleAnalyze}
-              disabled={!selectedTx || phase === "analyzing"}
+              disabled={!selectedSelection || phase === "analyzing"}
               className="inline-flex items-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-base px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all disabled:opacity-50"
             >
               {phase === "analyzing" ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gavel className="h-5 w-5" />}
@@ -280,7 +281,7 @@ export default function SingleTradeIntake({ onReset }) {
             </button>
             <button
               type="button"
-              onClick={() => { setPhase("intake"); setPurchases([]); setSelectedTx(null); setError(""); }}
+              onClick={() => { setPhase("intake"); setPurchases([]); setSelectedSelection(null); setError(""); }}
               className="inline-flex items-center gap-2 border-2 border-court-ice text-court-ice font-display uppercase tracking-[0.1em] text-sm px-4 py-3 hover:bg-court-uv transition-colors"
             >
               <ArrowLeft className="h-4 w-4" /> Back

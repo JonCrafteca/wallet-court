@@ -10,7 +10,7 @@ import { validateWalletForChain } from "@/lib/walletValidation";
 import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
 import { getPublicFeatureFlags } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
-import { Wallet, Coins } from "lucide-react";
+import { Wallet, Coins, Clock } from "lucide-react";
 
 export default function Home() {
   const [trialMode, setTrialMode] = useState("wallet"); // wallet | single_trade
@@ -23,6 +23,8 @@ export default function Home() {
   const [subjectType, setSubjectType] = useState("anonymous");
   const [proposedHandle, setProposedHandle] = useState("");
   const [networks, setNetworks] = useState(ALL_NETWORKS);
+  const [singleTradeEnabled, setSingleTradeEnabled] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     captureReferral();
@@ -32,7 +34,10 @@ export default function Home() {
       if (!flags?.robinhood_public_enabled) {
         setNetworks(ALL_NETWORKS.filter((n) => n.id !== "robinhood"));
       }
+      setSingleTradeEnabled(!!flags?.single_trade_public_enabled);
     });
+    // Check admin status for Single Trade admin testing.
+    base44.auth.me().then((u) => { if (u?.role === "admin") setIsAdmin(true); }).catch(() => {});
   }, []);
 
   async function runAnalysis(addr, net) {
@@ -127,12 +132,17 @@ export default function Home() {
     );
   }
 
-  // Single Trade Trial mode — self-contained component handles its own flow.
+  // Single Trade Trial mode — show "Coming Soon" when the flag is false and
+  // the user is not an admin. Admins can test while the flag is false.
   if (trialMode === "single_trade") {
     return (
       <div className="relative">
         <ModeToggle trialMode={trialMode} setTrialMode={setTrialMode} />
-        <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
+        {singleTradeEnabled || isAdmin ? (
+          <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
+        ) : (
+          <SingleTradeComingSoon />
+        )}
       </div>
     );
   }
@@ -155,6 +165,29 @@ export default function Home() {
       />
       <LoadingStage visible={status === "loading"} />
     </div>
+  );
+}
+
+function SingleTradeComingSoon() {
+  return (
+    <section className="mx-auto max-w-3xl px-4 pt-10 sm:pt-16 pb-24">
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center gap-2 border-2 border-court-chart bg-court-navy px-3 py-1 mb-4">
+          <Coins className="h-4 w-4 text-court-chart" />
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-court-chart">Single Trade Trial · Solana</span>
+        </div>
+        <h1 className="font-display uppercase leading-[0.84] text-court-ice" style={{ fontSize: "clamp(2rem, 5vw, 3.5rem)" }}>
+          Coming Soon
+        </h1>
+        <p className="mt-4 font-mono text-base text-court-ice max-w-xl mx-auto leading-relaxed">
+          Single Trade Trial is almost ready. You'll soon be able to put one specific token purchase on trial — entry, drawdown, conviction, and all.
+        </p>
+        <div className="mt-6 inline-flex items-center gap-2 border-2 border-court-mute/40 bg-court-navy/60 px-4 py-2">
+          <Clock className="h-4 w-4 text-court-chart animate-blink" />
+          <span className="font-mono text-sm text-court-mute">Stay tuned — launch imminent.</span>
+        </div>
+      </div>
+    </section>
   );
 }
 

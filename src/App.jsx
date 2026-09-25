@@ -23,6 +23,7 @@ import AdminCalibrationDocket from '@/pages/AdminCalibrationDocket';
 import AdminAttribution from '@/pages/AdminAttribution';
 import AdminRobinhoodValidation from '@/pages/AdminRobinhoodValidation';
 import AdminOwnerNotifications from '@/pages/AdminOwnerNotifications';
+import AdminSingleTradeUsage from '@/pages/AdminSingleTradeUsage';
 import Account from '@/pages/Account';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
@@ -56,6 +57,7 @@ function App() {
                 <Route path="/admin/robinhood-validation" element={<AdminRobinhoodValidation />} />
                 <Route path="/admin/attribution" element={<AdminAttribution />} />
                 <Route path="/admin/owner-notifications" element={<AdminOwnerNotifications />} />
+                <Route path="/admin/single-trade-usage" element={<AdminSingleTradeUsage />} />
               </Route>
             </Route>
             <Route path="/login" element={<Login />} />

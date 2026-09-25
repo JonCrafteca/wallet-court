@@ -35,11 +35,11 @@
     },
     "transaction_hash": {
       "type": "string",
-      "description": "Immutable identity of the selected purchase. The trial is permanently pinned to this on-chain transaction."
+      "description": "Immutable identity of the selected purchase. The trial is permanently pinned to this on-chain transaction. NEVER exposed publicly \u2014 only transaction_hash_short is returned."
     },
     "trade_fingerprint": {
       "type": "string",
-      "description": "SHA-256 of network + ':' + normalized_wallet_address + ':' + transaction_hash. Idempotency key \u2014 prevents duplicate trials and duplicate paid Nansen calls."
+      "description": "SHA-256 of network + ':' + normalized_wallet_address + ':' + transaction_hash. Used as the dedup key for CAS-based trial creation. Not a concurrency guarantee by itself \u2014 the creation mutex lock on the usage policy singleton provides the atomicity."
     },
     "purchase_timestamp": {
       "type": "string",
@@ -127,7 +127,7 @@
     },
     "metrics_json": {
       "type": "string",
-      "description": "JSON object of trade-level metrics (drawdown, trough, recovery, time underwater, unrealized PnL, conviction, etc.) with _meta."
+      "description": "JSON object of trade-level metrics (drawdown, trough, recovery, time underwater, unrealized PnL, conviction, FIFO lot attribution, etc.) with _meta."
     },
     "ohlcv_snapshot_json": {
       "type": "string",
@@ -172,6 +172,37 @@
     "analyzed_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "analysis_started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the analysis began (trial created with status=analyzing). Used for stale-analysis recovery. Null after completion."
+    },
+    "analysis_lock_id": {
+      "type": "string",
+      "description": "Lock token held by the invocation currently analyzing this trial. Null after completion. Used to identify which invocation owns the analysis."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version for refresh-snapshot appends. Incremented on each refresh to prevent duplicate concurrent appends."
+    },
+    "lot_accounting_method": {
+      "type": "string",
+      "enum": [
+        "fifo"
+      ],
+      "default": "fifo",
+      "description": "Lot accounting method used to attribute sells to buy lots. Always 'fifo' (First-In-First-Out)."
+    },
+    "selected_lot_remaining_quantity": {
+      "type": "number",
+      "description": "Tokens from the entry purchase still held (after FIFO sell attribution). Equal to tokens_received when no sells."
+    },
+    "lot_attribution_complex": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when later buys AND sells make FIFO attribution an accounting convention rather than an on-chain fact."
     },
     "error_code": {
       "type": "string"
