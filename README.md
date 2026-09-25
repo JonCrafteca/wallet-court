@@ -1,4 +1,22 @@
-# Base44 Project
+# Wallet Court
+
+[Try Wallet Court](https://court.shoutit.world/) — a ShoutIt Original powered by Nansen data. Enter a public wallet address to put its onchain history on trial. Nansen evidence drives a verdict and a shareable Court Receipt.
+
+## Meridian Buildathon demo
+
+Choose Ethereum, Base, or Solana on the homepage and submit a public wallet address with recent onchain activity. A live analysis fetches Nansen Profiler PnL summary and DEX trades, plus current balances and transaction history when available. Wallet Court turns those results into evidence, metrics, and a verdict. A successful case can be opened at its public `/case/{slug}` link and shared as a Court Receipt. Public Robinhood access is controlled by a feature flag; the demo should use one of the other supported networks unless that flag is enabled.
+
+The backend flow is `src/pages/Home.jsx` → `base44/functions/analyzeWalletWithNansen/entry.ts` → `base44/shared/nansen.ts` → evidence sufficiency and verdict selection in `base44/shared/`. The Nansen API key is read only by server code from the Base44 secret `NANSEN_API_KEY`; it is not included in this repository or exposed to browsers.
+
+The verdict uses Nansen data rather than a fixed script: realized PnL, trading activity and other available evidence influence the selected verdict, its severity, confidence, and supporting facts. If there is not enough evidence, the app can return a dismissal or mistrial; provider errors trigger a Court Recess without inventing a live verdict. The deterministic demo wallet path is marked `data_mode=demo` and makes no Nansen calls. For Meridian judging, record a **live** wallet analysis and a public case, not a demo case.
+
+To follow the build locally, use the Base44 setup below, link the app, and configure `NANSEN_API_KEY` in the backend secret store for live calls. Run `npm run test` and `npm run build` to verify the frontend and backend logic. The hosted demo works at the URL above.
+
+## Submission status
+
+Nansen requires a public GitHub repository, a 30–60 second X recording showing a working live Nansen flow with `@nansen_ai` and the GitHub link, and the [Meridian entry form](https://nansen-ai.typeform.com/meridian-submit) with email, X URL and GitHub URL. The public GitHub URL and the X post URL must be supplied when available; the Base44 internal sandbox remote is not a public repository.
+
+## Base44 Project
 
 Use this repository to run and edit the app locally, then publish changes back through Base44.
 
