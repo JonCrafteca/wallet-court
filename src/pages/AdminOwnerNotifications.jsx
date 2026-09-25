@@ -323,6 +323,7 @@ export default function AdminOwnerNotifications() {
               <thead className="bg-court-uv/60 text-court-ice/80 uppercase tracking-[0.1em]">
                 <tr>
                   <th className="text-left p-2 font-medium">Type</th>
+                  <th className="text-left p-2 font-medium">Case</th>
                   <th className="text-left p-2 font-medium">Status</th>
                   <th className="text-left p-2 font-medium">Attempts</th>
                   <th className="text-left p-2 font-medium">Error</th>
@@ -334,6 +335,13 @@ export default function AdminOwnerNotifications() {
                 {recent.map((e) => (
                   <tr key={e.event_id} className="border-t border-court-mute/20 text-court-ice/90">
                     <td className="p-2 uppercase">{e.event_type}</td>
+                    <td className="p-2">
+                      {e.public_slug ? (
+                        <Link to={`/case/${e.public_slug}`} className="text-court-chart hover:brightness-110 underline underline-offset-2 break-all">{e.public_slug}</Link>
+                      ) : (
+                        <span className="text-court-mute/60">—</span>
+                      )}
+                    </td>
                     <td className={cn("p-2 uppercase", e.status === "sent" ? "text-court-chart" : e.status === "dead_letter" ? "text-court-red" : "text-court-ice/90")}>{e.status}</td>
                     <td className="p-2">{e.attempt_count}/{e.max_attempts}</td>
                     <td className="p-2 text-court-mute truncate max-w-[10rem]">{e.last_error || "—"}</td>

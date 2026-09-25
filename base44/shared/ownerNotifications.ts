@@ -39,7 +39,7 @@ export const ENQUEUE_LOCK_RETRY_DELAY_MS = 150;
 // Maximum enqueue-lock acquisition attempts before giving up.
 export const ENQUEUE_LOCK_MAX_ATTEMPTS = 3;
 
-export const APP_URL = "https://wallet-court-roast.base44.app";
+export const APP_URL = "https://court.shoutit.world";
 
 // ---- Key + ID generation ----
 
@@ -284,7 +284,7 @@ export function buildEmail(eventType: string, meta: Record<string, any>): EmailC
 // fields are returned. The metadata is already sanitized at enqueue time.
 export function sanitizeEventForAdmin(record: any): Record<string, any> {
   if (!record) return null;
-  return {
+  const base: Record<string, any> = {
     event_id: record.event_id || "",
     event_type: record.event_type || "",
     event_key: record.event_key || "",
@@ -301,4 +301,18 @@ export function sanitizeEventForAdmin(record: any): Record<string, any> {
     created_at: record.created_at || record.created_date || null,
     updated_at: record.updated_at || record.updated_date || null,
   };
+  // Surface a clickable case/wallet link so the admin can open the exact
+  // record from the notification row. public_slug / claim_slug live in the
+  // sanitized metadata_json.
+  let meta: Record<string, any> = {};
+  try { meta = JSON.parse(record.metadata_json || "{}"); } catch { meta = {}; }
+  if (meta.public_slug) {
+    base.public_slug = meta.public_slug;
+    base.case_url = `${APP_URL}/case/${meta.public_slug}`;
+  }
+  if (meta.claim_slug) {
+    base.claim_slug = meta.claim_slug;
+    base.wallet_url = `${APP_URL}/wallet/${meta.claim_slug}`;
+  }
+  return base;
 }
