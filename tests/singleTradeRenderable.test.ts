@@ -260,6 +260,19 @@ describe("Frontend isSingleTradeRenderable (sanitized public response)", () => {
   });
 });
 
+// ---- findBySlug regression (pre-existing shorthand bug) ----
+
+describe("singleTradeStore.findBySlug", () => {
+  it("uses public_slug: publicSlug (not the broken shorthand { public_slug })", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync("base44/shared/singleTradeStore.ts", "utf-8");
+    // The shorthand { public_slug } would reference an undefined variable
+    // (the param is publicSlug). Must be { public_slug: publicSlug }.
+    expect(src).toContain("{ public_slug: publicSlug }");
+    expect(src).not.toMatch(/\{\s*public_slug\s*\}/);
+  });
+});
+
 // ---- getSingleTradeBySlug entry-point structural checks ----
 
 describe("getSingleTradeBySlug renderability gate wiring", () => {

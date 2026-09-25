@@ -30,7 +30,7 @@ export async function findByFingerprint(base44, tradeFingerprint: string): Promi
 // Find an existing trial by its public slug. Returns null if none.
 export async function findBySlug(base44, publicSlug: string): Promise<any | null> {
   const records = await base44.asServiceRole.entities[ENTITY].filter(
-    { public_slug }, "-created_date", 1
+    { public_slug: publicSlug }, "-created_date", 1
   );
   return (records && records[0]) || null;
 }
