@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-// Wallet Court — Home page Single Trade admin-preview access regression suite.
-// Proves the rendering condition `publicEnabled || authenticatedUserIsAdmin`
-// using the server-backed AuthContext user (never URL params or client values).
-// No Nansen calls are made in any scenario.
+// Wallet Court — Home page Single Trade access regression suite.
+// Proves the rendering condition uses getSingleTradeAccess (server-side
+// canonical admin check) as the authoritative access decision — never
+// client user fields, URL params, or UI state. No Nansen calls are made.
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -12,10 +12,11 @@ import { MemoryRouter } from "react-router-dom";
 
 // --- Mocks -------------------------------------------------------------
 
-const mockUseAuth = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/AuthContext", () => ({
-  useAuth: mockUseAuth,
-  AuthProvider: ({ children }) => children,
+// Mock the access helper — this is the single source of truth for the Home
+// page's Single Trade access decision. Each test controls the return value.
+const mockGetSingleTradeAccess = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/singleTradeAccess", () => ({
+  getSingleTradeAccess: mockGetSingleTradeAccess,
 }));
 
 const mockGetPublicFeatureFlags = vi.hoisted(() => vi.fn());
@@ -23,13 +24,9 @@ vi.mock("@/lib/featureFlags", () => ({
   getPublicFeatureFlags: mockGetPublicFeatureFlags,
 }));
 
-const mockBase44AuthMe = vi.hoisted(() => vi.fn());
 const mockBase44FunctionsInvoke = vi.hoisted(() => vi.fn());
 vi.mock("@/api/base44Client", () => ({
-  base44: {
-    auth: { me: mockBase44AuthMe },
-    functions: { invoke: mockBase44FunctionsInvoke },
-  },
+  base44: { functions: { invoke: mockBase44FunctionsInvoke } },
 }));
 
 vi.mock("@/lib/attribution", () => ({
@@ -63,6 +60,23 @@ import Home from "@/pages/Home";
 
 // --- Helpers ------------------------------------------------------------
 
+const ADMIN_ACCESS = {
+  public_enabled: false, is_admin: true, can_access: true,
+  admin_preview: true, usage_enabled: true, emergency_stop: false,
+};
+const PUBLIC_ACCESS = {
+  public_enabled: true, is_admin: false, can_access: true,
+  admin_preview: false, usage_enabled: true, emergency_stop: false,
+};
+const ANON_ACCESS = {
+  public_enabled: false, is_admin: false, can_access: false,
+  admin_preview: false, usage_enabled: true, emergency_stop: false,
+};
+const FAIL_CLOSED = {
+  public_enabled: false, is_admin: false, can_access: false,
+  admin_preview: false, usage_enabled: false, emergency_stop: false,
+};
+
 function renderHome(initialEntry = "/") {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -77,19 +91,18 @@ function switchToSingleTrade() {
 
 // --- Tests ---------------------------------------------------------------
 
-describe("Home — Single Trade admin preview access", () => {
+describe("Home — Single Trade access via getSingleTradeAccess", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetPublicFeatureFlags.mockResolvedValue({
       single_trade_public_enabled: false,
       robinhood_public_enabled: false,
     });
-    mockBase44AuthMe.mockResolvedValue(null);
   });
 
   // 1. anonymous + public disabled → Coming Soon
   it("anonymous + public disabled → Coming Soon", async () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoadingAuth: false });
+    mockGetSingleTradeAccess.mockResolvedValue(ANON_ACCESS);
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
@@ -100,7 +113,7 @@ describe("Home — Single Trade admin preview access", () => {
 
   // 2. ordinary user + public disabled → Coming Soon
   it("ordinary user + public disabled → Coming Soon", async () => {
-    mockUseAuth.mockReturnValue({ user: { role: "user" }, isLoadingAuth: false });
+    mockGetSingleTradeAccess.mockResolvedValue(ANON_ACCESS);
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
@@ -109,9 +122,9 @@ describe("Home — Single Trade admin preview access", () => {
     expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
   });
 
-  // 3. admin + public disabled → SingleTradeIntake with ADMIN PREVIEW label
-  it("admin + public disabled → SingleTradeIntake with ADMIN PREVIEW label", async () => {
-    mockUseAuth.mockReturnValue({ user: { role: "admin" }, isLoadingAuth: false });
+  // 3. server-recognized admin + public disabled → SingleTradeIntake + ADMIN PREVIEW
+  it("server-recognized admin + public disabled → SingleTradeIntake with ADMIN PREVIEW label", async () => {
+    mockGetSingleTradeAccess.mockResolvedValue(ADMIN_ACCESS);
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
@@ -121,13 +134,9 @@ describe("Home — Single Trade admin preview access", () => {
     expect(screen.getByText(/Public Disabled/i)).toBeInTheDocument();
   });
 
-  // 4. public enabled → SingleTradeIntake (no admin preview label)
+  // 4. public enabled → SingleTradeIntake (no admin label)
   it("public enabled → SingleTradeIntake for anonymous (no admin label)", async () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoadingAuth: false });
-    mockGetPublicFeatureFlags.mockResolvedValue({
-      single_trade_public_enabled: true,
-      robinhood_public_enabled: false,
-    });
+    mockGetSingleTradeAccess.mockResolvedValue(PUBLIC_ACCESS);
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
@@ -136,12 +145,10 @@ describe("Home — Single Trade admin preview access", () => {
     expect(screen.queryByText(/Admin Preview/i)).not.toBeInTheDocument();
   });
 
-  // 4b. admin + public enabled → SingleTradeIntake (no admin preview label)
+  // 4b. admin + public enabled → SingleTradeIntake (no admin label)
   it("admin + public enabled → SingleTradeIntake (no admin label)", async () => {
-    mockUseAuth.mockReturnValue({ user: { role: "admin" }, isLoadingAuth: false });
-    mockGetPublicFeatureFlags.mockResolvedValue({
-      single_trade_public_enabled: true,
-      robinhood_public_enabled: false,
+    mockGetSingleTradeAccess.mockResolvedValue({
+      ...ADMIN_ACCESS, public_enabled: true, admin_preview: false,
     });
     renderHome();
     switchToSingleTrade();
@@ -151,10 +158,9 @@ describe("Home — Single Trade admin preview access", () => {
     expect(screen.queryByText(/Admin Preview/i)).not.toBeInTheDocument();
   });
 
-  // 5. loading defaults safely to Coming Soon
-  it("loading defaults safely to Coming Soon (auth still loading)", async () => {
-    // Even if user would be admin, isLoadingAuth=true → Coming Soon
-    mockUseAuth.mockReturnValue({ user: { role: "admin" }, isLoadingAuth: true });
+  // 5. backend/auth failure fails closed → Coming Soon
+  it("backend failure (rejected promise) fails closed to Coming Soon", async () => {
+    mockGetSingleTradeAccess.mockRejectedValue(new Error("network"));
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
@@ -163,64 +169,54 @@ describe("Home — Single Trade admin preview access", () => {
     expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
   });
 
-  it("loading defaults safely to Coming Soon (flags still loading)", async () => {
-    mockUseAuth.mockReturnValue({ user: { role: "admin" }, isLoadingAuth: false });
-    // Deferred promise — flags haven't resolved yet
-    let resolveFlags;
-    mockGetPublicFeatureFlags.mockReturnValue(
-      new Promise((r) => { resolveFlags = r; })
-    );
+  it("backend failure (all-false response) fails closed to Coming Soon", async () => {
+    mockGetSingleTradeAccess.mockResolvedValue(FAIL_CLOSED);
     renderHome();
     switchToSingleTrade();
-    // flagsLoaded=false → Coming Soon
+    await waitFor(() => {
+      expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
+  });
+
+  it("loading (access not yet resolved) fails closed to Coming Soon", async () => {
+    // Never-resolving promise simulates loading state.
+    mockGetSingleTradeAccess.mockReturnValue(new Promise(() => {}));
+    renderHome();
+    switchToSingleTrade();
     expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
     expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
-    // Resolve flags → admin access kicks in
-    resolveFlags({ single_trade_public_enabled: false, robinhood_public_enabled: false });
-    await waitFor(() => {
-      expect(screen.getByTestId("single-trade-intake")).toBeInTheDocument();
-    });
   });
 
-  it("auth failure defaults safely to Coming Soon", async () => {
-    // Auth failed → user is null, isLoadingAuth is false
-    mockUseAuth.mockReturnValue({ user: null, isLoadingAuth: false });
+  // 6. usage disabled → blocked state (no intake, no calls)
+  it("admin + usage disabled → blocked state, no SingleTradeIntake", async () => {
+    mockGetSingleTradeAccess.mockResolvedValue({
+      ...ADMIN_ACCESS, usage_enabled: false,
+    });
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
-      expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
+      expect(screen.getByText(/Trial Paused/i)).toBeInTheDocument();
     });
     expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
   });
 
-  // 6. admin status comes from authenticated server-backed user data
-  it("admin status comes from useAuth (server-backed), not base44.auth.me()", async () => {
-    mockUseAuth.mockReturnValue({ user: { role: "admin" }, isLoadingAuth: false });
+  // 7. emergency stop → blocked state (no intake, no calls)
+  it("admin + emergency stop → blocked state, no SingleTradeIntake", async () => {
+    mockGetSingleTradeAccess.mockResolvedValue({
+      ...ADMIN_ACCESS, emergency_stop: true,
+    });
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
-      expect(screen.getByTestId("single-trade-intake")).toBeInTheDocument();
-    });
-    // Home must NOT call base44.auth.me() directly — it uses useAuth()
-    expect(mockBase44AuthMe).not.toHaveBeenCalled();
-    // useAuth must have been called (proving it's the source)
-    expect(mockUseAuth).toHaveBeenCalled();
-  });
-
-  it("admin status is not inferred from URL params or client-controlled values", async () => {
-    // Even with ?admin=1&role=admin query params, a non-admin user gets Coming Soon
-    mockUseAuth.mockReturnValue({ user: { role: "user" }, isLoadingAuth: false });
-    renderHome("/?admin=1&role=admin");
-    switchToSingleTrade();
-    await waitFor(() => {
-      expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
+      expect(screen.getByText(/Court Halted/i)).toBeInTheDocument();
     });
     expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
   });
 
-  // 7. Zero Nansen calls in all access scenarios
-  it("makes zero Nansen calls (base44.functions.invoke never called) for admin preview", async () => {
-    mockUseAuth.mockReturnValue({ user: { role: "admin" }, isLoadingAuth: false });
+  // 8. zero Nansen calls in all scenarios
+  it("makes zero Nansen calls for admin preview", async () => {
+    mockGetSingleTradeAccess.mockResolvedValue(ADMIN_ACCESS);
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
@@ -230,12 +226,38 @@ describe("Home — Single Trade admin preview access", () => {
   });
 
   it("makes zero Nansen calls for Coming Soon (anonymous)", async () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoadingAuth: false });
+    mockGetSingleTradeAccess.mockResolvedValue(ANON_ACCESS);
     renderHome();
     switchToSingleTrade();
     await waitFor(() => {
       expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
     });
     expect(mockBase44FunctionsInvoke).not.toHaveBeenCalled();
+  });
+
+  // 9. admin status not inferred from URL params
+  it("admin status is not inferred from URL params", async () => {
+    // Even with ?admin=1&role=admin, a non-admin access decision → Coming Soon
+    mockGetSingleTradeAccess.mockResolvedValue(ANON_ACCESS);
+    renderHome("/?admin=1&role=admin");
+    switchToSingleTrade();
+    await waitFor(() => {
+      expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("single-trade-intake")).not.toBeInTheDocument();
+  });
+
+  // 10. admin preview label only shows when admin_preview is true
+  it("admin preview label shows only when admin_preview is true", async () => {
+    // Admin + public enabled → no admin preview label
+    mockGetSingleTradeAccess.mockResolvedValue({
+      ...ADMIN_ACCESS, public_enabled: true, admin_preview: false,
+    });
+    renderHome();
+    switchToSingleTrade();
+    await waitFor(() => {
+      expect(screen.getByTestId("single-trade-intake")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Admin Preview/i)).not.toBeInTheDocument();
   });
 });

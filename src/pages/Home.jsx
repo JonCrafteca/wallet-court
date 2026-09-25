@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { useAuth } from "@/lib/AuthContext";
 import { captureReferral, getAttributionContext } from "@/lib/attribution";
 import IntakeStage from "@/components/walletcourt/IntakeStage";
 import SingleTradeIntake from "@/components/walletcourt/SingleTradeIntake";
@@ -10,8 +9,9 @@ import CourtRecess from "@/components/walletcourt/CourtRecess";
 import { validateWalletForChain } from "@/lib/walletValidation";
 import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
 import { getPublicFeatureFlags } from "@/lib/featureFlags";
+import { getSingleTradeAccess } from "@/lib/singleTradeAccess";
 import { cn } from "@/lib/utils";
-import { Wallet, Coins, Clock, ShieldAlert } from "lucide-react";
+import { Wallet, Coins, Clock, ShieldAlert, OctagonAlert } from "lucide-react";
 
 export default function Home() {
   const [trialMode, setTrialMode] = useState("wallet"); // wallet | single_trade
@@ -24,12 +24,11 @@ export default function Home() {
   const [subjectType, setSubjectType] = useState("anonymous");
   const [proposedHandle, setProposedHandle] = useState("");
   const [networks, setNetworks] = useState(ALL_NETWORKS);
-  const [singleTradeEnabled, setSingleTradeEnabled] = useState(false);
-  const [flagsLoaded, setFlagsLoaded] = useState(false);
-  // Admin status comes from the server-backed AuthContext user — never from
-  // URL params, local storage, or client-controlled values.
-  const { user, isLoadingAuth } = useAuth();
-  const isAdmin = !!user && user.role === "admin";
+  // Single Trade access is resolved server-side by getSingleTradeAccess,
+  // which uses the canonical admin check (base44.auth.me + role === "admin").
+  // Never inferred from client user fields, routes, query strings, or UI state.
+  const [access, setAccess] = useState(null); // null = loading / fail-closed
+  const [accessLoaded, setAccessLoaded] = useState(false);
 
   useEffect(() => {
     captureReferral();
@@ -39,8 +38,10 @@ export default function Home() {
       if (!flags?.robinhood_public_enabled) {
         setNetworks(ALL_NETWORKS.filter((n) => n.id !== "robinhood"));
       }
-      setSingleTradeEnabled(!!flags?.single_trade_public_enabled);
-    }).finally(() => setFlagsLoaded(true));
+    });
+    // Fetch the authoritative Single Trade access decision from the backend.
+    // On rejection, access stays null → fail closed to Coming Soon.
+    getSingleTradeAccess().then((a) => setAccess(a)).catch(() => {}).finally(() => setAccessLoaded(true));
   }, []);
 
   async function runAnalysis(addr, net) {
@@ -135,21 +136,27 @@ export default function Home() {
     );
   }
 
-  // Single Trade Trial mode — gated by the public feature flag OR server-backed
-  // admin role. While auth or flags are still loading, default safely to Coming
-  // Soon so no Nansen calls can occur before access is confirmed.
+  // Single Trade Trial mode — access is the authoritative decision from
+  // getSingleTradeAccess (server-side canonical admin check). While loading
+  // or on failure, fail closed to Coming Soon so no Nansen calls can occur
+  // before access is confirmed.
   if (trialMode === "single_trade") {
-    const canAccess = singleTradeEnabled || isAdmin;
-    const showAdminPreview = isAdmin && !singleTradeEnabled;
+    const canAccess = !!(access && access.can_access);
+    const showAdminPreview = !!(access && access.admin_preview);
+    const usageBlocked = !!(access && (!access.usage_enabled || access.emergency_stop));
     return (
       <div className="relative">
         <ModeToggle trialMode={trialMode} setTrialMode={setTrialMode} />
-        {isLoadingAuth || !flagsLoaded || !canAccess ? (
+        {!accessLoaded || !canAccess ? (
           <SingleTradeComingSoon />
         ) : (
           <>
             {showAdminPreview && <AdminPreviewLabel />}
-            <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
+            {usageBlocked ? (
+              <SingleTradeBlocked emergencyStop={access.emergency_stop} usageEnabled={access.usage_enabled} />
+            ) : (
+              <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
+            )}
           </>
         )}
       </div>
@@ -210,6 +217,29 @@ function AdminPreviewLabel() {
         </span>
       </div>
     </div>
+  );
+}
+
+function SingleTradeBlocked({ emergencyStop, usageEnabled }) {
+  return (
+    <section className="mx-auto max-w-3xl px-4 pt-10 sm:pt-16 pb-24">
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center gap-2 border-2 border-court-red bg-court-navy px-3 py-1 mb-4">
+          <OctagonAlert className="h-4 w-4 text-court-red" />
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-court-red">
+            Single Trade Trial · {emergencyStop ? "Emergency Stop" : "Disabled"}
+          </span>
+        </div>
+        <h1 className="font-display uppercase leading-[0.84] text-court-ice" style={{ fontSize: "clamp(2rem, 5vw, 3.5rem)" }}>
+          {emergencyStop ? "Court Halted" : "Trial Paused"}
+        </h1>
+        <p className="mt-4 font-mono text-base text-court-ice max-w-xl mx-auto leading-relaxed">
+          {emergencyStop
+            ? "An emergency stop is active. Single Trade Trial is halted until an administrator clears it. No analysis calls can be made."
+            : "Single Trade Trial usage is currently disabled. An administrator must enable it before any analysis calls can be made."}
+        </p>
+      </div>
+    </section>
   );
 }
 
