@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
+import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
 import { RefreshCw, Loader2 } from "lucide-react";
 
 export default function SingleTradeCase() {
@@ -23,8 +24,17 @@ export default function SingleTradeCase() {
         const result = res?.data;
         const classified = classifyCaseFetchResult(result, res?.status);
         if (classified === "done") {
-          setTrial(result.trial);
-          setStatus("done");
+          // Frontend safety net: refuse to render an incomplete trial even if
+          // the backend gate somehow returns one. A verdict case without
+          // verdict_code/severity/confidence/roast/sentence/evidence would
+          // render as a generic GUILTY stamp with 0/100 — treat as notfound.
+          if (!isSingleTradeRenderable(result.trial)) {
+            setError("This trade case was not completed and is not available for public viewing.");
+            setStatus("notfound");
+          } else {
+            setTrial(result.trial);
+            setStatus("done");
+          }
         } else if (classified === "notfound") {
           setError(result?.error || "This trade case never made it to the docket.");
           setStatus("notfound");
@@ -49,8 +59,13 @@ export default function SingleTradeCase() {
       const result = res?.data;
       const classified = classifyCaseFetchResult(result, res?.status);
       if (classified === "done") {
-        setTrial(result.trial);
-        setStatus("done");
+        if (!isSingleTradeRenderable(result.trial)) {
+          setError("This trade case was not completed and is not available for public viewing.");
+          setStatus("notfound");
+        } else {
+          setTrial(result.trial);
+          setStatus("done");
+        }
       } else if (classified === "notfound") {
         setError(result?.error || "This trade case never made it to the docket.");
         setStatus("notfound");

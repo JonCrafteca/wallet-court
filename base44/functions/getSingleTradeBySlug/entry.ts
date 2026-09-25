@@ -4,6 +4,7 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.49";
 import { findBySlug } from "../../shared/singleTradeStore.ts";
 import { sanitizeSingleTrialForPublicCase } from "../../shared/singleTradeEvidence.ts";
+import { isSingleTradeRenderable } from "../../shared/singleTradeRenderable.ts";
 
 export default async function (req) {
   try {
@@ -16,6 +17,15 @@ export default async function (req) {
 
     const trial = await findBySlug(base44, slug);
     if (!trial) return Response.json({ error: "This trade case never made it to the docket." }, { status: 404 });
+
+    // Renderability gate: never return a failed/pending/incomplete trial as a
+    // public case. A failed trial (e.g. analysis crashed mid-way) has null
+    // verdict fields and empty evidence — rendering it would fabricate a
+    // generic GUILTY stamp with 0/100 severity. Return 404 instead so the
+    // frontend shows "Case file not found" rather than a fake verdict.
+    if (!isSingleTradeRenderable(trial)) {
+      return Response.json({ error: "This trade case was not completed and is not available for public viewing." }, { status: 404 });
+    }
 
     return Response.json({ trial: sanitizeSingleTrialForPublicCase(trial) });
   } catch (error) {
