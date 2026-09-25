@@ -27,7 +27,7 @@ import {
 } from "../../shared/nansen.ts";
 import {
   normalizePurchases, extractCandles, computeTradeMetrics, buildTradeEvidence,
-  buildTradeFingerprint, sanitizeSingleTrialForPublicCase
+  buildTradeFingerprint, sanitizeSingleTrialForPublicCase, capCandles
 } from "../../shared/singleTradeEvidence.ts";
 import { selectTradeVerdict, computeTradeSeverityConfidence } from "../../shared/singleTradeVerdicts.ts";
 import { findOrCreateTrial, completeTrial, failTrial, findByFingerprint } from "../../shared/singleTradeStore.ts";
@@ -312,7 +312,7 @@ export default async function (req) {
           severity_score: null, confidence_score: null,
           evidence_items_json: JSON.stringify([]),
           metrics_json: JSON.stringify(enrichedMetrics),
-          ohlcv_snapshot_json: JSON.stringify(candles),
+          ohlcv_snapshot_json: JSON.stringify(capCandles(candles)),
           source_endpoints_json: JSON.stringify([
             "nansen:dex_trades:live", `nansen:token_ohlcv:${ohlcvResult.ok ? "live" : "unavailable"}`,
             `nansen:current_balance:${balResult.ok ? "live" : "unavailable"}`
@@ -343,7 +343,7 @@ export default async function (req) {
         defense_statement: verdict.defense, sentence: verdict.sentence,
         evidence_items_json: JSON.stringify(evidence),
         metrics_json: JSON.stringify(enrichedMetrics),
-        ohlcv_snapshot_json: JSON.stringify(candles),
+        ohlcv_snapshot_json: JSON.stringify(capCandles(candles)),
         source_endpoints_json: JSON.stringify([
           "nansen:dex_trades:live", `nansen:token_ohlcv:${ohlcvResult.ok ? "live" : "unavailable"}`,
           `nansen:current_balance:${balResult.ok ? "live" : "unavailable"}`
@@ -387,7 +387,7 @@ export default async function (req) {
       throw analysisError;
     }
   } catch (error) {
-    return Response.json({ error: error.message || "The court failed to convene." }, { status: 500 });
+    return Response.json({ error: error.message || "The court failed to convene.", code: "ANALYSIS_ERROR" }, { status: 500 });
   }
 }
 

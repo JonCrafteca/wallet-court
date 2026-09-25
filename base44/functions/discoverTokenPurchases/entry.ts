@@ -124,6 +124,6 @@ export default async function (req) {
 
     return Response.json({ purchases: publicPurchases, count: publicPurchases.length, token_mint, network });
   } catch (error) {
-    return Response.json({ error: error.message || "Discovery failed." }, { status: 500 });
+    return Response.json({ error: error.message || "Discovery failed.", code: "DISCOVERY_ERROR" }, { status: 500 });
   }
 }

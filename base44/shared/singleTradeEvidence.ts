@@ -138,6 +138,28 @@ export function extractCandles(ohlcvJson: any): OhlcvCandle[] {
   return data;
 }
 
+// Maximum number of candles stored in ohlcv_snapshot_json. The full series is
+// used for metrics computation; the stored snapshot is capped to keep the
+// entity field within size limits. 300 candles at 1h timeframe ≈ 12.5 days,
+// enough for the public chart without exceeding field limits.
+export const MAX_STORED_CANDLES = 300;
+
+// Cap an OHLCV candle array to a maximum number of candles by evenly
+// sampling. Always preserves the first and last candles. Returns the
+// original array if it is already within the limit. This prevents the
+// ohlcv_snapshot_json field from exceeding the entity field size limit
+// when Nansen returns a large candle series (e.g. 1h candles over months).
+export function capCandles(candles: OhlcvCandle[], max: number = MAX_STORED_CANDLES): OhlcvCandle[] {
+  if (!Array.isArray(candles) || candles.length <= max) return candles;
+  const step = (candles.length - 1) / (max - 1);
+  const result: OhlcvCandle[] = [];
+  for (let i = 0; i < max; i++) {
+    const idx = Math.min(candles.length - 1, Math.round(i * step));
+    result.push(candles[idx]);
+  }
+  return result;
+}
+
 export interface TradeMetrics {
   entry_market_cap_usd: number | null;
   max_drawdown_pct: number | null;

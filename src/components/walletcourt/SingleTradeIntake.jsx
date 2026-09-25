@@ -47,7 +47,8 @@ export default function SingleTradeIntake({ onReset }) {
       setSelectedSelection(null);
       setPhase("select");
     } catch (e) {
-      setError(e?.message || "Discovery failed. Try again.");
+      // Base44Error carries the backend's safe error in .data.error and .data.code.
+      setError(e?.data?.error || e?.message || "Discovery failed. Try again.");
       setPhase("intake");
     }
   }
@@ -71,7 +72,8 @@ export default function SingleTradeIntake({ onReset }) {
       setTrial(res.data.trial);
       setPhase("done");
     } catch (e) {
-      setError(e?.message || "Analysis failed. Try again.");
+      // Base44Error carries the backend's safe error in .data.error and .data.code.
+      setError(e?.data?.error || e?.message || "Analysis failed. Try again.");
       setPhase("select");
     }
   }

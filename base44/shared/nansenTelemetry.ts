@@ -43,9 +43,9 @@ const ALLOWED_ENDPOINT_KEYS = new Set([
 ]);
 // Canonical allowed-networks set is centralized in ./chains.ts.
 import { ALLOWED_NETWORKS } from "./chains.ts";
-const ALLOWED_WORKFLOWS = new Set([
+export const ALLOWED_WORKFLOWS = new Set([
   "trial_analysis", "label_enrichment", "admin_health_check", "admin_verification",
-  "calibration_discovery", "single_trade_analysis"
+  "calibration_discovery", "single_trade_analysis", "single_trade_discovery"
 ]);
 const ALLOWED_ENVIRONMENTS = new Set(["production", "preview", "development"]);
 
