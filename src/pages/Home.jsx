@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { captureReferral, getAttributionContext } from "@/lib/attribution";
 import IntakeStage from "@/components/walletcourt/IntakeStage";
 import SingleTradeIntake from "@/components/walletcourt/SingleTradeIntake";
@@ -10,7 +11,7 @@ import { validateWalletForChain } from "@/lib/walletValidation";
 import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
 import { getPublicFeatureFlags } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
-import { Wallet, Coins, Clock } from "lucide-react";
+import { Wallet, Coins, Clock, ShieldAlert } from "lucide-react";
 
 export default function Home() {
   const [trialMode, setTrialMode] = useState("wallet"); // wallet | single_trade
@@ -24,7 +25,11 @@ export default function Home() {
   const [proposedHandle, setProposedHandle] = useState("");
   const [networks, setNetworks] = useState(ALL_NETWORKS);
   const [singleTradeEnabled, setSingleTradeEnabled] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [flagsLoaded, setFlagsLoaded] = useState(false);
+  // Admin status comes from the server-backed AuthContext user — never from
+  // URL params, local storage, or client-controlled values.
+  const { user, isLoadingAuth } = useAuth();
+  const isAdmin = !!user && user.role === "admin";
 
   useEffect(() => {
     captureReferral();
@@ -35,9 +40,7 @@ export default function Home() {
         setNetworks(ALL_NETWORKS.filter((n) => n.id !== "robinhood"));
       }
       setSingleTradeEnabled(!!flags?.single_trade_public_enabled);
-    });
-    // Check admin status for Single Trade admin testing.
-    base44.auth.me().then((u) => { if (u?.role === "admin") setIsAdmin(true); }).catch(() => {});
+    }).finally(() => setFlagsLoaded(true));
   }, []);
 
   async function runAnalysis(addr, net) {
@@ -132,16 +135,22 @@ export default function Home() {
     );
   }
 
-  // Single Trade Trial mode — show "Coming Soon" when the flag is false and
-  // the user is not an admin. Admins can test while the flag is false.
+  // Single Trade Trial mode — gated by the public feature flag OR server-backed
+  // admin role. While auth or flags are still loading, default safely to Coming
+  // Soon so no Nansen calls can occur before access is confirmed.
   if (trialMode === "single_trade") {
+    const canAccess = singleTradeEnabled || isAdmin;
+    const showAdminPreview = isAdmin && !singleTradeEnabled;
     return (
       <div className="relative">
         <ModeToggle trialMode={trialMode} setTrialMode={setTrialMode} />
-        {singleTradeEnabled || isAdmin ? (
-          <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
-        ) : (
+        {isLoadingAuth || !flagsLoaded || !canAccess ? (
           <SingleTradeComingSoon />
+        ) : (
+          <>
+            {showAdminPreview && <AdminPreviewLabel />}
+            <SingleTradeIntake onReset={() => setTrialMode("wallet")} />
+          </>
         )}
       </div>
     );
@@ -188,6 +197,19 @@ function SingleTradeComingSoon() {
         </div>
       </div>
     </section>
+  );
+}
+
+function AdminPreviewLabel() {
+  return (
+    <div className="mx-auto max-w-3xl px-4 pt-4">
+      <div className="flex items-center justify-center gap-2 border-2 border-court-red bg-court-navy px-4 py-2 shadow-[4px_4px_0_0_#5127C7]">
+        <ShieldAlert className="h-4 w-4 text-court-red shrink-0" />
+        <span className="font-mono text-xs uppercase tracking-[0.18em] text-court-red font-semibold">
+          Admin Preview · Public Disabled
+        </span>
+      </div>
+    </div>
   );
 }
 
