@@ -262,6 +262,14 @@ export interface TradeMetrics {
   ending_value_usd: number | null;
   lowest_market_cap_timestamp: string | null;
   last_sell_timestamp: string | null;
+  // Price-based recovery metrics (capital-injection-honest)
+  entry_price_usd: number | null;
+  trough_price_usd: number | null;
+  exit_price_usd: number | null;
+  total_cost_basis_usd: number | null;
+  later_buys_cost_usd: number | null;
+  price_recovery_multiple_from_bottom: number | null;
+  realized_pnl_pct: number | null;
 }
 
 // Compute trade-level metrics from an OHLCV candle series + trade context.
@@ -410,6 +418,41 @@ export function computeTradeMetrics(args: {
       ? realizedExitValueUsd
       : currentValueUsd ?? null;
 
+  // ---- Price-based recovery metrics (capital-injection-honest) ----
+  // Entry price: implied from purchase cost / tokens received.
+  const entryPriceUsd = purchaseCostUsd !== null && purchaseCostUsd > 0 && tokensReceived !== null && tokensReceived > 0
+    ? purchaseCostUsd / tokensReceived
+    : null;
+
+  // Trough price: entry price scaled by the drawdown ratio.
+  const troughPriceUsd = entryPriceUsd !== null && maxDrawdownPct !== null
+    ? entryPriceUsd * (1 + maxDrawdownPct)
+    : null;
+
+  // Later buys cost: total USD cost of additional buys after entry.
+  const laterBuysCostUsd = laterBuys.reduce((sum, b) => sum + (num(b.trade_value_usd) || 0), 0);
+
+  // Total cost basis: entry cost + later buys cost.
+  const totalCostBasisUsd = (purchaseCostUsd ?? 0) + laterBuysCostUsd;
+
+  // Exit price: for full exits, realized proceeds / total tokens sold.
+  // For held/partial positions, use the current token price.
+  const exitPriceUsd = conviction === "full_exit" && realizedExitValueUsd > 0 && totalTokensSold > 0
+    ? realizedExitValueUsd / totalTokensSold
+    : currentPriceUsd;
+
+  // Price recovery multiple: pure price ratio, unaffected by token quantity
+  // changes from later buys. Replaces the inflated value-based figure.
+  const priceRecoveryMultipleFromBottom =
+    troughPriceUsd !== null && troughPriceUsd > 0 && exitPriceUsd !== null && exitPriceUsd > 0
+      ? exitPriceUsd / troughPriceUsd
+      : null;
+
+  // Realized PnL pct: for full exits, (realized - total_cost_basis) / total_cost_basis.
+  const realizedPnlPct = conviction === "full_exit" && totalCostBasisUsd > 0
+    ? (realizedExitValueUsd - totalCostBasisUsd) / totalCostBasisUsd
+    : null;
+
   return {
     entry_market_cap_usd: entryMarketCapUsd,
     max_drawdown_pct: maxDrawdownPct,
@@ -434,6 +477,13 @@ export function computeTradeMetrics(args: {
     ending_value_usd: endingValueUsd,
     lowest_market_cap_timestamp: lowestMarketCapTimestamp,
     last_sell_timestamp: lastSellTimestamp,
+    entry_price_usd: entryPriceUsd,
+    trough_price_usd: troughPriceUsd,
+    exit_price_usd: exitPriceUsd,
+    total_cost_basis_usd: totalCostBasisUsd > 0 ? totalCostBasisUsd : null,
+    later_buys_cost_usd: laterBuysCostUsd > 0 ? laterBuysCostUsd : null,
+    price_recovery_multiple_from_bottom: priceRecoveryMultipleFromBottom,
+    realized_pnl_pct: realizedPnlPct,
   };
 }
 

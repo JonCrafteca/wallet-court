@@ -233,7 +233,7 @@ export function selectTradeVerdict(metrics: Record<string, any>): TradeVerdict {
 
 export function computeTradeSeverityConfidence(metrics: Record<string, any>): { severity: number; confidence: number } {
   const dd = num(metrics.max_drawdown_pct);
-  const pnl = num(metrics.current_unrealized_pnl_pct);
+  const pnl = num(metrics.current_unrealized_pnl_pct) ?? num(metrics.realized_pnl_pct);
   const underwater = num(metrics.time_underwater_pct);
   const dur = num(metrics.holding_duration_days);
 

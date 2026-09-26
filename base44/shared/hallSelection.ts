@@ -205,21 +205,30 @@ export function eligibleDump(records: any[]): any[] {
 }
 
 // Recovery: live completed SingleTradeTrial verdicts with a journey archetype
-// (comeback or recovery tier). Sorted by confidence → recovered_loss_pct →
+// (comeback or recovery tier). Sorted by confidence → price_recovery_multiple →
 // newest → slug.
 function recoveredLossOf(t: any): number {
   try {
     const m = JSON.parse(t.metrics_json || "{}");
-    const rl = num(m._archetype?.recovered_loss_pct);
-    if (rl !== null) return rl;
-    // Fallback: compute from raw metrics
-    const invested = num(m.purchase_cost_usd) ?? num(m.whole_position_cost_usd);
+    // Price recovery multiple is the honest, capital-injection-safe metric.
+    const prm = num(m._archetype?.price_recovery_multiple_from_bottom);
+    if (prm !== null) return prm;
+    // Fallback: compute from raw price metrics
+    const entryPrice = num(m.entry_price_usd);
     const dd = num(m.max_drawdown_pct);
-    const ending = num(m.realized_exit_value_usd) ?? num(m.current_value_usd);
-    if (invested !== null && dd !== null && ending !== null) {
-      const lowest = invested * (1 + dd);
-      const loss = invested - lowest;
-      return loss > 0 ? ((ending - lowest) / loss) * 100 : -Infinity;
+    const conviction = m.conviction;
+    const realizedExit = num(m.realized_exit_value_usd);
+    const totalTokensSold = num(m.total_tokens_sold);
+    const currentPrice = num(m.current_price_usd);
+    if (entryPrice !== null && dd !== null) {
+      const troughPrice = entryPrice * (1 + dd);
+      let exitPrice = currentPrice;
+      if (conviction === "full_exit" && realizedExit !== null && totalTokensSold !== null && totalTokensSold > 0) {
+        exitPrice = realizedExit / totalTokensSold;
+      }
+      if (exitPrice !== null && troughPrice > 0) {
+        return exitPrice / troughPrice;
+      }
     }
     return -Infinity;
   } catch {

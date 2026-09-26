@@ -15,8 +15,12 @@ import {
 function inputs(overrides = {}) {
   return {
     amount_invested_usd: 1000,
+    total_cost_basis_usd: null,
     lowest_position_value_usd: 400,
     ending_value_usd: 1200,
+    entry_price_usd: null,
+    trough_price_usd: null,
+    exit_price_usd: null,
     low_after_entry: true,
     low_before_ending: true,
     ...overrides,
@@ -30,6 +34,10 @@ describe("classifyComeback — fixture case", () => {
         amount_invested_usd: 1100,
         lowest_position_value_usd: 120,
         ending_value_usd: 1250,
+        // Price-based recovery: entry=1.0, trough=120/1100≈0.1091, exit=1250/1100≈1.1364
+        entry_price_usd: 1.0,
+        trough_price_usd: 120 / 1100,
+        exit_price_usd: 1250 / 1100,
       })
     );
 
@@ -43,8 +51,8 @@ describe("classifyComeback — fixture case", () => {
     // final_return_pct ≈ +13.6%
     expect(result.final_return_pct).toBeCloseTo(13.6, 0);
 
-    // recovery_multiple_from_bottom ≈ 10.4x
-    expect(result.recovery_multiple_from_bottom).toBeCloseTo(10.4, 0);
+    // price_recovery_multiple_from_bottom ≈ 10.4x (pure price ratio)
+    expect(result.price_recovery_multiple_from_bottom).toBeCloseTo(10.4, 0);
 
     expect(result.data_confidence).toBe("high");
     expect(result.disqualifying_evidence).toHaveLength(0);
@@ -303,6 +311,8 @@ describe("classifyComebackFromMetrics — integration with trade metrics", () =>
       max_drawdown_pct: -0.8909,
       current_value_usd: 1250,
       conviction: "held",
+      entry_price_usd: 1.0,
+      current_price_usd: 1250 / 1100,
     };
     const { verdict } = classifyComebackFromMetrics(metrics);
     expect(verdict).not.toBeNull();
@@ -337,72 +347,82 @@ describe("getArchetypeTier — whole-wallet mapping", () => {
 });
 
 describe("Almost Escaped — incomplete comeback archetype", () => {
-  it("qualifies: -85.1% drawdown, 84.8% recovered loss, -12.9% final return", () => {
-    // The actual TRADE-580FR5OT3D1I case values
+  it("qualifies: -85.1% drawdown, 5.44x price recovery, -17.1% final return", () => {
+    // The actual TRADE-580FR5OT3D1I case values with honest price-based metrics.
+    // total_cost_basis = entry ($1,048.08) + later buy ($52.53) = $1,100.61
+    // price_recovery = exit_price / trough_price = $0.007866 / $0.001447 ≈ 5.44x
+    // final_return = ($912.72 - $1,100.61) / $1,100.61 ≈ -17.1%
     const result = classifyComeback(
       inputs({
         amount_invested_usd: 1048.08,
+        total_cost_basis_usd: 1100.61,
         lowest_position_value_usd: 156.41,
         ending_value_usd: 912.72,
+        entry_price_usd: 0.009694,
+        trough_price_usd: 0.001447,
+        exit_price_usd: 0.007866,
       })
     );
     expect(result.archetype_id).toBe("almost_escaped");
     expect(result.archetype_name).toBe("Almost Escaped");
     expect(result.archetype_tier).toBe("recovery");
     expect(result.max_drawdown_pct).toBeCloseTo(-85.1, 0);
-    expect(result.final_return_pct).toBeCloseTo(-12.9, 0);
-    expect(result.recovered_loss_pct).toBeCloseTo(84.8, 0);
+    expect(result.final_return_pct).toBeCloseTo(-17.1, 0);
+    expect(result.price_recovery_multiple_from_bottom).toBeCloseTo(5.44, 1);
+    expect(result.cash_flow_adjusted_recovery_pct).toBeCloseTo(77.8, 0);
     expect(result.data_confidence).toBe("high");
     expect(result.disqualifying_evidence).toHaveLength(0);
   });
 
-  it("qualifies at boundary: -70% drawdown, 80% recovered loss, -20% final return", () => {
-    // invested=1000, low=300 → dd=-70%, ending=840
-    // loss = 700, recovered = 540, recovered_loss = 540/700 = 77.1% → NOT enough
-    // Need recovered_loss >= 80%: ending must be >= 300 + 0.80*700 = 860
-    // final_return = (860-1000)/1000 = -14% → qualifies
-    // But let's test the exact boundary: -20% final return means ending=800
-    // recovered_loss = (800-300)/(1000-300) = 500/700 = 71.4% → NOT enough
-    // So -20% final return with -70% drawdown gives 71.4% recovered loss → NOT enough
-    // Need: dd=-70%, recovered_loss=80%, final_return=-20% is impossible simultaneously
-    // Let's find the boundary: dd=-70%, recovered_loss=80% → ending = 300 + 0.8*700 = 860
-    // final_return = (860-1000)/1000 = -14% → qualifies
+  it("qualifies at boundary: -85% drawdown, 5.5x price recovery, -17.5% final return", () => {
+    // invested=1000, low=150 → dd=-85%
+    // entry=1.0, trough=0.15, exit=0.825 → price_recovery=5.5x (≥ 5x)
+    // final_return = (825-1000)/1000 = -17.5% (between -20% and 0%)
     const result = classifyComeback(
       inputs({
         amount_invested_usd: 1000,
-        lowest_position_value_usd: 300,
-        ending_value_usd: 860,
+        lowest_position_value_usd: 150,
+        ending_value_usd: 825,
+        entry_price_usd: 1.0,
+        trough_price_usd: 0.15,
+        exit_price_usd: 0.825,
       })
     );
     expect(result.archetype_id).toBe("almost_escaped");
-    expect(result.recovered_loss_pct).toBeCloseTo(80, 0);
-    expect(result.final_return_pct).toBeCloseTo(-14, 0);
+    expect(result.price_recovery_multiple_from_bottom).toBeCloseTo(5.5, 1);
+    expect(result.final_return_pct).toBeCloseTo(-17.5, 0);
   });
 
-  it("does NOT qualify: severe drawdown but less than 80% loss recovery", () => {
-    // invested=1000, low=100 → dd=-90%, ending=500
-    // recovered_loss = (500-100)/(1000-100) = 400/900 = 44.4% → NOT enough
+  it("does NOT qualify: severe drawdown but price recovery below 5x", () => {
+    // invested=1000, low=250 → dd=-75%
+    // entry=1.0, trough=0.25, exit=0.875 → price_recovery=3.5x (< 5x)
+    // final_return = (875-1000)/1000 = -12.5% (between -20% and 0%)
+    // Price recovery insufficient despite acceptable final return.
     const result = classifyComeback(
       inputs({
         amount_invested_usd: 1000,
-        lowest_position_value_usd: 100,
-        ending_value_usd: 500,
+        lowest_position_value_usd: 250,
+        ending_value_usd: 875,
+        entry_price_usd: 1.0,
+        trough_price_usd: 0.25,
+        exit_price_usd: 0.875,
       })
     );
     expect(result.archetype_id).toBeNull();
   });
 
   it("does NOT qualify: -85% drawdown but final return below -20%", () => {
-    // invested=1000, low=150 → dd=-85%, ending=700
-    // recovered_loss = (700-150)/(1000-150) = 550/850 = 64.7% → NOT enough
-    // Need to go lower: ending=750 → recovered_loss = 600/850 = 70.6% → still not enough
-    // ending=830 → recovered_loss = 680/850 = 80% → qualifies, final_return=-17%
-    // ending=799 → final_return=-20.1% → below -20% → does NOT qualify
+    // invested=1000, low=150 → dd=-85%, ending=750
+    // entry=1.0, trough=0.15, exit=0.75 → price_recovery=5.0x (≥ 5x)
+    // final_return = (750-1000)/1000 = -25% → below -20% → does NOT qualify
     const result = classifyComeback(
       inputs({
         amount_invested_usd: 1000,
         lowest_position_value_usd: 150,
-        ending_value_usd: 799,
+        ending_value_usd: 750,
+        entry_price_usd: 1.0,
+        trough_price_usd: 0.15,
+        exit_price_usd: 0.75,
       })
     );
     expect(result.archetype_id).toBeNull();
@@ -410,13 +430,16 @@ describe("Almost Escaped — incomplete comeback archetype", () => {
 
   it("does NOT qualify: drawdown above -70% (Escape Artist range)", () => {
     // invested=1000, low=400 → dd=-60%, ending=900
-    // recovered_loss = (900-400)/(1000-400) = 500/600 = 83.3% → enough
-    // BUT dd=-60% > -70% → does NOT meet the -70% Almost Escaped threshold
+    // entry=1.0, trough=0.40, exit=0.90 → price_recovery=2.25x
+    // dd=-60% > -70% → does NOT meet the -70% Almost Escaped threshold
     const result = classifyComeback(
       inputs({
         amount_invested_usd: 1000,
         lowest_position_value_usd: 400,
         ending_value_usd: 900,
+        entry_price_usd: 1.0,
+        trough_price_usd: 0.40,
+        exit_price_usd: 0.90,
       })
     );
     expect(result.archetype_id).toBeNull();
@@ -465,8 +488,12 @@ describe("Almost Escaped — incomplete comeback archetype", () => {
     const result = classifyComeback(
       inputs({
         amount_invested_usd: 1048.08,
+        total_cost_basis_usd: 1100.61,
         lowest_position_value_usd: 156.41,
         ending_value_usd: 912.72,
+        entry_price_usd: 0.009694,
+        trough_price_usd: 0.001447,
+        exit_price_usd: 0.007866,
       })
     );
     expect(result.archetype_id).toBe("almost_escaped");
@@ -481,9 +508,15 @@ describe("Almost Escaped — incomplete comeback archetype", () => {
       conviction: "full_exit",
       lowest_market_cap_timestamp: "2026-09-21T16:00:00Z",
       last_sell_timestamp: "2026-09-25T13:36:54Z",
+      entry_price_usd: 0.009694,
+      total_tokens_sold: 116076.44,
+      later_buys_cost_usd: 52.53,
+      current_price_usd: null,
     };
     const { verdict, result } = classifyComebackFromMetrics(metrics);
     expect(result.archetype_id).toBe("almost_escaped");
+    expect(result.price_recovery_multiple_from_bottom).toBeCloseTo(5.44, 1);
+    expect(result.final_return_pct).toBeCloseTo(-17.1, 0);
     expect(verdict).not.toBeNull();
     expect(verdict!.code).toBe("almost_escaped");
     expect(verdict!.display_name).toBe("Almost Escaped");

@@ -8,6 +8,16 @@
 // roast/commentary only AFTER receiving the selected archetype and verified
 // metrics. AI must never invent or override the classification.
 //
+// RECOVERY METRICS HONESTY:
+// Price-based recovery metrics (price_recovery_multiple_from_bottom,
+// cash_flow_adjusted_recovery_pct) are PURE price ratios — they are unaffected
+// by token-quantity changes from later buys. The legacy value-based
+// recovered_loss_pct compared ending_value (all tokens sold, including later
+// buys) against lowest_position_value (entry tokens only at trough price),
+// which inflated recovery when capital was injected after the trough.
+// final_return_pct uses total_cost_basis_usd (entry + later buys) so the return
+// reflects the complete cash-flow picture, not just the entry cost.
+//
 // This module is PURE: no SDK, no network, no side effects. Imported by
 // backend functions and unit-tested in isolation.
 
@@ -28,8 +38,8 @@ export interface ArchetypeDefinition {
 // ---- Comeback tier definitions ----
 //
 // Drawdown thresholds are in RATIO form (e.g., -0.50 means -50%).
-// A comeback archetype requires ending_value >= amount_invested (recovered
-// to cost basis or better). The journey takes precedence over generic
+// A comeback archetype requires ending_value >= total_cost_basis (recovered
+// to total cost basis or better). The journey takes precedence over generic
 // final-P&L classifications like "Stuck in the Middle."
 //
 // Tier boundaries (inclusive lower, exclusive upper):
@@ -86,8 +96,16 @@ export const COMEBACK_TIERS: ComebackTier[] = [
 // ---- Almost Escaped (incomplete comeback) ----
 //
 // A journey archetype for positions that survived a severe drawdown and
-// recovered most of the loss, but sold just short of full cost-basis recovery.
-// Eligibility: dd <= -70%, recovered_loss >= 80%, final_return in [-20%, 0%).
+// recovered most of the loss via PRICE appreciation, but sold just short of
+// full cost-basis recovery.
+//
+// ELIGIBILITY (price-based, capital-injection-honest):
+//   - max_drawdown_pct <= -70%
+//   - price_recovery_multiple_from_bottom >= 5x  (exit_price / trough_price)
+//   - final_return_pct < 0%   (did not recover to total cost basis)
+//   - final_return_pct >= -20%  (came close to break-even)
+//   - reliable chronological entry, trough, subsequent cash flows and exit data
+//
 // Precedence: completed comebacks > Almost Escaped > generic classifications.
 export const ALMOST_ESCAPED = {
   archetype_id: "almost_escaped",
@@ -116,8 +134,17 @@ export function isJourneyArchetype(verdictCode: string | null | undefined): bool
 
 export interface ComebackInputs {
   amount_invested_usd: number | null;
+  // Total cost basis = entry cost + later buys. Used for final_return_pct and
+  // the recovered-to-cost-basis check. Falls back to amount_invested_usd when
+  // null (no later buys or unknown).
+  total_cost_basis_usd: number | null;
   lowest_position_value_usd: number | null;
   ending_value_usd: number | null;
+  // Price-based recovery inputs (pure price ratios, unaffected by token
+  // quantity changes from later buys).
+  entry_price_usd: number | null;
+  trough_price_usd: number | null;
+  exit_price_usd: number | null;
   // Chronological confirmation: the low occurred after entry and before ending.
   low_after_entry: boolean;
   low_before_ending: boolean;
@@ -131,12 +158,22 @@ export interface ComebackResult {
   archetype_tier: ArchetypeTier | null;
   classification_reason: string;
   amount_invested_usd: number;
+  total_cost_basis_usd: number;
   lowest_position_value_usd: number;
   ending_value_usd: number;
   max_drawdown_pct: number; // as percentage (e.g., -89.1)
-  final_return_pct: number; // as percentage (e.g., +13.6)
+  final_return_pct: number; // as percentage (e.g., -17.1), based on total_cost_basis
+  // Pure price-based recovery: exit_price / trough_price. Unaffected by token
+  // quantity changes from later buys. Replaces the legacy value-based
+  // recovery_multiple_from_bottom which was inflated when capital was injected.
+  price_recovery_multiple_from_bottom: number | null;
+  // Cash-flow-adjusted recovery: (exit_price - trough_price) / (entry_price -
+  // trough_price) * 100. Measures how much of the trough loss was recovered by
+  // price movement alone, excluding capital injected after the trough.
+  cash_flow_adjusted_recovery_pct: number | null;
+  // Legacy field, now equal to cash_flow_adjusted_recovery_pct for backward
+  // compatibility with stored metrics. No longer used as the Almost Escaped gate.
   recovered_loss_pct: number | null;
-  recovery_multiple_from_bottom: number | null;
   data_confidence: "high" | "medium" | "low";
   qualifying_evidence: string[];
   disqualifying_evidence: string[];
@@ -150,8 +187,12 @@ export interface ComebackResult {
 export function classifyComeback(inputs: ComebackInputs): ComebackResult {
   const {
     amount_invested_usd,
+    total_cost_basis_usd,
     lowest_position_value_usd,
     ending_value_usd,
+    entry_price_usd,
+    trough_price_usd,
+    exit_price_usd,
     low_after_entry,
     low_before_ending,
   } = inputs;
@@ -182,12 +223,14 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
       classification_reason:
         "Comeback classification skipped: required inputs missing or unreliable.",
       amount_invested_usd: amount_invested_usd ?? 0,
+      total_cost_basis_usd: total_cost_basis_usd ?? amount_invested_usd ?? 0,
       lowest_position_value_usd: lowest_position_value_usd ?? 0,
       ending_value_usd: ending_value_usd ?? 0,
       max_drawdown_pct: 0,
       final_return_pct: 0,
+      price_recovery_multiple_from_bottom: null,
+      cash_flow_adjusted_recovery_pct: null,
       recovered_loss_pct: null,
-      recovery_multiple_from_bottom: null,
       data_confidence: "low",
       qualifying_evidence: qualifying,
       disqualifying_evidence: disqualifying,
@@ -195,25 +238,41 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
   }
 
   // ---- Compute metrics ----
+  // Use total_cost_basis when available (entry + later buys); fall back to
+  // entry-only cost for backward compatibility.
+  const basis = total_cost_basis_usd !== null && total_cost_basis_usd > 0
+    ? total_cost_basis_usd
+    : amount_invested_usd;
+
   const max_drawdown_pct =
     ((lowest_position_value_usd - amount_invested_usd) / amount_invested_usd) * 100;
   const final_return_pct =
-    ((ending_value_usd - amount_invested_usd) / amount_invested_usd) * 100;
-  const loss_amount = amount_invested_usd - lowest_position_value_usd;
-  const recovered_loss_pct =
-    loss_amount > 0
-      ? ((ending_value_usd - lowest_position_value_usd) / loss_amount) * 100
-      : null;
-  const recovery_multiple_from_bottom =
-    lowest_position_value_usd > 0
-      ? ending_value_usd / lowest_position_value_usd
+    ((ending_value_usd - basis) / basis) * 100;
+
+  // Price-based recovery multiple (pure price ratio, capital-injection-honest).
+  const price_recovery_multiple_from_bottom =
+    trough_price_usd !== null && trough_price_usd > 0 && exit_price_usd !== null && exit_price_usd > 0
+      ? exit_price_usd / trough_price_usd
       : null;
 
-  // ---- Check ending >= invested (recovered to cost basis) ----
-  const recovered = ending_value_usd >= amount_invested_usd;
+  // Cash-flow-adjusted recovery: how much of the trough loss was recovered by
+  // price movement alone, excluding capital injected after the trough.
+  const cash_flow_adjusted_recovery_pct =
+    entry_price_usd !== null && trough_price_usd !== null && exit_price_usd !== null &&
+    entry_price_usd > trough_price_usd
+      ? ((exit_price_usd - trough_price_usd) / (entry_price_usd - trough_price_usd)) * 100
+      : null;
+
+  // recovered_loss_pct (legacy field) = cash_flow_adjusted_recovery_pct for
+  // backward compatibility with stored metrics and Hall sorting. This is the
+  // honest, price-based version — not the inflated value-based figure.
+  const recovered_loss_pct = cash_flow_adjusted_recovery_pct;
+
+  // ---- Check ending >= total cost basis (recovered to full cost basis) ----
+  const recovered = ending_value_usd >= basis;
   if (!recovered) {
     disqualifying.push(
-      `Ending value ($${ending_value_usd.toFixed(2)}) is below cost basis ($${amount_invested_usd.toFixed(2)}) — comeback not completed`
+      `Ending value ($${ending_value_usd.toFixed(2)}) is below total cost basis ($${basis.toFixed(2)}) — comeback not completed`
     );
   }
 
@@ -231,13 +290,17 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
 
   // ---- Check Almost Escaped (incomplete comeback) ----
   // Precedence: completed comebacks > Almost Escaped. Only check Almost Escaped
-  // when no completed comeback was matched (position did not recover to cost
-  // basis, or drawdown doesn't meet a completed-comeback tier).
+  // when no completed comeback was matched (position did not recover to total
+  // cost basis, or drawdown doesn't meet a completed-comeback tier).
+  //
+  // Eligibility uses price_recovery_multiple_from_bottom (>= 5x) instead of the
+  // inflated value-based recovered_loss_pct. This ensures capital injected
+  // after the trough is not counted as market recovery.
   if (!matchedTier) {
     const almostEscaped =
       ddRatio <= -0.70 &&
-      recovered_loss_pct !== null &&
-      recovered_loss_pct >= 80 &&
+      price_recovery_multiple_from_bottom !== null &&
+      price_recovery_multiple_from_bottom >= 5 &&
       final_return_pct < 0 &&
       final_return_pct >= -20;
     if (almostEscaped) {
@@ -245,7 +308,7 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
         `Max drawdown of ${max_drawdown_pct.toFixed(1)}% meets the -70% Almost Escaped threshold`
       );
       qualifying.push(
-        `Recovered ${recovered_loss_pct!.toFixed(1)}% of losses (≥ 80% required)`
+        `Price recovery multiple of ${price_recovery_multiple_from_bottom!.toFixed(2)}x (≥ 5x required)`
       );
       qualifying.push(
         `Final return of ${final_return_pct.toFixed(1)}% (between -20% and 0%)`
@@ -254,14 +317,16 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
         archetype_id: ALMOST_ESCAPED.archetype_id,
         archetype_name: ALMOST_ESCAPED.archetype_name,
         archetype_tier: "recovery",
-        classification_reason: `Almost Escaped: drawdown ${max_drawdown_pct.toFixed(1)}%, recovered ${recovered_loss_pct!.toFixed(1)}% of losses, final return ${final_return_pct.toFixed(1)}%.`,
+        classification_reason: `Almost Escaped: drawdown ${max_drawdown_pct.toFixed(1)}%, price recovery ${price_recovery_multiple_from_bottom!.toFixed(2)}x, final return ${final_return_pct.toFixed(1)}%.`,
         amount_invested_usd,
+        total_cost_basis_usd: basis,
         lowest_position_value_usd,
         ending_value_usd,
         max_drawdown_pct,
         final_return_pct,
+        price_recovery_multiple_from_bottom,
+        cash_flow_adjusted_recovery_pct,
         recovered_loss_pct,
-        recovery_multiple_from_bottom,
         data_confidence: "high",
         qualifying_evidence: qualifying,
         disqualifying_evidence: [],
@@ -276,14 +341,16 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
       archetype_tier: null,
       classification_reason: recovered
         ? "Drawdown does not meet any comeback tier threshold."
-        : "Position has not recovered to cost basis — comeback not completed.",
+        : "Position has not recovered to total cost basis — comeback not completed.",
       amount_invested_usd,
+      total_cost_basis_usd: basis,
       lowest_position_value_usd,
       ending_value_usd,
       max_drawdown_pct,
       final_return_pct,
+      price_recovery_multiple_from_bottom,
+      cash_flow_adjusted_recovery_pct,
       recovered_loss_pct,
-      recovery_multiple_from_bottom,
       data_confidence: "high",
       qualifying_evidence: qualifying,
       disqualifying_evidence:
@@ -298,10 +365,10 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
     `Max drawdown of ${max_drawdown_pct.toFixed(1)}% qualifies for ${matchedTier.archetype_name}`
   );
   qualifying.push(
-    `Ending value ($${ending_value_usd.toFixed(2)}) recovered to cost basis ($${amount_invested_usd.toFixed(2)})`
+    `Ending value ($${ending_value_usd.toFixed(2)}) recovered to total cost basis ($${basis.toFixed(2)})`
   );
-  if (recovery_multiple_from_bottom !== null) {
-    qualifying.push(`Recovery multiple from bottom: ${recovery_multiple_from_bottom.toFixed(1)}x`);
+  if (price_recovery_multiple_from_bottom !== null) {
+    qualifying.push(`Price recovery multiple from bottom: ${price_recovery_multiple_from_bottom.toFixed(2)}x`);
   }
 
   return {
@@ -310,12 +377,14 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
     archetype_tier: "comeback",
     classification_reason: `${matchedTier.archetype_name}: drawdown ${max_drawdown_pct.toFixed(1)}% with recovery to ${final_return_pct >= 0 ? "+" : ""}${final_return_pct.toFixed(1)}% final return.`,
     amount_invested_usd,
+    total_cost_basis_usd: basis,
     lowest_position_value_usd,
     ending_value_usd,
     max_drawdown_pct,
     final_return_pct,
+    price_recovery_multiple_from_bottom,
+    cash_flow_adjusted_recovery_pct,
     recovered_loss_pct,
-    recovery_multiple_from_bottom,
     data_confidence: "high",
     qualifying_evidence: qualifying,
     disqualifying_evidence: [],
@@ -335,7 +404,7 @@ export function buildComebackRoast(
   const lowest = result.lowest_position_value_usd;
   const ending = result.ending_value_usd;
   const drawdownPct = Math.round(Math.abs(result.max_drawdown_pct));
-  const profit = ending - invested;
+  const profit = ending - result.total_cost_basis_usd;
 
   const fmtMoney = (v: number) => {
     if (Math.abs(v) >= 1000) return `$${Math.round(v).toLocaleString()}`;
@@ -377,7 +446,8 @@ export function buildAlmostEscapedRoast(result: ComebackResult): string {
   const lowest = result.lowest_position_value_usd;
   const ending = result.ending_value_usd;
   const drawdownPct = Math.round(Math.abs(result.max_drawdown_pct));
-  const shortfall = invested - ending;
+  // Shortfall is against total cost basis (entry + later buys), not just entry.
+  const shortfall = result.total_cost_basis_usd - ending;
 
   const fmtMoney = (v: number) => {
     if (Math.abs(v) >= 1000) return `$${Math.round(v).toLocaleString()}`;
@@ -404,9 +474,14 @@ export function buildAlmostEscapedVerdict(result: ComebackResult) {
 // Derives the comeback inputs from the computed trade metrics. The metrics
 // are expected to include:
 //   purchase_cost_usd / amount_invested_usd — the USD cost of the entry
+//   total_cost_basis_usd                    — entry + later buys (if available)
+//   later_buys_cost_usd                     — total USD cost of later buys
 //   max_drawdown_pct                       — ratio (e.g., -0.89 means -89%)
 //   current_value_usd / ending_value_usd   — current value of remaining position
 //   realized_exit_value_usd                 — total USD realized from sells
+//   total_tokens_sold                       — total tokens sold (for exit price)
+//   entry_price_usd                         — implied entry price
+//   current_price_usd                       — current token price (for held)
 //   conviction                              — "held" | "partial_exit" | "full_exit" | "averaged_down"
 //   lowest_market_cap_timestamp             — timestamp of the lowest candle
 //   last_sell_timestamp                     — timestamp of the last sell (for full exits)
@@ -420,6 +495,31 @@ export function extractComebackInputs(metrics: Record<string, any>): ComebackInp
   const amount_invested_usd = num(metrics.purchase_cost_usd) ?? num(metrics.amount_invested_usd);
   const max_dd = num(metrics.max_drawdown_pct); // ratio
 
+  // Total cost basis = entry + later buys cost.
+  const later_buys_cost = num(metrics.later_buys_cost_usd);
+  const total_cost_basis_usd =
+    amount_invested_usd !== null && later_buys_cost !== null && later_buys_cost > 0
+      ? amount_invested_usd + later_buys_cost
+      : num(metrics.total_cost_basis_usd) ?? amount_invested_usd;
+
+  // Prices for price-based recovery metrics.
+  const entry_price_usd = num(metrics.entry_price_usd);
+  const trough_price_usd = entry_price_usd !== null && max_dd !== null
+    ? entry_price_usd * (1 + max_dd)
+    : null;
+
+  // Exit price: for full exits, derive from realized proceeds / tokens sold.
+  // For held/partial positions, use the current token price.
+  const conviction = metrics.conviction;
+  const realized_exit_value_usd = num(metrics.realized_exit_value_usd);
+  const total_tokens_sold = num(metrics.total_tokens_sold);
+  const current_price_usd = num(metrics.current_price_usd);
+  const exit_price_usd =
+    conviction === "full_exit" && realized_exit_value_usd !== null && realized_exit_value_usd > 0 &&
+    total_tokens_sold !== null && total_tokens_sold > 0
+      ? realized_exit_value_usd / total_tokens_sold
+      : current_price_usd;
+
   // Lowest position value = invested * (1 + max_drawdown_pct)
   // (max_drawdown_pct is the ratio decline from entry to the lowest point)
   const lowest_position_value_usd =
@@ -428,8 +528,6 @@ export function extractComebackInputs(metrics: Record<string, any>): ComebackInp
       : null;
 
   // Ending value: for full exits, use realized exit value; otherwise current value.
-  const conviction = metrics.conviction;
-  const realized_exit_value_usd = num(metrics.realized_exit_value_usd);
   const current_value_usd = num(metrics.current_value_usd) ?? num(metrics.ending_value_usd);
   const ending_value_usd =
     conviction === "full_exit" && realized_exit_value_usd !== null
@@ -454,8 +552,12 @@ export function extractComebackInputs(metrics: Record<string, any>): ComebackInp
 
   return {
     amount_invested_usd,
+    total_cost_basis_usd,
     lowest_position_value_usd,
     ending_value_usd,
+    entry_price_usd,
+    trough_price_usd,
+    exit_price_usd,
     low_after_entry,
     low_before_ending,
   };
