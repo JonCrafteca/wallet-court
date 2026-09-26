@@ -60,6 +60,10 @@ describe("Category route slug → key mapping", () => {
     expect(CATEGORY_SLUG_TO_KEY["honor"]).toBe("honor");
   });
 
+  it("recovery maps to recovery", () => {
+    expect(CATEGORY_SLUG_TO_KEY["recovery"]).toBe("recovery");
+  });
+
   it("CATEGORY_ROUTES values match the slug keys", () => {
     for (const cat of HALL_CATEGORIES) {
       const route = CATEGORY_ROUTES[cat];

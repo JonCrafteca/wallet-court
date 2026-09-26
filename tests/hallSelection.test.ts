@@ -59,12 +59,13 @@ describe("Hall summary — card counts", () => {
     expect(SUMMARY_LIMIT).toBe(3);
   });
 
-  it("HALL_CATEGORIES has exactly 4 categories", () => {
-    expect(HALL_CATEGORIES).toHaveLength(4);
+  it("HALL_CATEGORIES has exactly 5 categories", () => {
+    expect(HALL_CATEGORIES).toHaveLength(5);
     expect(HALL_CATEGORIES).toContain("most_severe");
     expect(HALL_CATEGORIES).toContain("highest_confidence");
     expect(HALL_CATEGORIES).toContain("recent");
     expect(HALL_CATEGORIES).toContain("honor");
+    expect(HALL_CATEGORIES).toContain("recovery");
   });
 
   it("summary slices to SUMMARY_LIMIT (3) — does not fetch the full collection", () => {

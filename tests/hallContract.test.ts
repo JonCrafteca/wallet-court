@@ -348,7 +348,7 @@ describe("classifyHallCategoryResponse — frontend unwrapping", () => {
   });
 });
 
-// ---- 4. Route slug → key mapping (all four categories) ----
+// ---- 4. Route slug → key mapping (all five categories) ----
 describe("Route slug → category key mapping", () => {
   it("/hall/most-severe maps to most_severe", () => {
     expect(CATEGORY_SLUG_TO_KEY["most-severe"]).toBe("most_severe");
@@ -361,5 +361,8 @@ describe("Route slug → category key mapping", () => {
   });
   it("/hall/honor maps to honor", () => {
     expect(CATEGORY_SLUG_TO_KEY["honor"]).toBe("honor");
+  });
+  it("/hall/recovery maps to recovery", () => {
+    expect(CATEGORY_SLUG_TO_KEY["recovery"]).toBe("recovery");
   });
 });
