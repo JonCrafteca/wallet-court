@@ -7,7 +7,6 @@ import { classifyCaseFetchResult } from "@/lib/routeState";
 import { extractApiError } from "@/lib/apiError";
 import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
 import { getSingleTradeErrorMessage } from "@/lib/singleTradeErrors";
-import { getSingleTradeAccess } from "@/lib/singleTradeAccess";
 import { RefreshCw, Loader2, RotateCcw, AlertTriangle } from "lucide-react";
 
 // Extract the HTTP status and backend error message from any Base44 SDK
@@ -21,6 +20,29 @@ function classifyFetchError(e) {
   const status = rawStatus != null ? Number(rawStatus) : null;
   const classified = classifyCaseFetchResult({ error: apiErr.message }, status);
   return { message: apiErr.message, status, classified };
+}
+
+// Fetch the slug-specific recovery state from the backend. The backend
+// function authenticates the admin, reads the failed trial, and returns
+// { can_retry, reason, usage_enabled, emergency_stop }. Correctly unwraps
+// the Base44 functions.invoke response (payload is in res.data). Fails
+// closed on any error (403 for public users, network error, etc.).
+async function fetchRecoveryState(slug) {
+  try {
+    const res = await base44.functions.invoke("getSingleTradeRecoveryState", { slug });
+    const data = res?.data;
+    if (data && typeof data.can_retry === "boolean") {
+      return {
+        can_retry: data.can_retry === true,
+        reason: data.reason || null,
+        usage_enabled: !!data.usage_enabled,
+        emergency_stop: !!data.emergency_stop,
+      };
+    }
+    return { can_retry: false, reason: "invalid_response", usage_enabled: false, emergency_stop: false };
+  } catch {
+    return { can_retry: false, reason: "forbidden", usage_enabled: false, emergency_stop: false };
+  }
 }
 
 // Error codes that indicate another retry attempt would not be safe or
@@ -44,27 +66,29 @@ export default function SingleTradeCase() {
   const [trial, setTrial] = useState(null);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
-  const [access, setAccess] = useState(null); // null = loading; object = resolved
-  const [accessLoading, setAccessLoading] = useState(true);
+  const [recovery, setRecovery] = useState(null); // null = loading; object = resolved
+  const [recoveryLoading, setRecoveryLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState("");
   const [retryBlocked, setRetryBlocked] = useState(false);
   const retryingRef = useRef(false);
 
-  // Resolve Single Trade access independently from the case fetch, using the
-  // server-authoritative getSingleTradeAccess function. This does NOT rely on
-  // the returned trial object or the failed fetch to determine admin status.
-  // Fails closed (no retry button) while loading or if access resolution fails.
+  // Resolve slug-specific recovery state independently from the case fetch.
+  // The backend function authenticates the admin, reads the failed trial, and
+  // returns a single can_retry boolean. Fails closed (no retry button) while
+  // loading or if recovery resolution fails. Public callers get 403 → fail closed.
   useEffect(() => {
     let alive = true;
+    setRecovery(null);
+    setRecoveryLoading(true);
     (async () => {
-      const result = await getSingleTradeAccess();
+      const result = await fetchRecoveryState(slug);
       if (!alive) return;
-      setAccess(result);
-      setAccessLoading(false);
+      setRecovery(result);
+      setRecoveryLoading(false);
     })();
     return () => { alive = false; };
-  }, []);
+  }, [slug]);
 
   useEffect(() => {
     let alive = true;
@@ -231,12 +255,9 @@ export default function SingleTradeCase() {
   //  - can_access is true (public_enabled || is_admin)
   //  - Single Trade usage is enabled and emergency stop is off
   //  - the case fetch resolved as notfound (unavailable case)
-  const canAdminRetry = !accessLoading
-    && !!access
-    && access.is_admin
-    && access.can_access
-    && access.usage_enabled
-    && !access.emergency_stop
+  const canAdminRetry = !recoveryLoading
+    && !!recovery
+    && recovery.can_retry === true
     && status === "notfound";
 
   return (
