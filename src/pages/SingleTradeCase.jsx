@@ -6,7 +6,7 @@ import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
 import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
 import { getSingleTradeErrorMessage } from "@/lib/singleTradeErrors";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, RotateCcw, AlertTriangle } from "lucide-react";
 
 export default function SingleTradeCase() {
   const { slug } = useParams();
@@ -14,6 +14,21 @@ export default function SingleTradeCase() {
   const [trial, setTrial] = useState(null);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState("");
+
+  // Check admin status once on mount.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const user = await base44.auth.me();
+        if (alive && user && user.role === "admin") setIsAdmin(true);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -25,10 +40,6 @@ export default function SingleTradeCase() {
         const result = res?.data;
         const classified = classifyCaseFetchResult(result, res?.status);
         if (classified === "done") {
-          // Frontend safety net: refuse to render an incomplete trial even if
-          // the backend gate somehow returns one. A verdict case without
-          // verdict_code/severity/confidence/roast/sentence/evidence would
-          // render as a generic GUILTY stamp with 0/100 — treat as notfound.
           if (!isSingleTradeRenderable(result.trial)) {
             setError("This trade case was not completed and is not available for public viewing.");
             setStatus("notfound");
@@ -52,7 +63,7 @@ export default function SingleTradeCase() {
     return () => { alive = false; };
   }, [slug]);
 
-  async function handleRetry() {
+  async function handleRetryLoad() {
     setError("");
     setStatus("loading");
     try {
@@ -80,13 +91,67 @@ export default function SingleTradeCase() {
     }
   }
 
+  // Admin retry: creates a new selection from the failed trial's stored
+  // purchase details, then calls analyzeSingleTrade — no discovery call.
+  async function handleAdminRetry() {
+    setRetrying(true);
+    setRetryError("");
+    try {
+      // 1. Create a new selection from the failed trial's stored details.
+      const retryRes = await base44.functions.invoke("retrySingleTradeTrial", { slug });
+      if (retryRes?.data?.error) {
+        setRetryError(retryRes.data.error);
+        return;
+      }
+      const { selection_token, wallet_address, network, token_mint } = retryRes.data;
+
+      // 2. Call analyzeSingleTrade with the server-authoritative selection.
+      setStatus("loading");
+      const analysisRes = await base44.functions.invoke("analyzeSingleTrade", {
+        wallet_address, network, token_mint, selection_token
+      });
+      const result = analysisRes?.data;
+      if (result?.error) {
+        setRetryError(result.error);
+        setStatus("notfound");
+        setError(result.error);
+        return;
+      }
+      if (result?.court_recess) {
+        setRetryError("The court is in recess. Please try again shortly.");
+        setStatus("notfound");
+        return;
+      }
+      if (!result?.trial || !isSingleTradeRenderable(result.trial)) {
+        setRetryError("The retry did not produce a complete verdict. Please try again.");
+        setStatus("notfound");
+        return;
+      }
+      // Success — navigate to the new case slug.
+      const newSlug = result.trial.public_slug;
+      if (newSlug && newSlug !== slug) {
+        navigate(`/trade/${newSlug}`, { replace: true });
+      } else {
+        setTrial(result.trial);
+        setStatus("done");
+      }
+    } catch (e) {
+      setRetryError(getSingleTradeErrorMessage(e, "Retry failed. Please try again."));
+      setStatus("notfound");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   if (status === "loading") return <LoadingStage visible />;
   if (status === "done" && trial) {
-    // Defense-in-depth: refuse to render an incomplete trial even if the
-    // backend gate somehow returned one. This prevents a failed trial from
-    // rendering as a fake GUILTY stamp with 0/100 severity and blank fields.
     if (!isSingleTradeRenderable(trial)) {
-      return <UnavailableCase message="This trade case was not completed and is not available for public viewing." onBack={() => navigate("/")} />;
+      return (
+        <UnavailableCase
+          message="This trade case was not completed and is not available for public viewing."
+          onBack={() => navigate("/")}
+        />
+      );
     }
     return (
       <div className="relative">
@@ -103,13 +168,18 @@ export default function SingleTradeCase() {
     <UnavailableCase
       message={error || "This trade case never made it to the docket."}
       showRetry={status === "error"}
-      onRetry={handleRetry}
+      onRetry={handleRetryLoad}
       onBack={() => navigate("/")}
+      // Admin-only retry: re-analyzes the failed trade without a discovery call.
+      showAdminRetry={isAdmin && (status === "notfound" || status === "error")}
+      adminRetrying={retrying}
+      adminRetryError={retryError}
+      onAdminRetry={handleAdminRetry}
     />
   );
 }
 
-function UnavailableCase({ message, showRetry, onRetry, onBack }) {
+function UnavailableCase({ message, showRetry, onRetry, onBack, showAdminRetry, adminRetrying, adminRetryError, onAdminRetry }) {
   // Add a noindex meta tag so search engines do not index unavailable cases.
   useEffect(() => {
     const meta = document.createElement("meta");
@@ -128,13 +198,36 @@ function UnavailableCase({ message, showRetry, onRetry, onBack }) {
         <p className="font-mono text-base text-court-ice mb-6 leading-relaxed">
           {message || "This trade case is not available for public viewing."}
         </p>
+
+        {showAdminRetry && (
+          <div className="mb-6 border-2 border-court-chart/60 bg-court-uv/30 p-4">
+            <p className="font-mono text-sm text-court-chart mb-3 leading-relaxed">
+              Admin: retry the analysis using the original purchase details — no new discovery call needed.
+            </p>
+            <button
+              onClick={onAdminRetry}
+              disabled={adminRetrying}
+              className="inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-base px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all disabled:opacity-50"
+            >
+              {adminRetrying ? <Loader2 className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
+              Retry Analysis
+            </button>
+            {adminRetryError && (
+              <div className="mt-3 flex items-start gap-2 text-left">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-court-red" />
+                <span className="font-mono text-xs text-court-red leading-relaxed">{adminRetryError}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center justify-center gap-3">
           {showRetry && (
             <button
               onClick={onRetry}
               className="inline-flex items-center justify-center bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-base px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all"
             >
-              Retry
+              Reload Case
             </button>
           )}
           <button
