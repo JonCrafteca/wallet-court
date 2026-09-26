@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import SingleTradeVerdict from "@/components/walletcourt/SingleTradeVerdict";
@@ -7,6 +7,7 @@ import { classifyCaseFetchResult } from "@/lib/routeState";
 import { extractApiError } from "@/lib/apiError";
 import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
 import { getSingleTradeErrorMessage } from "@/lib/singleTradeErrors";
+import { getSingleTradeAccess } from "@/lib/singleTradeAccess";
 import { RefreshCw, Loader2, RotateCcw, AlertTriangle } from "lucide-react";
 
 // Extract the HTTP status and backend error message from any Base44 SDK
@@ -22,24 +23,45 @@ function classifyFetchError(e) {
   return { message: apiErr.message, status, classified };
 }
 
+// Error codes that indicate another retry attempt would not be safe or
+// useful. When the retry returns one of these, the Retry Analysis button
+// stays disabled (retryBlocked) to prevent futile repeated clicks.
+const PERMANENT_RETRY_ERRORS = new Set([
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "NOT_FAILED",
+  "UNSUPPORTED_CHAIN",
+  "MISSING_PURCHASE_DETAILS",
+  "BUDGET_EXHAUSTED",
+  "ANALYSIS_PROCESSING",
+  "FEATURE_DISABLED",
+  "EMERGENCY_STOP",
+]);
+
 export default function SingleTradeCase() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const [trial, setTrial] = useState(null);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [access, setAccess] = useState(null); // null = loading; object = resolved
+  const [accessLoading, setAccessLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState("");
+  const [retryBlocked, setRetryBlocked] = useState(false);
+  const retryingRef = useRef(false);
 
-  // Check admin status once on mount.
+  // Resolve Single Trade access independently from the case fetch, using the
+  // server-authoritative getSingleTradeAccess function. This does NOT rely on
+  // the returned trial object or the failed fetch to determine admin status.
+  // Fails closed (no retry button) while loading or if access resolution fails.
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        const user = await base44.auth.me();
-        if (alive && user && user.role === "admin") setIsAdmin(true);
-      } catch {}
+      const result = await getSingleTradeAccess();
+      if (!alive) return;
+      setAccess(result);
+      setAccessLoading(false);
     })();
     return () => { alive = false; };
   }, []);
@@ -119,14 +141,22 @@ export default function SingleTradeCase() {
 
   // Admin retry: creates a new selection from the failed trial's stored
   // purchase details, then calls analyzeSingleTrade — no discovery call.
+  // Uses a ref guard to prevent double submission. Re-enables the button
+  // only when another attempt is safe (transient errors). Permanent errors
+  // (budget exhausted, not failed, not found, unsupported chain, etc.)
+  // block further retries via retryBlocked.
   async function handleAdminRetry() {
+    if (retryingRef.current) return; // prevent double submission
+    retryingRef.current = true;
     setRetrying(true);
     setRetryError("");
     try {
       // 1. Create a new selection from the failed trial's stored details.
       const retryRes = await base44.functions.invoke("retrySingleTradeTrial", { slug });
       if (retryRes?.data?.error) {
-        setRetryError(retryRes.data.error);
+        const code = retryRes.data.code || null;
+        setRetryError(getSingleTradeErrorMessage({ data: retryRes.data }, "Retry failed."));
+        if (PERMANENT_RETRY_ERRORS.has(code)) setRetryBlocked(true);
         return;
       }
       const { selection_token, wallet_address, network, token_mint } = retryRes.data;
@@ -138,13 +168,15 @@ export default function SingleTradeCase() {
       });
       const result = analysisRes?.data;
       if (result?.error) {
-        setRetryError(result.error);
+        const code = result.code || null;
+        setRetryError(getSingleTradeErrorMessage({ data: result }, "Analysis failed."));
+        if (PERMANENT_RETRY_ERRORS.has(code)) setRetryBlocked(true);
         setStatus("notfound");
         setError(result.error);
         return;
       }
       if (result?.court_recess) {
-        setRetryError("The court is in recess. Please try again shortly.");
+        setRetryError(getSingleTradeErrorMessage({ data: { court_recess: true } }, "The court is in recess. Please try again shortly."));
         setStatus("notfound");
         return;
       }
@@ -162,9 +194,12 @@ export default function SingleTradeCase() {
         setStatus("done");
       }
     } catch (e) {
+      const apiErr = extractApiError(e, "Retry failed. Please try again.");
       setRetryError(getSingleTradeErrorMessage(e, "Retry failed. Please try again."));
+      if (PERMANENT_RETRY_ERRORS.has(apiErr.code)) setRetryBlocked(true);
       setStatus("notfound");
     } finally {
+      retryingRef.current = false;
       setRetrying(false);
     }
   }
@@ -190,24 +225,36 @@ export default function SingleTradeCase() {
       </div>
     );
   }
+  // Show the admin Retry Analysis button only when ALL of these hold:
+  //  - access resolved (not loading, no error)
+  //  - the user is an admin (server-authoritative, not client-inferred)
+  //  - can_access is true (public_enabled || is_admin)
+  //  - Single Trade usage is enabled and emergency stop is off
+  //  - the case fetch resolved as notfound (unavailable case)
+  const canAdminRetry = !accessLoading
+    && !!access
+    && access.is_admin
+    && access.can_access
+    && access.usage_enabled
+    && !access.emergency_stop
+    && status === "notfound";
+
   return (
     <UnavailableCase
       message={error || "This trade case was not completed and is unavailable."}
       showRetry={status === "error"}
       onRetry={handleRetryLoad}
       onBack={() => navigate("/")}
-      // Admin-only retry: shown ONLY for the unavailable-case state (notfound),
-      // never for transient errors. Uses the server-authoritative
-      // retrySingleTradeTrial function — no client-supplied purchase facts.
-      showAdminRetry={isAdmin && status === "notfound"}
+      showAdminRetry={canAdminRetry}
       adminRetrying={retrying}
+      adminRetryBlocked={retryBlocked}
       adminRetryError={retryError}
       onAdminRetry={handleAdminRetry}
     />
   );
 }
 
-function UnavailableCase({ message, showRetry, onRetry, onBack, showAdminRetry, adminRetrying, adminRetryError, onAdminRetry }) {
+function UnavailableCase({ message, showRetry, onRetry, onBack, showAdminRetry, adminRetrying, adminRetryBlocked, adminRetryError, onAdminRetry }) {
   // Add a noindex meta tag so search engines do not index unavailable cases.
   useEffect(() => {
     const meta = document.createElement("meta");
@@ -234,7 +281,7 @@ function UnavailableCase({ message, showRetry, onRetry, onBack, showAdminRetry, 
             </p>
             <button
               onClick={onAdminRetry}
-              disabled={adminRetrying}
+              disabled={adminRetrying || adminRetryBlocked}
               className="inline-flex items-center justify-center gap-2 bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-base px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all disabled:opacity-50"
             >
               {adminRetrying ? <Loader2 className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
