@@ -118,7 +118,7 @@ export default function AdminSingleTradeUsage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
         <StatCard icon={Power} label="Enabled" value={policy?.enabled ? "YES" : "NO"} accent={policy?.enabled} />
         <StatCard icon={ShieldAlert} label="Emergency Stop" value={policy?.emergency_stop ? "ACTIVE" : "OFF"} danger={policy?.emergency_stop} />
-        <StatCard icon={Activity} label="Used Today" value={`${used} / ${limit}`} />
+        <StatCard icon={Activity} label="Used Today (UTC)" value={`${used} / ${limit}`} />
         <StatCard icon={Check} label="Remaining" value={String(remaining)} accent={remaining > 0} />
       </div>
 

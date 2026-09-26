@@ -6,9 +6,12 @@
 // a network is supported before making any Nansen calls.
 //
 // VERIFICATION STATUS (as of 2026-09-26):
-//   - Solana: VERIFIED by live NansenApiCallAudit records (1,024 total, all
-//     solana, all 200 OK). dex-trades, token-ohlcv, and current-balance all
-//     returned valid data for real wallets.
+//   - Solana: VERIFIED by 6 Single Trade-specific NansenApiCallAudit records on
+//     solana (4 single_trade_analysis + 2 single_trade_discovery, all 200 OK).
+//     dex-trades, token-ohlcv, and current-balance all returned valid data for
+//     real wallets. The global audit total of 1,024 includes Whole Wallet,
+//     Robinhood validation, and calibration calls across all four chains — it
+//     is NOT evidence for Solana Single Trade support specifically.
 //   - Ethereum: UNVERIFIED. No live audit records exist for Single Trade on
 //     ethereum. The Nansen API accepts "ethereum" as a chain identifier for
 //     dex-trades and current-balance (verified by whole-wallet trials), but
