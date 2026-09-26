@@ -110,6 +110,10 @@
     "headline": {
       "type": "string"
     },
+    "charge": {
+      "type": "string",
+      "description": "The formal courtroom charge/accusation label (e.g. 'REFUSING TO DIE'). Null for verdicts without a charge."
+    },
     "roast": {
       "type": "string",
       "description": "The courtroom roast of the trade. Null for dismissed/mistrial."
@@ -127,7 +131,7 @@
     },
     "metrics_json": {
       "type": "string",
-      "description": "JSON object of trade-level metrics (drawdown, trough, recovery, time underwater, unrealized PnL, conviction, FIFO lot attribution, etc.) with _meta."
+      "description": "JSON object of trade-level metrics (drawdown, trough, recovery, time underwater, unrealized PnL, conviction, FIFO lot attribution, comeback archetype record, etc.) with _meta."
     },
     "ohlcv_snapshot_json": {
       "type": "string",

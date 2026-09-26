@@ -254,6 +254,14 @@ export interface TradeMetrics {
   later_buys_count: number;
   total_tokens_sold: number | null;
   total_tokens_bought_later: number | null;
+  // Comeback archetype inputs (canonical registry)
+  purchase_cost_usd: number | null;
+  current_value_usd: number | null;
+  lowest_position_value_usd: number | null;
+  realized_exit_value_usd: number | null;
+  ending_value_usd: number | null;
+  lowest_market_cap_timestamp: string | null;
+  last_sell_timestamp: string | null;
 }
 
 // Compute trade-level metrics from an OHLCV candle series + trade context.
@@ -304,6 +312,20 @@ export function computeTradeMetrics(args: {
 
   const lowestMarketCap = mcapLows.length > 0 ? Math.min(...mcapLows) : null;
   const highestMarketCap = mcapHighs.length > 0 ? Math.max(...mcapHighs) : null;
+
+  // Track the timestamp of the lowest market cap candle (for comeback
+  // chronological validation).
+  let lowestMarketCapTimestamp: string | null = null;
+  if (postEntryCandles.length > 0) {
+    let lowestCandle: { mcapLow: number; timestamp: string } | null = null;
+    for (const c of postEntryCandles) {
+      const low = c.market_cap?.low ?? null;
+      if (low !== null && low > 0 && (lowestCandle === null || low < lowestCandle.mcapLow)) {
+        lowestCandle = { mcapLow: low, timestamp: c.interval_start };
+      }
+    }
+    if (lowestCandle) lowestMarketCapTimestamp = lowestCandle.timestamp;
+  }
 
   // Max drawdown from entry.
   let maxDrawdownPct: number | null = null;
@@ -367,6 +389,27 @@ export function computeTradeMetrics(args: {
     conviction = "averaged_down";
   }
 
+  // ---- Comeback archetype inputs ----
+  const realizedExitValueUsd = laterSells.reduce((sum, s) => sum + (num(s.trade_value_usd) || 0), 0);
+  const lastSellTimestamp = laterSells.length > 0
+    ? laterSells.reduce((latest, s) => {
+        const ts = s.block_timestamp || s.timestamp || null;
+        if (!ts) return latest;
+        if (!latest) return ts;
+        return new Date(ts).getTime() > new Date(latest).getTime() ? ts : latest;
+      }, null as string | null)
+    : null;
+
+  const lowestPositionValueUsd =
+    purchaseCostUsd !== null && purchaseCostUsd > 0 && maxDrawdownPct !== null
+      ? purchaseCostUsd * (1 + maxDrawdownPct)
+      : null;
+
+  const endingValueUsd =
+    conviction === "full_exit" && realizedExitValueUsd > 0
+      ? realizedExitValueUsd
+      : currentValueUsd ?? null;
+
   return {
     entry_market_cap_usd: entryMarketCapUsd,
     max_drawdown_pct: maxDrawdownPct,
@@ -384,6 +427,13 @@ export function computeTradeMetrics(args: {
     later_buys_count: laterBuys.length,
     total_tokens_sold: totalTokensSold > 0 ? totalTokensSold : null,
     total_tokens_bought_later: totalTokensBoughtLater > 0 ? totalTokensBoughtLater : null,
+    purchase_cost_usd: purchaseCostUsd,
+    current_value_usd: currentValueUsd ?? null,
+    lowest_position_value_usd: lowestPositionValueUsd,
+    realized_exit_value_usd: realizedExitValueUsd > 0 ? realizedExitValueUsd : null,
+    ending_value_usd: endingValueUsd,
+    lowest_market_cap_timestamp: lowestMarketCapTimestamp,
+    last_sell_timestamp: lastSellTimestamp,
   };
 }
 
@@ -553,6 +603,7 @@ export function sanitizeSingleTrialForPublicCase(trial: any): Record<string, any
     severity_score: trial.severity_score,
     confidence_score: trial.confidence_score,
     headline: trial.headline,
+    charge: trial.charge || null,
     roast: trial.roast,
     defense_statement: trial.defense_statement,
     sentence: trial.sentence,

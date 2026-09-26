@@ -1,0 +1,393 @@
+// Wallet Court — Canonical verdict-archetype registry.
+//
+// Single source of truth for all verdict classifications across single-trade
+// and whole-wallet analysis, verdict receipt rendering, share images, My Court,
+// Hall of Fame, and admin/debug views.
+//
+// PRINCIPLE: The deterministic analysis selects the archetype. AI may write
+// roast/commentary only AFTER receiving the selected archetype and verified
+// metrics. AI must never invent or override the classification.
+//
+// This module is PURE: no SDK, no network, no side effects. Imported by
+// backend functions and unit-tested in isolation.
+
+// ---- Types ----
+
+export type ArchetypeTier = "comeback" | "guilty" | "neutral" | "not_guilty";
+
+export interface ArchetypeDefinition {
+  archetype_id: string;
+  archetype_name: string;
+  archetype_tier: ArchetypeTier;
+  charge: string;
+  headline: string;
+  sentence: string;
+  defense: string;
+}
+
+// ---- Comeback tier definitions ----
+//
+// Drawdown thresholds are in RATIO form (e.g., -0.50 means -50%).
+// A comeback archetype requires ending_value >= amount_invested (recovered
+// to cost basis or better). The journey takes precedence over generic
+// final-P&L classifications like "Stuck in the Middle."
+//
+// Tier boundaries (inclusive lower, exclusive upper):
+//   ESCAPE ARTIST:     dd <= -50%  AND  dd > -70%
+//   COMEBACK KID:      dd <= -70%  AND  dd > -90%
+//   BACK FROM THE DEAD: dd <= -90%
+
+export interface ComebackTier {
+  archetype_id: string;
+  archetype_name: string;
+  charge: string;
+  min_drawdown: number; // inclusive lower bound (e.g., -0.50)
+  max_drawdown: number | null; // exclusive upper bound (e.g., -0.70); null = no bound
+  defense: string;
+  sentence: string;
+}
+
+export const COMEBACK_TIERS: ComebackTier[] = [
+  {
+    archetype_id: "escape_artist",
+    archetype_name: "ESCAPE ARTIST",
+    charge: "REFUSING TO STAY UNDERWATER",
+    min_drawdown: -0.50,
+    max_drawdown: -0.70,
+    defense:
+      "My client merely held through a routine correction. The court is dramatizing a dip.",
+    sentence:
+      "One mandatory victory lap, served exclusively in the group chat.",
+  },
+  {
+    archetype_id: "comeback_kid",
+    archetype_name: "COMEBACK KID",
+    charge: "REFUSING TO DIE",
+    min_drawdown: -0.70,
+    max_drawdown: -0.90,
+    defense:
+      "My client was merely early. The timing of the recovery is coincidental.",
+    sentence:
+      "One mandatory victory lap—and a lifetime ban from pretending this was disciplined risk management.",
+  },
+  {
+    archetype_id: "back_from_the_dead",
+    archetype_name: "BACK FROM THE DEAD",
+    charge: "RETURNING FROM THE AFTERLIFE",
+    min_drawdown: -0.90,
+    max_drawdown: null,
+    defense:
+      "My client was not dead. My client was resting. The court has no jurisdiction over naps.",
+    sentence:
+      "One mandatory resurrection certificate, framed and displayed above the trading terminal.",
+  },
+];
+
+// ---- Comeback classification inputs ----
+
+export interface ComebackInputs {
+  amount_invested_usd: number | null;
+  lowest_position_value_usd: number | null;
+  ending_value_usd: number | null;
+  // Chronological confirmation: the low occurred after entry and before ending.
+  low_after_entry: boolean;
+  low_before_ending: boolean;
+}
+
+// ---- Canonical archetype record (the result) ----
+
+export interface ComebackResult {
+  archetype_id: string | null;
+  archetype_name: string | null;
+  archetype_tier: ArchetypeTier | null;
+  classification_reason: string;
+  amount_invested_usd: number;
+  lowest_position_value_usd: number;
+  ending_value_usd: number;
+  max_drawdown_pct: number; // as percentage (e.g., -89.1)
+  final_return_pct: number; // as percentage (e.g., +13.6)
+  recovered_loss_pct: number | null;
+  recovery_multiple_from_bottom: number | null;
+  data_confidence: "high" | "medium" | "low";
+  qualifying_evidence: string[];
+  disqualifying_evidence: string[];
+}
+
+// ---- Pure classification function ----
+//
+// Classifies a comeback archetype from verified inputs. Returns null
+// archetype_id if no comeback tier is matched (inputs missing, unreliable,
+// ending below cost basis, or drawdown doesn't meet the minimum -50% threshold).
+export function classifyComeback(inputs: ComebackInputs): ComebackResult {
+  const {
+    amount_invested_usd,
+    lowest_position_value_usd,
+    ending_value_usd,
+    low_after_entry,
+    low_before_ending,
+  } = inputs;
+
+  const qualifying: string[] = [];
+  const disqualifying: string[] = [];
+
+  // ---- Reliability checks ----
+  const hasInvested =
+    amount_invested_usd !== null && amount_invested_usd !== undefined && amount_invested_usd > 0;
+  const hasLow =
+    lowest_position_value_usd !== null && lowest_position_value_usd !== undefined && lowest_position_value_usd >= 0;
+  const hasEnding =
+    ending_value_usd !== null && ending_value_usd !== undefined && ending_value_usd >= 0;
+
+  if (!hasInvested) disqualifying.push("Missing or invalid amount_invested_usd");
+  if (!hasLow) disqualifying.push("Missing or unreliable lowest_position_value_usd");
+  if (!hasEnding) disqualifying.push("Missing or unreliable ending_value_usd");
+  if (!low_after_entry) disqualifying.push("Low point did not occur after entry");
+  if (!low_before_ending) disqualifying.push("Low point did not occur before the ending valuation");
+
+  // If any required input is missing or unreliable, no comeback classification.
+  if (!hasInvested || !hasLow || !hasEnding || !low_after_entry || !low_before_ending) {
+    return {
+      archetype_id: null,
+      archetype_name: null,
+      archetype_tier: null,
+      classification_reason:
+        "Comeback classification skipped: required inputs missing or unreliable.",
+      amount_invested_usd: amount_invested_usd ?? 0,
+      lowest_position_value_usd: lowest_position_value_usd ?? 0,
+      ending_value_usd: ending_value_usd ?? 0,
+      max_drawdown_pct: 0,
+      final_return_pct: 0,
+      recovered_loss_pct: null,
+      recovery_multiple_from_bottom: null,
+      data_confidence: "low",
+      qualifying_evidence: qualifying,
+      disqualifying_evidence: disqualifying,
+    };
+  }
+
+  // ---- Compute metrics ----
+  const max_drawdown_pct =
+    ((lowest_position_value_usd - amount_invested_usd) / amount_invested_usd) * 100;
+  const final_return_pct =
+    ((ending_value_usd - amount_invested_usd) / amount_invested_usd) * 100;
+  const loss_amount = amount_invested_usd - lowest_position_value_usd;
+  const recovered_loss_pct =
+    loss_amount > 0
+      ? ((ending_value_usd - lowest_position_value_usd) / loss_amount) * 100
+      : null;
+  const recovery_multiple_from_bottom =
+    lowest_position_value_usd > 0
+      ? ending_value_usd / lowest_position_value_usd
+      : null;
+
+  // ---- Check ending >= invested (recovered to cost basis) ----
+  const recovered = ending_value_usd >= amount_invested_usd;
+  if (!recovered) {
+    disqualifying.push(
+      `Ending value ($${ending_value_usd.toFixed(2)}) is below cost basis ($${amount_invested_usd.toFixed(2)}) — comeback not completed`
+    );
+  }
+
+  // ---- Check drawdown threshold ----
+  const ddRatio = max_drawdown_pct / 100; // convert to ratio for tier matching
+  let matchedTier: ComebackTier | null = null;
+  for (const tier of COMEBACK_TIERS) {
+    if (ddRatio <= tier.min_drawdown && (tier.max_drawdown === null || ddRatio > tier.max_drawdown)) {
+      matchedTier = tier;
+      break;
+    }
+  }
+
+  if (!matchedTier || !recovered) {
+    return {
+      archetype_id: null,
+      archetype_name: null,
+      archetype_tier: null,
+      classification_reason: recovered
+        ? "Drawdown does not meet any comeback tier threshold."
+        : "Position has not recovered to cost basis — comeback not completed.",
+      amount_invested_usd,
+      lowest_position_value_usd,
+      ending_value_usd,
+      max_drawdown_pct,
+      final_return_pct,
+      recovered_loss_pct,
+      recovery_multiple_from_bottom,
+      data_confidence: "high",
+      qualifying_evidence: qualifying,
+      disqualifying_evidence:
+        disqualifying.length > 0
+          ? disqualifying
+          : [`Drawdown ${max_drawdown_pct.toFixed(1)}% does not meet the minimum -50% comeback threshold`],
+    };
+  }
+
+  // ---- Comeback archetype selected! ----
+  qualifying.push(
+    `Max drawdown of ${max_drawdown_pct.toFixed(1)}% qualifies for ${matchedTier.archetype_name}`
+  );
+  qualifying.push(
+    `Ending value ($${ending_value_usd.toFixed(2)}) recovered to cost basis ($${amount_invested_usd.toFixed(2)})`
+  );
+  if (recovery_multiple_from_bottom !== null) {
+    qualifying.push(`Recovery multiple from bottom: ${recovery_multiple_from_bottom.toFixed(1)}x`);
+  }
+
+  return {
+    archetype_id: matchedTier.archetype_id,
+    archetype_name: matchedTier.archetype_name,
+    archetype_tier: "comeback",
+    classification_reason: `${matchedTier.archetype_name}: drawdown ${max_drawdown_pct.toFixed(1)}% with recovery to ${final_return_pct >= 0 ? "+" : ""}${final_return_pct.toFixed(1)}% final return.`,
+    amount_invested_usd,
+    lowest_position_value_usd,
+    ending_value_usd,
+    max_drawdown_pct,
+    final_return_pct,
+    recovered_loss_pct,
+    recovery_multiple_from_bottom,
+    data_confidence: "high",
+    qualifying_evidence: qualifying,
+    disqualifying_evidence: [],
+  };
+}
+
+// ---- Dynamic roast generation ----
+//
+// The roast is generated deterministically from the archetype and verified
+// metrics. No AI is involved in the classification or the core copy — only
+// the numeric values are interpolated into fixed templates.
+export function buildComebackRoast(
+  tier: ComebackTier,
+  result: ComebackResult
+): string {
+  const invested = result.amount_invested_usd;
+  const lowest = result.lowest_position_value_usd;
+  const ending = result.ending_value_usd;
+  const drawdownPct = Math.round(Math.abs(result.max_drawdown_pct));
+  const profit = ending - invested;
+
+  const fmtMoney = (v: number) => {
+    if (Math.abs(v) >= 1000) return `$${Math.round(v).toLocaleString()}`;
+    return `$${Math.round(v)}`;
+  };
+
+  if (tier.archetype_id === "escape_artist") {
+    return `You turned ${fmtMoney(invested)} into roughly ${fmtMoney(lowest)}, refused to panic, and climbed back to breakeven. After a ${drawdownPct}% drawdown, the position recovered to cost basis—and kept going. The Court finds you guilty of escaping a situation that would have buried a lesser trader.`;
+  }
+
+  if (tier.archetype_id === "comeback_kid") {
+    return `You turned ${fmtMoney(invested)} into roughly ${fmtMoney(lowest)}, stared into the abyss, and somehow rode the position all the way back to profitability. After surviving an estimated ${drawdownPct}% collapse, the wallet recovered every dollar—and dragged another ${fmtMoney(profit)} out of the wreckage. The Court finds you guilty of achieving the correct result through methods no financial professional could responsibly endorse.`;
+  }
+
+  // back_from_the_dead
+  return `You turned ${fmtMoney(invested)} into roughly ${fmtMoney(lowest)}, were pronounced dead at the scene, and then staged a recovery that defies the laws of markets and common sense. After surviving an estimated ${drawdownPct}% collapse, the wallet clawed its way back from the afterlife—and dragged another ${fmtMoney(profit)} out of the wreckage. The Court finds you guilty of necromancy.`;
+}
+
+// ---- Build a TradeVerdict from a comeback tier + result ----
+//
+// Returns an object compatible with the single-trade TradeVerdict interface,
+// with the comeback archetype's code, name, charge, headline, roast, defense,
+// and sentence.
+export function buildComebackVerdict(tier: ComebackTier, result: ComebackResult) {
+  return {
+    code: tier.archetype_id,
+    display_name: tier.archetype_name,
+    charge: tier.charge,
+    headline: tier.archetype_name,
+    roast: buildComebackRoast(tier, result),
+    defense: tier.defense,
+    sentence: tier.sentence,
+  };
+}
+
+// ---- Extract comeback inputs from trade metrics ----
+//
+// Derives the comeback inputs from the computed trade metrics. The metrics
+// are expected to include:
+//   purchase_cost_usd / amount_invested_usd — the USD cost of the entry
+//   max_drawdown_pct                       — ratio (e.g., -0.89 means -89%)
+//   current_value_usd / ending_value_usd   — current value of remaining position
+//   realized_exit_value_usd                 — total USD realized from sells
+//   conviction                              — "held" | "partial_exit" | "full_exit" | "averaged_down"
+//   lowest_market_cap_timestamp             — timestamp of the lowest candle
+//   last_sell_timestamp                     — timestamp of the last sell (for full exits)
+export function extractComebackInputs(metrics: Record<string, any>): ComebackInputs {
+  function num(v: any): number | null {
+    if (v === null || v === undefined || v === "") return null;
+    const n = typeof v === "number" ? v : parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  const amount_invested_usd = num(metrics.purchase_cost_usd) ?? num(metrics.amount_invested_usd);
+  const max_dd = num(metrics.max_drawdown_pct); // ratio
+
+  // Lowest position value = invested * (1 + max_drawdown_pct)
+  // (max_drawdown_pct is the ratio decline from entry to the lowest point)
+  const lowest_position_value_usd =
+    amount_invested_usd !== null && max_dd !== null
+      ? amount_invested_usd * (1 + max_dd)
+      : null;
+
+  // Ending value: for full exits, use realized exit value; otherwise current value.
+  const conviction = metrics.conviction;
+  const realized_exit_value_usd = num(metrics.realized_exit_value_usd);
+  const current_value_usd = num(metrics.current_value_usd) ?? num(metrics.ending_value_usd);
+  const ending_value_usd =
+    conviction === "full_exit" && realized_exit_value_usd !== null
+      ? realized_exit_value_usd
+      : current_value_usd;
+
+  // Chronological checks:
+  // low_after_entry: the metrics are computed from post-entry candles, so the
+  //   low is always after entry (true by construction).
+  // low_before_ending: for held/partial positions, the ending is "now" which is
+  //   after all candles (true). For full exits, check the low candle timestamp
+  //   is before the last sell timestamp.
+  const low_after_entry = max_dd !== null; // if we have a drawdown, we have post-entry candles
+  let low_before_ending = true;
+  if (conviction === "full_exit") {
+    const lowTs = metrics.lowest_market_cap_timestamp;
+    const lastSellTs = metrics.last_sell_timestamp;
+    if (lowTs && lastSellTs) {
+      low_before_ending = new Date(lowTs).getTime() < new Date(lastSellTs).getTime();
+    }
+  }
+
+  return {
+    amount_invested_usd,
+    lowest_position_value_usd,
+    ending_value_usd,
+    low_after_entry,
+    low_before_ending,
+  };
+}
+
+// ---- Classify comeback from trade metrics (convenience wrapper) ----
+//
+// Combines extractComebackInputs + classifyComeback into one call. Returns
+// both the verdict (if a comeback was selected) and the full result record.
+export function classifyComebackFromMetrics(metrics: Record<string, any>): {
+  verdict: ReturnType<typeof buildComebackVerdict> | null;
+  result: ComebackResult;
+} {
+  const inputs = extractComebackInputs(metrics);
+  const result = classifyComeback(inputs);
+  if (!result.archetype_id) return { verdict: null, result };
+  const tier = COMEBACK_TIERS.find((t) => t.archetype_id === result.archetype_id);
+  if (!tier) return { verdict: null, result };
+  return { verdict: buildComebackVerdict(tier, result), result };
+}
+
+// ---- Whole-wallet archetype tier mapping ----
+//
+// Maps any verdict_code (whole-wallet or single-trade) to a canonical
+// archetype tier. Used by the Hall of Fame for eligibility and display.
+export function getArchetypeTier(verdictCode: string | null | undefined): ArchetypeTier {
+  if (!verdictCode) return "neutral";
+  // Comeback archetypes
+  if (COMEBACK_TIERS.some((t) => t.archetype_id === verdictCode)) return "comeback";
+  // Not-guilty (the only positive whole-wallet verdict)
+  if (verdictCode === "suspiciously_competent") return "not_guilty";
+  // Everything else with a verdict code is guilty
+  return "guilty";
+}

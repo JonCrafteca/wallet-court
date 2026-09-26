@@ -146,6 +146,14 @@ export default function SingleTradeVerdict({ trial, onReset }) {
       {/* 1. Verdict */}
       <VerdictStamp trial={trial} />
 
+      {/* Charge (formal courtroom accusation) */}
+      {trial.charge && (
+        <div className="mt-4 border-2 border-court-red bg-court-red/10 px-4 py-3">
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-court-red/80 mb-1">The Charge</p>
+          <p className="font-display uppercase text-court-red text-2xl tracking-[0.04em]">{trial.charge}</p>
+        </div>
+      )}
+
       {/* Severity & confidence */}
       <div className="mt-8">
         <SeverityMeter severity={trial.severity_score} confidence={trial.confidence_score} />

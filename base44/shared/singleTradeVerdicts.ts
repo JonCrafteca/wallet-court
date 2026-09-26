@@ -14,9 +14,12 @@
 // the pool below — no LLM call is needed for the initial launch. Each verdict
 // code maps to fixed copy so the verdict is deterministic and auditable.
 
+import { classifyComebackFromMetrics } from "./archetypes.ts";
+
 export interface TradeVerdict {
   code: string;
   display_name: string;
+  charge?: string;
   headline: string;
   roast: string;
   defense: string;
@@ -207,7 +210,18 @@ const RULES: SelectionRule[] = [
 ];
 
 // Select a verdict from trade-level metrics. Returns the verdict object.
+//
+// PRECEDENCE: Comeback archetypes (ESCAPE ARTIST, COMEBACK KID, BACK FROM THE
+// DEAD) are checked FIRST. A trade that suffered a qualifying drawdown and
+// recovered to cost basis is classified as a comeback archetype — this takes
+// precedence over generic final-P&L classifications like "Stuck in the Middle."
+// If no comeback archetype matches, the existing RULES are evaluated.
 export function selectTradeVerdict(metrics: Record<string, any>): TradeVerdict {
+  // 1. Check comeback archetypes (canonical registry, highest precedence).
+  const comeback = classifyComebackFromMetrics(metrics);
+  if (comeback.verdict) return comeback.verdict;
+
+  // 2. Fall through to existing deterministic rules.
   for (const rule of RULES) {
     if (rule.test(metrics)) return TRADE_VERDICTS[rule.index];
   }

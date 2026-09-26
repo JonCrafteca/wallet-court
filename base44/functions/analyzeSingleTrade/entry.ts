@@ -34,6 +34,7 @@ import {
   validateFieldSize
 } from "../../shared/singleTradeEvidence.ts";
 import { selectTradeVerdict, computeTradeSeverityConfidence } from "../../shared/singleTradeVerdicts.ts";
+import { classifyComebackFromMetrics } from "../../shared/archetypes.ts";
 import {
   findOrCreateTrial, completeTrial, failTrial, findActiveOrCompletedByFingerprint
 } from "../../shared/singleTradeStore.ts";
@@ -391,7 +392,19 @@ export default async function (req) {
         }
       };
 
-      const metricsJson = JSON.stringify(enrichedMetrics);
+      // ---- Canonical archetype classification ----
+      // The deterministic analysis selects the archetype. The comeback
+      // classification is computed from verified metrics and stored in
+      // metrics_json under _archetype for receipt rendering and Hall of Fame.
+      const comebackClassification = classifyComebackFromMetrics(enrichedMetrics);
+      const enrichedMetricsWithArchetype = {
+        ...enrichedMetrics,
+        _archetype: comebackClassification.result.archetype_id
+          ? comebackClassification.result
+          : null,
+      };
+
+      const metricsJson = JSON.stringify(enrichedMetricsWithArchetype);
       if (!validateFieldSize(metricsJson, 12000)) {
         await failTrial(base44, trial.id, "FIELD_SIZE_ERROR", "Metrics JSON exceeds the maximum allowed size.");
         return Response.json({ error: "Analysis failed due to data size limits. Please try again.", code: "ANALYSIS_FAILED" }, { status: 500 });
@@ -403,7 +416,7 @@ export default async function (req) {
       if (!hasEntry || !hasPricePath) {
         const record = await completeTrial(base44, trial.id, {
           case_outcome: "mistrial_insufficient_evidence",
-          verdict_code: null, verdict_name: null, headline: null, roast: null,
+          verdict_code: null, verdict_name: null, charge: null, headline: null, roast: null,
           defense_statement: null, sentence: null,
           severity_score: null, confidence_score: null,
           evidence_items_json: JSON.stringify([]),
@@ -440,6 +453,7 @@ export default async function (req) {
       const record = await completeTrial(base44, trial.id, {
         case_outcome: "verdict",
         verdict_code: verdict.code, verdict_name: verdict.display_name,
+        charge: verdict.charge || null,
         severity_score: severity, confidence_score: confidence,
         headline: verdict.headline, roast: verdict.roast,
         defense_statement: verdict.defense, sentence: verdict.sentence,

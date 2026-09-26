@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2, Save, Check, Power, ShieldAlert, Activity, Coins } from "lucide-react";
 import FailedTrialsPanel from "@/components/walletcourt/FailedTrialsPanel";
+import RecomputeArchetypePanel from "@/components/walletcourt/RecomputeArchetypePanel";
 
 export default function AdminSingleTradeUsage() {
   const [user, setUser] = useState(null);
@@ -195,6 +196,9 @@ export default function AdminSingleTradeUsage() {
 
       {/* ---- Failed Trials ---- */}
       <FailedTrialsPanel />
+
+      {/* ---- Recompute Archetype ---- */}
+      <RecomputeArchetypePanel />
 
       <div className="text-center">
         <Link to="/admin/contest-control" className="inline-flex items-center gap-2 text-court-chart font-display uppercase tracking-[0.08em] text-sm hover:brightness-110">
