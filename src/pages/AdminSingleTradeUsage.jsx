@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2, Save, Check, Power, ShieldAlert, Activity, Coins } from "lucide-react";
+import FailedTrialsPanel from "@/components/walletcourt/FailedTrialsPanel";
 
 export default function AdminSingleTradeUsage() {
   const [user, setUser] = useState(null);
@@ -191,6 +192,9 @@ export default function AdminSingleTradeUsage() {
           </button>
         </div>
       </div>
+
+      {/* ---- Failed Trials ---- */}
+      <FailedTrialsPanel />
 
       <div className="text-center">
         <Link to="/admin/contest-control" className="inline-flex items-center gap-2 text-court-chart font-display uppercase tracking-[0.08em] text-sm hover:brightness-110">
