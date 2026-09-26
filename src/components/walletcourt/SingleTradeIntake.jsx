@@ -3,12 +3,16 @@ import { base44 } from "@/api/base44Client";
 import { Gavel, AlertTriangle, Search, Loader2, ArrowLeft, Coins } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { validateWalletForChain } from "@/lib/walletValidation";
-import VerdictReveal from "./VerdictReveal";
+import { SINGLE_TRADE_CAPABILITIES, isSingleTradeSupported } from "@/lib/singleTradeCapability";
+import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
+import { getSingleTradeErrorMessage, getSingleTradeErrorCode } from "@/lib/singleTradeErrors";
+import SingleTradeVerdict from "./SingleTradeVerdict";
 import LoadingStage from "./LoadingStage";
 import CourtRecess from "./CourtRecess";
 
 export default function SingleTradeIntake({ onReset }) {
-  const [network] = useState("solana");
+  const supportedNetworks = SINGLE_TRADE_CAPABILITIES.filter((c) => isSingleTradeSupported(c.network));
+  const [network, setNetwork] = useState(supportedNetworks[0]?.network || "solana");
   const [address, setAddress] = useState("");
   const [tokenMint, setTokenMint] = useState("");
   const [tokenSymbol, setTokenSymbol] = useState("");
@@ -47,8 +51,7 @@ export default function SingleTradeIntake({ onReset }) {
       setSelectedSelection(null);
       setPhase("select");
     } catch (e) {
-      // Base44Error carries the backend's safe error in .data.error and .data.code.
-      setError(e?.data?.error || e?.message || "Discovery failed. Try again.");
+      setError(getSingleTradeErrorMessage(e, "Discovery failed. Try again."));
       setPhase("intake");
     }
   }
@@ -69,11 +72,18 @@ export default function SingleTradeIntake({ onReset }) {
       ]);
       if (res?.data?.error) { setError(res.data.error); setPhase("select"); return; }
       if (res?.data?.court_recess) { setRecess(res.data); setPhase("recess"); return; }
+      // Defense-in-depth: refuse to render an incomplete trial. A failed trial
+      // returned by the backend would render as a fake GUILTY stamp with
+      // 0/100 severity and blank fields.
+      if (!res?.data?.trial || !isSingleTradeRenderable(res.data.trial)) {
+        setError("This trade case was not completed. Please try again.");
+        setPhase("select");
+        return;
+      }
       setTrial(res.data.trial);
       setPhase("done");
     } catch (e) {
-      // Base44Error carries the backend's safe error in .data.error and .data.code.
-      setError(e?.data?.error || e?.message || "Analysis failed. Try again.");
+      setError(getSingleTradeErrorMessage(e, "Analysis failed. Try again."));
       setPhase("select");
     }
   }
@@ -89,7 +99,12 @@ export default function SingleTradeIntake({ onReset }) {
   }
 
   if (phase === "done" && trial) {
-    return <VerdictReveal trial={trial} onReset={handleFullReset} />;
+    if (!isSingleTradeRenderable(trial)) {
+      setError("This trade case was not completed. Please try again.");
+      setPhase("select");
+      return null;
+    }
+    return <SingleTradeVerdict trial={trial} onReset={handleFullReset} />;
   }
 
   if (phase === "recess" && recess) {
@@ -127,23 +142,40 @@ export default function SingleTradeIntake({ onReset }) {
           </div>
 
           <div className="p-5 sm:p-7 space-y-5">
-            {/* Network (Solana only) */}
+            {/* Network — capability-registry driven */}
             <div>
               <label className="block font-mono text-xs uppercase tracking-[0.16em] text-court-mute mb-2">
                 Select Network
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button type="button" className="border-2 px-3 py-3 font-display uppercase tracking-[0.06em] text-sm bg-court-chart text-court-navy border-court-chart shadow-[3px_3px_0_0_#FF3B30]">
-                  Solana
-                </button>
-                <button type="button" disabled className="border-2 px-3 py-3 font-display uppercase tracking-[0.06em] text-sm bg-court-navy text-court-mute/50 border-court-mute/30 cursor-not-allowed">
-                  Ethereum
-                </button>
-                <button type="button" disabled className="border-2 px-3 py-3 font-display uppercase tracking-[0.06em] text-sm bg-court-navy text-court-mute/50 border-court-mute/30 cursor-not-allowed">
-                  Base
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {SINGLE_TRADE_CAPABILITIES.map((cap) => {
+                  const supported = isSingleTradeSupported(cap.network);
+                  const active = network === cap.network;
+                  return (
+                    <button
+                      key={cap.network}
+                      type="button"
+                      disabled={!supported}
+                      onClick={() => supported && setNetwork(cap.network)}
+                      className={cn(
+                        "border-2 px-3 py-3 font-display uppercase tracking-[0.06em] text-sm transition-all",
+                        active
+                          ? "bg-court-chart text-court-navy border-court-chart shadow-[3px_3px_0_0_#FF3B30]"
+                          : supported
+                            ? "bg-court-navy text-court-ice border-court-mute/40 hover:border-court-ice"
+                            : "bg-court-navy text-court-mute/40 border-court-mute/20 cursor-not-allowed"
+                      )}
+                    >
+                      {cap.label}
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-1.5 font-mono text-xs text-court-mute/70">Ethereum and Base coming soon.</p>
+              <p className="mt-1.5 font-mono text-xs text-court-mute/70">
+                {SINGLE_TRADE_CAPABILITIES.some((c) => !isSingleTradeSupported(c.network))
+                  ? "Unsupported networks are disabled."
+                  : "All listed networks support Single Trade Trial."}
+              </p>
             </div>
 
             {/* Wallet address */}

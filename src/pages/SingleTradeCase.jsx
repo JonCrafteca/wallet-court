@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import VerdictReveal from "@/components/walletcourt/VerdictReveal";
+import SingleTradeVerdict from "@/components/walletcourt/SingleTradeVerdict";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
 import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
+import { getSingleTradeErrorMessage } from "@/lib/singleTradeErrors";
 import { RefreshCw, Loader2 } from "lucide-react";
 
 export default function SingleTradeCase() {
@@ -81,9 +82,15 @@ export default function SingleTradeCase() {
 
   if (status === "loading") return <LoadingStage visible />;
   if (status === "done" && trial) {
+    // Defense-in-depth: refuse to render an incomplete trial even if the
+    // backend gate somehow returned one. This prevents a failed trial from
+    // rendering as a fake GUILTY stamp with 0/100 severity and blank fields.
+    if (!isSingleTradeRenderable(trial)) {
+      return <UnavailableCase message="This trade case was not completed and is not available for public viewing." onBack={() => navigate("/")} />;
+    }
     return (
       <div className="relative">
-        <VerdictReveal trial={trial} onReset={() => navigate("/")} />
+        <SingleTradeVerdict trial={trial} onReset={() => navigate("/")} />
         {trial.case_outcome === "verdict" && (
           <div className="mx-auto max-w-3xl px-4 pb-12 -mt-4">
             <RefreshButton slug={trial.public_slug} onRefreshed={(updated) => setTrial(updated)} />
@@ -93,25 +100,45 @@ export default function SingleTradeCase() {
     );
   }
   return (
+    <UnavailableCase
+      message={error || "This trade case never made it to the docket."}
+      showRetry={status === "error"}
+      onRetry={handleRetry}
+      onBack={() => navigate("/")}
+    />
+  );
+}
+
+function UnavailableCase({ message, showRetry, onRetry, onBack }) {
+  // Add a noindex meta tag so search engines do not index unavailable cases.
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex";
+    document.head.appendChild(meta);
+    return () => { document.head.removeChild(meta); };
+  }, []);
+
+  return (
     <div className="mx-auto max-w-xl px-4 pt-20 pb-24">
       <div className="border-2 border-court-red bg-court-navy p-6 sm:p-8 text-center">
         <p className="font-display uppercase text-court-red text-3xl mb-3 tracking-[0.04em]">
-          {status === "notfound" ? "Case file not found" : "Court Recess"}
+          Case Unavailable
         </p>
         <p className="font-mono text-base text-court-ice mb-6 leading-relaxed">
-          {error || "This trade case never made it to the docket."}
+          {message || "This trade case is not available for public viewing."}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {status === "error" && (
+          {showRetry && (
             <button
-              onClick={handleRetry}
+              onClick={onRetry}
               className="inline-flex items-center justify-center bg-court-chart text-court-navy font-display uppercase tracking-[0.12em] text-base px-6 py-3 border-2 border-court-navy shadow-[4px_4px_0_0_#FF3B30] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all"
             >
               Retry
             </button>
           )}
           <button
-            onClick={() => navigate("/")}
+            onClick={onBack}
             className="inline-flex items-center justify-center border-2 border-court-ice text-court-ice font-display uppercase tracking-[0.12em] text-base px-6 py-3 hover:bg-court-uv transition-colors"
           >
             Back to Court

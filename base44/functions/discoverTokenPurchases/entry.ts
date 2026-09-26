@@ -33,10 +33,12 @@ export default async function (req) {
     const token_mint = body?.token_mint;
 
     if (!wallet_address || !network || !token_mint) {
-      return Response.json({ error: "wallet_address, network, and token_mint are required." }, { status: 400 });
+      return Response.json({ error: "wallet_address, network, and token_mint are required.", code: "MISSING_FIELDS" }, { status: 400 });
     }
-    if (network !== "solana") {
-      return Response.json({ error: "Single Trade Trial currently supports Solana only.", code: "UNSUPPORTED_CHAIN" }, { status: 400 });
+    // ---- Capability registry: reject unsupported networks before any Nansen call ----
+    const { isSingleTradeSupported } = await import("../../shared/singleTradeCapability.ts");
+    if (!isSingleTradeSupported(network)) {
+      return Response.json({ error: "This network is not yet supported for Single Trade Trial.", code: "UNSUPPORTED_CHAIN" }, { status: 400 });
     }
 
     // ---- Feature flag check: public users blocked when flag is false ----

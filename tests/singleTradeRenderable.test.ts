@@ -63,8 +63,9 @@ const RAW_COMPLETED_VERDICT_TRIAL = {
     { tag: "NANSEN · ENTRY", label: "Purchase Cost", value: "$1,048.08", detail: "USD value of the entry trade." },
     { tag: "NANSEN · OHLCV", label: "Maximum Drawdown", value: "-87.3%", detail: "Deepest decline from entry." },
   ]),
-  metrics_json: JSON.stringify({ max_drawdown_pct: -0.873 }),
+  metrics_json: JSON.stringify({ max_drawdown_pct: -0.873, holding_duration_days: 5, conviction: "held", candle_count: 120 }),
   ohlcv_snapshot_json: JSON.stringify([{ t: 1, c: 100 }, { t: 2, c: 12 }]),
+  source_endpoints_json: JSON.stringify(["nansen:dex_trades:live", "nansen:token_ohlcv:live", "nansen:current_balance:live"]),
   error_code: null,
   error_message: null,
 };
@@ -168,6 +169,8 @@ const SANITIZED_VERDICT = {
     { tag: "NANSEN · ENTRY", label: "Purchase Cost", value: "$1,048.08" },
     { tag: "NANSEN · OHLCV", label: "Maximum Drawdown", value: "-87.3%" },
   ]),
+  metrics_json: JSON.stringify({ max_drawdown_pct: -0.873, holding_duration_days: 5, conviction: "held", candle_count: 120 }),
+  source_endpoints_json: JSON.stringify(["nansen:dex_trades:live", "nansen:token_ohlcv:live", "nansen:current_balance:live"]),
 };
 
 // ---- Backend gate (raw trial with status field) ----
@@ -220,6 +223,73 @@ describe("Backend isSingleTradeRenderable (raw SingleTradeTrial)", () => {
   it("rejects a completed verdict trial with malformed evidence_items_json", () => {
     const withBadJson = { ...RAW_COMPLETED_VERDICT_TRIAL, evidence_items_json: "not-json{" };
     expect(isSingleTradeRenderable(withBadJson)).toBe(false);
+  });
+
+  // ---- Strengthened gate: numeric range validation ----
+  it("rejects a completed verdict trial with severity_score > 100", () => {
+    const outOfRange = { ...RAW_COMPLETED_VERDICT_TRIAL, severity_score: 150 };
+    expect(isSingleTradeRenderable(outOfRange)).toBe(false);
+  });
+
+  it("rejects a completed verdict trial with confidence_score < 0", () => {
+    const negative = { ...RAW_COMPLETED_VERDICT_TRIAL, confidence_score: -5 };
+    expect(isSingleTradeRenderable(negative)).toBe(false);
+  });
+
+  it("rejects a completed verdict trial with NaN severity_score", () => {
+    const nan = { ...RAW_COMPLETED_VERDICT_TRIAL, severity_score: NaN };
+    expect(isSingleTradeRenderable(nan)).toBe(false);
+  });
+
+  // ---- Strengthened gate: nonempty headline/sentence ----
+  it("rejects a completed verdict trial with null headline", () => {
+    const noHeadline = { ...RAW_COMPLETED_VERDICT_TRIAL, headline: null };
+    expect(isSingleTradeRenderable(noHeadline)).toBe(false);
+  });
+
+  it("rejects a completed verdict trial with null sentence", () => {
+    const noSentence = { ...RAW_COMPLETED_VERDICT_TRIAL, sentence: null };
+    expect(isSingleTradeRenderable(noSentence)).toBe(false);
+  });
+
+  it("rejects a completed verdict trial with empty string headline", () => {
+    const emptyHeadline = { ...RAW_COMPLETED_VERDICT_TRIAL, headline: "  " };
+    expect(isSingleTradeRenderable(emptyHeadline)).toBe(false);
+  });
+
+  // ---- Strengthened gate: valid metrics ----
+  it("rejects a completed verdict trial with empty metrics object", () => {
+    const emptyMetrics = { ...RAW_COMPLETED_VERDICT_TRIAL, metrics_json: "{}" };
+    expect(isSingleTradeRenderable(emptyMetrics)).toBe(false);
+  });
+
+  it("rejects a completed verdict trial with malformed metrics_json", () => {
+    const badMetrics = { ...RAW_COMPLETED_VERDICT_TRIAL, metrics_json: "not-json{" };
+    expect(isSingleTradeRenderable(badMetrics)).toBe(false);
+  });
+
+  // ---- Strengthened gate: valid source endpoints ----
+  it("rejects a completed verdict trial with empty source_endpoints_json", () => {
+    const noSources = { ...RAW_COMPLETED_VERDICT_TRIAL, source_endpoints_json: "[]" };
+    expect(isSingleTradeRenderable(noSources)).toBe(false);
+  });
+
+  // ---- Strengthened gate: valid purchase details ----
+  it("rejects a completed verdict trial with null purchase_cost_usd and null tokens_received", () => {
+    const noPurchase = { ...RAW_COMPLETED_VERDICT_TRIAL, purchase_cost_usd: null, tokens_received: null };
+    expect(isSingleTradeRenderable(noPurchase)).toBe(false);
+  });
+
+  // ---- Null verdict never becomes GUILTY ----
+  it("a trial with null verdict_code is never renderable as a verdict (no GUILTY default)", () => {
+    const nullVerdict = { ...RAW_FAILED_TRIAL, status: "completed", case_outcome: "verdict", verdict_code: null, verdict_name: null };
+    expect(isSingleTradeRenderable(nullVerdict)).toBe(false);
+  });
+
+  // ---- Null numeric values never become zero ----
+  it("a trial with null severity_score is not renderable (null != 0)", () => {
+    const nullSeverity = { ...RAW_COMPLETED_VERDICT_TRIAL, severity_score: null };
+    expect(isSingleTradeRenderable(nullSeverity)).toBe(false);
   });
 });
 

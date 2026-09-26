@@ -139,10 +139,32 @@ export function extractCandles(ohlcvJson: any): OhlcvCandle[] {
 }
 
 // Maximum number of candles stored in ohlcv_snapshot_json. The full series is
-// used for metrics computation; the stored snapshot is capped to keep the
-// entity field within size limits. 300 candles at 1h timeframe ≈ 12.5 days,
-// enough for the public chart without exceeding field limits.
-export const MAX_STORED_CANDLES = 300;
+// used for metrics computation; the stored snapshot is capped AND slimmed to
+// keep the entity field within size limits. 80 slimmed candles at ~80 bytes
+// each ≈ 6.4KB, safely under the ~16KB entity field limit. The original
+// candle count is recorded in metrics._meta so the public page can disclose
+// the sampling.
+export const MAX_STORED_CANDLES = 80;
+
+// Maximum serialized size (in characters) for the ohlcv_snapshot_json field.
+// If the capped+slimmed snapshot exceeds this, it is further reduced. 12000
+// chars ≈ 12KB, leaving margin under the ~16KB entity field limit.
+export const MAX_OHLCV_FIELD_CHARS = 12000;
+
+// Slim a candle to minimal fields for storage: { t, o, h, l, c, v }.
+// The full candle object (with market_cap sub-object, volume_usd, etc.) is
+// used for metrics computation on the full series; the stored snapshot only
+// needs the price path for the public chart.
+export function slimCandle(c: OhlcvCandle): Record<string, any> {
+  return {
+    t: c.interval_start || null,
+    o: c.open ?? null,
+    h: c.high ?? null,
+    l: c.low ?? null,
+    c: c.close ?? null,
+    v: c.volume_usd ?? c.volume ?? null,
+  };
+}
 
 // Cap an OHLCV candle array to a maximum number of candles by evenly
 // sampling. Always preserves the first and last candles. Returns the
@@ -158,6 +180,61 @@ export function capCandles(candles: OhlcvCandle[], max: number = MAX_STORED_CAND
     result.push(candles[idx]);
   }
   return result;
+}
+
+// Build a capped, slimmed OHLCV snapshot for storage. Returns the JSON
+// string, the original candle count, the stored candle count, and the
+// sampling method. If the serialized size exceeds MAX_OHLCV_FIELD_CHARS,
+// the candle count is further reduced until it fits.
+//
+//   originalCount  — the number of candles in the full series
+//   storedCount    — the number of candles in the stored snapshot
+//   samplingMethod — "none" (no sampling needed), "even" (even sampling)
+//
+// This function NEVER fabricates candles. If the input is empty, the output
+// is "[]".
+export function buildCappedOhlcvSnapshot(candles: OhlcvCandle[]): {
+  json: string;
+  originalCount: number;
+  storedCount: number;
+  samplingMethod: string;
+} {
+  const originalCount = Array.isArray(candles) ? candles.length : 0;
+  if (originalCount === 0) {
+    return { json: "[]", originalCount: 0, storedCount: 0, samplingMethod: "none" };
+  }
+
+  let max = MAX_STORED_CANDLES;
+  let samplingMethod = originalCount <= max ? "none" : "even";
+
+  // Iteratively reduce the cap until the serialized size fits.
+  while (max > 0) {
+    const capped = capCandles(candles, max);
+    const slimmed = capped.map(slimCandle);
+    const json = JSON.stringify(slimmed);
+    if (json.length <= MAX_OHLCV_FIELD_CHARS) {
+      return { json, originalCount, storedCount: slimmed.length, samplingMethod };
+    }
+    // Still too large — reduce by 20% and retry.
+    max = Math.floor(max * 0.8);
+    samplingMethod = "even";
+  }
+
+  // Fallback: store only the first and last candle (absolute minimum).
+  const minimal = [slimCandle(candles[0]), slimCandle(candles[candles.length - 1])];
+  return {
+    json: JSON.stringify(minimal),
+    originalCount,
+    storedCount: 2,
+    samplingMethod: "even_minimal",
+  };
+}
+
+// Validate that a serialized field value fits within the entity field size
+// limit. Returns true if safe to write, false if it would exceed the limit.
+export function validateFieldSize(serialized: string, maxChars: number = MAX_OHLCV_FIELD_CHARS): boolean {
+  if (!serialized) return true;
+  return serialized.length <= maxChars;
 }
 
 export interface TradeMetrics {

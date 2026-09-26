@@ -166,6 +166,14 @@ export async function drawCourtReceipt(canvas, trial, orientation = "landscape")
   if (outcome === "dismissed_no_evidence" || outcome === "mistrial_insufficient_evidence") {
     throw new Error("Court receipts are not available for dismissed or mistrial cases.");
   }
+  // Reject incomplete/failed trials — never render a receipt with null/zero
+  // verdict fields. This prevents a failed trial from generating a fake
+  // receipt with 0/100 severity and blank verdict name.
+  if (outcome === "verdict") {
+    if (!trial.verdict_name || trial.severity_score == null || !trial.roast || !trial.sentence) {
+      throw new Error("Court receipts are not available for incomplete trade cases.");
+    }
+  }
 
   await ensureFonts();
   const ctx = canvas.getContext("2d");

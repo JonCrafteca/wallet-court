@@ -121,31 +121,32 @@ describe("Single Trade — discovery workflow in ALLOWED_WORKFLOWS", () => {
 const analyzeSrc = readFileSync(join(__dirname, "../base44/functions/analyzeSingleTrade/entry.ts"), "utf-8");
 const discoverSrc = readFileSync(join(__dirname, "../base44/functions/discoverTokenPurchases/entry.ts"), "utf-8");
 
-describe("Single Trade — analyzeSingleTrade uses capCandles for ohlcv storage", () => {
-  it("imports capCandles from singleTradeEvidence", () => {
-    expect(analyzeSrc).toContain("capCandles");
+describe("Single Trade — analyzeSingleTrade uses buildCappedOhlcvSnapshot for ohlcv storage", () => {
+  it("imports buildCappedOhlcvSnapshot from singleTradeEvidence", () => {
+    expect(analyzeSrc).toContain("buildCappedOhlcvSnapshot");
     expect(analyzeSrc).toContain("from \"../../shared/singleTradeEvidence.ts\"");
   });
 
-  it("wraps ohlcv_snapshot_json with capCandles (both paths)", () => {
+  it("uses ohlcvSnapshot.json for ohlcv_snapshot_json (both paths)", () => {
     // Should appear twice: mistrial path + verdict path.
-    const matches = analyzeSrc.match(/capCandles\(candles\)/g) || [];
+    const matches = analyzeSrc.match(/ohlcv_snapshot_json:\s*ohlcvSnapshot\.json/g) || [];
     expect(matches.length).toBe(2);
   });
 
-  it("does NOT store raw JSON.stringify(candles) without capCandles", () => {
-    // Every ohlcv_snapshot_json assignment that uses JSON.stringify(candles)
-    // must wrap it with capCandles. The initial creation uses "[]" (empty).
+  it("does NOT store raw JSON.stringify(candles) without buildCappedOhlcvSnapshot", () => {
+    // Every ohlcv_snapshot_json assignment must use ohlcvSnapshot.json (the
+    // capped+slimmed snapshot), never raw JSON.stringify(candles).
     const lines = analyzeSrc.split("\n");
     for (const line of lines) {
       if (line.includes("ohlcv_snapshot_json:") && line.includes("JSON.stringify")) {
-        expect(line).toContain("capCandles");
+        // The initial creation uses "[]" (empty), which is fine.
+        expect(line).toContain("\"[]\"");
       }
     }
   });
 
   it("catch block returns a code field", () => {
-    expect(analyzeSrc).toContain("code: \"ANALYSIS_ERROR\"");
+    expect(analyzeSrc).toContain("code: \"ANALYSIS_FAILED\"");
   });
 });
 
@@ -157,17 +158,20 @@ describe("Single Trade — discoverTokenPurchases catch block returns a code", (
 
 // ---- Frontend error extraction (structural) ----
 
-describe("Single Trade — frontend extracts backend error from Base44Error", () => {
+describe("Single Trade — frontend uses getSingleTradeErrorMessage for error handling", () => {
   const intakeSrc = readFileSync(join(__dirname, "../src/components/walletcourt/SingleTradeIntake.jsx"), "utf-8");
 
-  it("discovery catch extracts e.data.error before e.message", () => {
-    expect(intakeSrc).toContain("e?.data?.error");
+  it("imports getSingleTradeErrorMessage from singleTradeErrors", () => {
+    expect(intakeSrc).toContain("getSingleTradeErrorMessage");
+    expect(intakeSrc).toContain("singleTradeErrors");
   });
 
-  it("analysis catch extracts e.data.error before e.message", () => {
-    // Both catch blocks should use e?.data?.error.
-    const matches = intakeSrc.match(/e\?\.data\?\.error/g) || [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+  it("discovery catch uses getSingleTradeErrorMessage", () => {
+    expect(intakeSrc).toContain('getSingleTradeErrorMessage(e, "Discovery failed. Try again.")');
+  });
+
+  it("analysis catch uses getSingleTradeErrorMessage", () => {
+    expect(intakeSrc).toContain('getSingleTradeErrorMessage(e, "Analysis failed. Try again.")');
   });
 });
 

@@ -2,19 +2,22 @@
 // entry through the present. Fetches the OHLCV price path, later sells, later
 // buys, and current balance, then generates a trade-level verdict.
 //
-// HARDENED IMPLEMENTATION:
-//   - Uses a version-guarded CAS mutex lock (Owner Notifications pattern) for
-//     trial creation, NOT a SHA-256 fingerprint check-then-create.
-//   - Resolves the authoritative purchase server-side from an opaque selection
-//     token. The browser NEVER posts the transaction_hash.
-//   - Uses the SEPARATE Single Trade usage policy budget, NOT the legacy 1,020
-//     calibration ceiling.
-//   - Implements FIFO lot accounting for later buys and sells.
+// PRODUCTION HARDENING (fixes the JEANPHIL failure):
+//   - Uses the capability registry (NOT hardcoded "solana only") to decide
+//     whether a network is supported before any Nansen call.
+//   - Uses buildCappedOhlcvSnapshot to slim + cap the OHLCV series to fit
+//     within the entity field-size limit. Metrics are computed from the FULL
+//     candle series; only the stored snapshot is capped.
+//   - Validates serialized field sizes before writing. If validation fails,
+//     the trial is failed safely — never published with empty fields.
+//   - Failed-trial retry: a failed fingerprint allows ONE new attempt. The
+//     original failed record remains unchanged and hidden. Completed and
+//     analyzing fingerprints are returned idempotently (zero calls).
+//   - Selection consumption: exactly once. For a retry of a failed trial, the
+//     selection is NOT re-consumed (it was consumed on the first attempt).
+//   - Uses a version-guarded CAS mutex lock for trial creation.
 //   - Public responses never expose the full wallet address, normalized
 //     wallet, complete transaction hash, or raw Nansen response.
-//
-// Concurrent callers return the existing/in-progress trial. Duplicate
-// callers make zero additional Nansen calls.
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.49";
 import { waitUntil } from "base44:runtime";
@@ -27,11 +30,15 @@ import {
 } from "../../shared/nansen.ts";
 import {
   normalizePurchases, extractCandles, computeTradeMetrics, buildTradeEvidence,
-  buildTradeFingerprint, sanitizeSingleTrialForPublicCase, capCandles
+  buildTradeFingerprint, sanitizeSingleTrialForPublicCase, buildCappedOhlcvSnapshot,
+  validateFieldSize
 } from "../../shared/singleTradeEvidence.ts";
 import { selectTradeVerdict, computeTradeSeverityConfidence } from "../../shared/singleTradeVerdicts.ts";
-import { findOrCreateTrial, completeTrial, failTrial, findByFingerprint } from "../../shared/singleTradeStore.ts";
-import { consumeSelection, linkSelectionToTrial } from "../../shared/singleTradeSelectionStore.ts";
+import {
+  findOrCreateTrial, completeTrial, failTrial, findActiveOrCompletedByFingerprint,
+  findByFingerprint
+} from "../../shared/singleTradeStore.ts";
+import { consumeSelection, linkSelectionToTrial, findSelection } from "../../shared/singleTradeSelectionStore.ts";
 import { checkAnalysisRateLimit } from "../../shared/singleTradeUsageStore.ts";
 import { computeFifoLotAttribution } from "../../shared/singleTradeFifo.ts";
 import { isCircuitOpen, sanitizeReason, recessHttpStatus, RECESS_TYPES } from "../../shared/circuitBreaker.ts";
@@ -39,6 +46,7 @@ import { getCircuit, openCircuit, closeCircuitWithVersion } from "../../shared/c
 import { enqueueNotification } from "../../shared/ownerNotificationStore.ts";
 import { EVENT_TYPES } from "../../shared/ownerNotifications.ts";
 import { isSingleTradePublicEnabled } from "../../shared/featureFlags.ts";
+import { isSingleTradeSupported } from "../../shared/singleTradeCapability.ts";
 
 const PROVIDER = "nansen";
 
@@ -59,7 +67,7 @@ export default async function (req) {
     } catch {}
 
     let body;
-    try { body = await req.json(); } catch { return Response.json({ error: "Invalid request body." }, { status: 400 }); }
+    try { body = await req.json(); } catch { return Response.json({ error: "Invalid request body.", code: "INVALID_BODY" }, { status: 400 }); }
 
     const wallet_address = body?.wallet_address;
     const network = body?.network;
@@ -67,10 +75,12 @@ export default async function (req) {
     const selection_token = body?.selection_token;
 
     if (!wallet_address || !network || !token_mint || !selection_token) {
-      return Response.json({ error: "wallet_address, network, token_mint, and selection_token are required." }, { status: 400 });
+      return Response.json({ error: "wallet_address, network, token_mint, and selection_token are required.", code: "MISSING_FIELDS" }, { status: 400 });
     }
-    if (network !== "solana") {
-      return Response.json({ error: "Single Trade Trial currently supports Solana only.", code: "UNSUPPORTED_CHAIN" }, { status: 400 });
+
+    // ---- Capability registry: reject unsupported networks before any Nansen call ----
+    if (!isSingleTradeSupported(network)) {
+      return Response.json({ error: "This network is not yet supported for Single Trade Trial.", code: "UNSUPPORTED_CHAIN" }, { status: 400 });
     }
 
     // ---- Feature flag check: public users blocked when flag is false ----
@@ -92,27 +102,65 @@ export default async function (req) {
       return Response.json({ error: rateLimit.reason, code: "RATE_LIMITED" }, { status: 429 });
     }
 
-    // ---- Secure purchase selection: consume the opaque token server-side ----
-    const consumption = await consumeSelection(base44, selection_token, normalized, token_mint);
-    if (!consumption.consumed) {
-      return Response.json({ error: consumption.reason, code: "SELECTION_INVALID" }, { status: 400 });
+    // ---- Read the selection (do NOT consume yet) ----
+    // We read the selection to get the authoritative transaction_hash and
+    // purchase details. Consumption happens later, only for first attempts.
+    const selection = await findSelection(base44, selection_token);
+    if (!selection) {
+      return Response.json({ error: "Purchase selection not found. Please rediscover purchases and try again.", code: "SELECTION_NOT_FOUND" }, { status: 400 });
     }
-    const selection = consumption.selection;
 
-    // The authoritative transaction hash comes from the server-side selection,
-    // NOT from the browser.
+    // Verify wallet + mint match the discovery request.
+    if (selection.normalized_wallet_address !== normalized) {
+      return Response.json({ error: "The wallet or token does not match the discovery request. Please rediscover.", code: "SELECTION_MISMATCH" }, { status: 400 });
+    }
+    const selMint = (selection.token_mint || "").toLowerCase();
+    const expMint = (token_mint || "").toLowerCase();
+    if (selMint !== expMint) {
+      return Response.json({ error: "The wallet or token does not match the discovery request. Please rediscover.", code: "SELECTION_MISMATCH" }, { status: 400 });
+    }
+
+    // The authoritative transaction hash comes from the server-side selection.
     const transaction_hash = selection.transaction_hash;
 
     // ---- Build fingerprint for dedup ----
     const fingerprint = await buildTradeFingerprint(network, normalized, transaction_hash);
 
-    // ---- Check for existing trial (fast path, before mutex) ----
-    const existingFast = await findByFingerprint(base44, fingerprint);
+    // ---- Fast path: check for existing ACTIVE or COMPLETED trial ----
+    // A completed trial is returned idempotently (zero calls). An analyzing
+    // trial is returned as a conflict (zero calls). A FAILED trial is NOT
+    // returned here — it allows a retry.
+    const existingFast = await findActiveOrCompletedByFingerprint(base44, fingerprint);
     if (existingFast) {
       return Response.json({
         trial: sanitizeSingleTrialForPublicCase(existingFast),
-        analysis: { outcome: "existing", nansen_calls: 0, physical_calls_made: 0, correlation_id: null }
+        analysis: { outcome: existingFast.status === "completed" ? "existing" : "in_progress", nansen_calls: 0, physical_calls_made: 0, correlation_id: null }
       });
+    }
+
+    // ---- Determine if this is a retry of a failed trial ----
+    // If a failed trial exists for this fingerprint, this is a retry. We do
+    // NOT consume the selection again (it was consumed on the first attempt).
+    const existingFailed = await findByFingerprint(base44, fingerprint);
+    const isRetry = !!(existingFailed && existingFailed.status === "failed");
+
+    // ---- Consume the selection (first attempt only) ----
+    // For a retry, the selection was already consumed on the first attempt.
+    // We skip consumption and use the selection's stored purchase details.
+    if (!isRetry) {
+      const consumption = await consumeSelection(base44, selection_token, normalized, token_mint);
+      if (!consumption.consumed) {
+        // Determine the specific error code.
+        let code = "SELECTION_INVALID";
+        let msg = consumption.reason;
+        if (consumption.selection && consumption.selection.consumed_at) {
+          code = "SELECTION_CONSUMED";
+          msg = "This purchase selection has already been used for an analysis.";
+        } else if (consumption.reason && consumption.reason.includes("expired")) {
+          code = "SELECTION_EXPIRED";
+        }
+        return Response.json({ error: msg, code }, { status: 400 });
+      }
     }
 
     const apiKey = getNansenApiKey();
@@ -163,7 +211,7 @@ export default async function (req) {
         await linkSelectionToTrial(base44, selection_token, findOrCreate.trial.id).catch(() => {});
         return Response.json({
           trial: sanitizeSingleTrialForPublicCase(findOrCreate.trial),
-          analysis: { outcome: "existing", nansen_calls: 0, physical_calls_made: 0, correlation_id: null }
+          analysis: { outcome: findOrCreate.trial.status === "completed" ? "existing" : "in_progress", nansen_calls: 0, physical_calls_made: 0, correlation_id: null }
         });
       }
       // Lock contention — could not acquire lock and no existing trial.
@@ -257,7 +305,7 @@ export default async function (req) {
         await closeCircuitWithVersion(base44, PROVIDER, circuitVersionAtStart, Date.now(), { requestId: null }).catch(() => {});
       }
 
-      // ---- Compute trade metrics ----
+      // ---- Compute trade metrics from the FULL candle series ----
       const metrics = computeTradeMetrics({
         candles,
         entryMarketCapUsd: selectedPurchase.entry_market_cap_usd,
@@ -282,6 +330,16 @@ export default async function (req) {
         currentPriceUsd
       });
 
+      // ---- Build capped OHLCV snapshot (slim + cap + validate size) ----
+      const ohlcvSnapshot = buildCappedOhlcvSnapshot(candles);
+
+      // Validate field sizes before writing. If any field is too large, fail
+      // safely — never publish a case with empty/fabricated fields.
+      if (!validateFieldSize(ohlcvSnapshot.json)) {
+        await failTrial(base44, trial.id, "FIELD_SIZE_ERROR", "OHLCV snapshot exceeds the maximum allowed size even after capping.");
+        return Response.json({ error: "Analysis failed due to data size limits. Please try again.", code: "ANALYSIS_FAILED" }, { status: 500 });
+      }
+
       // Merge FIFO into metrics.
       const enrichedMetrics = {
         ...metrics,
@@ -298,8 +356,20 @@ export default async function (req) {
         whole_position_pnl_pct: fifo.whole_position_pnl_pct,
         lot_attribution_complex: fifo.lot_attribution_complex,
         attribution_note: fifo.attribution_note,
-        _meta: { candle_count: candles.length, partial: !ohlcvResult.ok || !balResult.ok }
+        _meta: {
+          candle_count: metrics.candle_count,
+          original_candle_count: ohlcvSnapshot.originalCount,
+          stored_candle_count: ohlcvSnapshot.storedCount,
+          ohlcv_sampling_method: ohlcvSnapshot.samplingMethod,
+          partial: !ohlcvResult.ok || !balResult.ok
+        }
       };
+
+      const metricsJson = JSON.stringify(enrichedMetrics);
+      if (!validateFieldSize(metricsJson, 12000)) {
+        await failTrial(base44, trial.id, "FIELD_SIZE_ERROR", "Metrics JSON exceeds the maximum allowed size.");
+        return Response.json({ error: "Analysis failed due to data size limits. Please try again.", code: "ANALYSIS_FAILED" }, { status: 500 });
+      }
 
       // ---- Evidence gate ----
       const hasEntry = selectedPurchase.purchase_cost_usd !== null || selectedPurchase.entry_market_cap_usd !== null;
@@ -311,8 +381,8 @@ export default async function (req) {
           defense_statement: null, sentence: null,
           severity_score: null, confidence_score: null,
           evidence_items_json: JSON.stringify([]),
-          metrics_json: JSON.stringify(enrichedMetrics),
-          ohlcv_snapshot_json: JSON.stringify(capCandles(candles)),
+          metrics_json: metricsJson,
+          ohlcv_snapshot_json: ohlcvSnapshot.json,
           source_endpoints_json: JSON.stringify([
             "nansen:dex_trades:live", `nansen:token_ohlcv:${ohlcvResult.ok ? "live" : "unavailable"}`,
             `nansen:current_balance:${balResult.ok ? "live" : "unavailable"}`
@@ -335,15 +405,21 @@ export default async function (req) {
       const { severity, confidence } = computeTradeSeverityConfidence(metrics);
       const evidence = buildTradeEvidence(metrics, selectedPurchase);
 
+      const evidenceJson = JSON.stringify(evidence);
+      if (!validateFieldSize(evidenceJson, 12000)) {
+        await failTrial(base44, trial.id, "FIELD_SIZE_ERROR", "Evidence JSON exceeds the maximum allowed size.");
+        return Response.json({ error: "Analysis failed due to data size limits. Please try again.", code: "ANALYSIS_FAILED" }, { status: 500 });
+      }
+
       const record = await completeTrial(base44, trial.id, {
         case_outcome: "verdict",
         verdict_code: verdict.code, verdict_name: verdict.display_name,
         severity_score: severity, confidence_score: confidence,
         headline: verdict.headline, roast: verdict.roast,
         defense_statement: verdict.defense, sentence: verdict.sentence,
-        evidence_items_json: JSON.stringify(evidence),
-        metrics_json: JSON.stringify(enrichedMetrics),
-        ohlcv_snapshot_json: JSON.stringify(capCandles(candles)),
+        evidence_items_json: evidenceJson,
+        metrics_json: metricsJson,
+        ohlcv_snapshot_json: ohlcvSnapshot.json,
         source_endpoints_json: JSON.stringify([
           "nansen:dex_trades:live", `nansen:token_ohlcv:${ohlcvResult.ok ? "live" : "unavailable"}`,
           `nansen:current_balance:${balResult.ok ? "live" : "unavailable"}`
@@ -384,10 +460,10 @@ export default async function (req) {
     } catch (analysisError) {
       // Analysis failed — mark the trial as failed and release the lock.
       await failTrial(base44, trial.id, "analysis_error", analysisError.message || "Analysis failed.").catch(() => {});
-      throw analysisError;
+      return Response.json({ error: "Analysis failed safely. Please try again.", code: "ANALYSIS_FAILED" }, { status: 500 });
     }
   } catch (error) {
-    return Response.json({ error: error.message || "The court failed to convene.", code: "ANALYSIS_ERROR" }, { status: 500 });
+    return Response.json({ error: "The court failed to convene. Please try again.", code: "ANALYSIS_ERROR" }, { status: 500 });
   }
 }
 
