@@ -5,15 +5,23 @@
 // and discoverTokenPurchases functions consult this registry to decide whether
 // a network is supported before making any Nansen calls.
 //
-// Capabilities are based on a code audit of the Nansen request paths:
-//   - dex-trades (purchase discovery + sells): supports ethereum, base, solana, robinhood
-//   - token-ohlcv (OHLCV candles): supports solana and all other Nansen chains
-//   - current-balance (holding verification): supports ethereum, base, solana, robinhood
+// VERIFICATION STATUS (as of 2026-09-26):
+//   - Solana: VERIFIED by live NansenApiCallAudit records (1,024 total, all
+//     solana, all 200 OK). dex-trades, token-ohlcv, and current-balance all
+//     returned valid data for real wallets.
+//   - Ethereum: UNVERIFIED. No live audit records exist for Single Trade on
+//     ethereum. The Nansen API accepts "ethereum" as a chain identifier for
+//     dex-trades and current-balance (verified by whole-wallet trials), but
+//     token-ohlcv on ethereum has never been tested. Marked unavailable until
+//     a live test confirms all three endpoints return valid data.
+//   - Base: UNVERIFIED. No live audit records exist for Single Trade on base.
+//     The Nansen API accepts "base" as a chain identifier for whole-wallet
+//     trials, but token-ohlcv on base has never been tested. Marked unavailable.
+//   - Robinhood: UNVERIFIED and known-limited. Robinhood coverage starts
+//     2026-04-30. token-ohlcv support is unverified. Marked unavailable.
 //
-// Robinhood is marked unavailable for Single Trade because token-ohlcv support
-// for Robinhood is unverified (Robinhood is a recent chain with coverage starting
-// 2026-04-30, and token-level OHLCV may not be available). Whole Wallet Robinhood
-// support is unchanged — it uses different endpoints (pnl-summary, transactions).
+// Whole-wallet Robinhood support is unchanged — it uses different endpoints
+// (pnl-summary, transactions) that are verified for all four chains.
 //
 // Adding a new chain: append an entry here AND in src/lib/singleTradeCapability.js.
 // tests/singleTradeCapabilityParity.test.ts enforces synchronization.
@@ -56,22 +64,22 @@ export const SINGLE_TRADE_CAPABILITIES: SingleTradeCapability[] = [
     family: "evm",
     nansenChain: "ethereum",
     label: "Ethereum",
-    discoveryAvailable: true,
-    ohlcvAvailable: true,
-    balanceAvailable: true,
-    publicAvailable: false, // flag-gated
-    adminPreviewAvailable: true,
+    discoveryAvailable: false, // UNVERIFIED — no live token-ohlcv test
+    ohlcvAvailable: false,      // UNVERIFIED — no live token-ohlcv test
+    balanceAvailable: false,    // UNVERIFIED for Single Trade
+    publicAvailable: false,
+    adminPreviewAvailable: false,
   },
   {
     network: "base",
     family: "evm",
     nansenChain: "base",
     label: "Base",
-    discoveryAvailable: true,
-    ohlcvAvailable: true,
-    balanceAvailable: true,
-    publicAvailable: false, // flag-gated
-    adminPreviewAvailable: true,
+    discoveryAvailable: false, // UNVERIFIED — no live token-ohlcv test
+    ohlcvAvailable: false,      // UNVERIFIED — no live token-ohlcv test
+    balanceAvailable: false,    // UNVERIFIED for Single Trade
+    publicAvailable: false,
+    adminPreviewAvailable: false,
   },
   {
     network: "robinhood",

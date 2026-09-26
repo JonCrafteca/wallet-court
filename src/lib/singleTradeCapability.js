@@ -20,22 +20,22 @@ export const SINGLE_TRADE_CAPABILITIES = [
     family: "evm",
     nansenChain: "ethereum",
     label: "Ethereum",
-    discoveryAvailable: true,
-    ohlcvAvailable: true,
-    balanceAvailable: true,
+    discoveryAvailable: false, // UNVERIFIED — no live token-ohlcv test
+    ohlcvAvailable: false,      // UNVERIFIED — no live token-ohlcv test
+    balanceAvailable: false,    // UNVERIFIED for Single Trade
     publicAvailable: false,
-    adminPreviewAvailable: true,
+    adminPreviewAvailable: false,
   },
   {
     network: "base",
     family: "evm",
     nansenChain: "base",
     label: "Base",
-    discoveryAvailable: true,
-    ohlcvAvailable: true,
-    balanceAvailable: true,
+    discoveryAvailable: false, // UNVERIFIED — no live token-ohlcv test
+    ohlcvAvailable: false,      // UNVERIFIED — no live token-ohlcv test
+    balanceAvailable: false,    // UNVERIFIED for Single Trade
     publicAvailable: false,
-    adminPreviewAvailable: true,
+    adminPreviewAvailable: false,
   },
   {
     network: "robinhood",
