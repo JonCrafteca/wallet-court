@@ -65,9 +65,9 @@ describe("Single Trade — capCandles", () => {
   });
 
   it("is a no-op for arrays within the limit", () => {
-    const candles = Array.from({ length: 100 }, (_, i) => makeCandle(i));
+    const candles = Array.from({ length: MAX_STORED_CANDLES - 10 }, (_, i) => makeCandle(i));
     const capped = capCandles(candles);
-    expect(capped.length).toBe(100);
+    expect(capped.length).toBe(MAX_STORED_CANDLES - 10);
     expect(capped).toBe(candles); // same reference, no copy
   });
 

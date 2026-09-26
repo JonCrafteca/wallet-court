@@ -689,10 +689,11 @@ describe("Production hardening — unsupported networks", () => {
     expect(cap!.ohlcvAvailable).toBe(false);
   });
 
-  it("18d. Solana, Ethereum, and Base are supported for Single Trade", () => {
+  it("18d. Only Solana is supported for Single Trade (Ethereum/Base unverified)", () => {
     expect(isSingleTradeSupported("solana")).toBe(true);
-    expect(isSingleTradeSupported("ethereum")).toBe(true);
-    expect(isSingleTradeSupported("base")).toBe(true);
+    expect(isSingleTradeSupported("ethereum")).toBe(false);
+    expect(isSingleTradeSupported("base")).toBe(false);
+    expect(isSingleTradeSupported("robinhood")).toBe(false);
   });
 });
 
