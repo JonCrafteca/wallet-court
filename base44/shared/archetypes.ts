@@ -13,7 +13,7 @@
 
 // ---- Types ----
 
-export type ArchetypeTier = "comeback" | "guilty" | "neutral" | "not_guilty";
+export type ArchetypeTier = "comeback" | "recovery" | "guilty" | "neutral" | "not_guilty";
 
 export interface ArchetypeDefinition {
   archetype_id: string;
@@ -82,6 +82,35 @@ export const COMEBACK_TIERS: ComebackTier[] = [
       "One mandatory resurrection certificate, framed and displayed above the trading terminal.",
   },
 ];
+
+// ---- Almost Escaped (incomplete comeback) ----
+//
+// A journey archetype for positions that survived a severe drawdown and
+// recovered most of the loss, but sold just short of full cost-basis recovery.
+// Eligibility: dd <= -70%, recovered_loss >= 80%, final_return in [-20%, 0%).
+// Precedence: completed comebacks > Almost Escaped > generic classifications.
+export const ALMOST_ESCAPED = {
+  archetype_id: "almost_escaped",
+  archetype_name: "Almost Escaped",
+  display_headline: "FUMBLED THE COMEBACK",
+  charge: "SELLING AT THE FINISH LINE",
+  tier: "recovery" as ArchetypeTier,
+  hall_eligible: true,
+  defense: "My client was implementing a disciplined exit strategy. The court is punishing timing.",
+  sentence:
+    "The Court sentences you to watching the chart continue without you and explaining forever that you almost broke even.",
+};
+
+// All journey archetype IDs (comeback + recovery tiers). Used by the Hall of
+// Fame Recovery category to identify journey-based verdicts.
+export const JOURNEY_ARCHETYPE_IDS = [
+  ...COMEBACK_TIERS.map((t) => t.archetype_id),
+  ALMOST_ESCAPED.archetype_id,
+];
+
+export function isJourneyArchetype(verdictCode: string | null | undefined): boolean {
+  return !!verdictCode && JOURNEY_ARCHETYPE_IDS.includes(verdictCode);
+}
 
 // ---- Comeback classification inputs ----
 
@@ -188,17 +217,59 @@ export function classifyComeback(inputs: ComebackInputs): ComebackResult {
     );
   }
 
-  // ---- Check drawdown threshold ----
+  // ---- Check drawdown threshold for completed comebacks ----
   const ddRatio = max_drawdown_pct / 100; // convert to ratio for tier matching
   let matchedTier: ComebackTier | null = null;
-  for (const tier of COMEBACK_TIERS) {
-    if (ddRatio <= tier.min_drawdown && (tier.max_drawdown === null || ddRatio > tier.max_drawdown)) {
-      matchedTier = tier;
-      break;
+  if (recovered) {
+    for (const tier of COMEBACK_TIERS) {
+      if (ddRatio <= tier.min_drawdown && (tier.max_drawdown === null || ddRatio > tier.max_drawdown)) {
+        matchedTier = tier;
+        break;
+      }
     }
   }
 
-  if (!matchedTier || !recovered) {
+  // ---- Check Almost Escaped (incomplete comeback) ----
+  // Precedence: completed comebacks > Almost Escaped. Only check Almost Escaped
+  // when no completed comeback was matched (position did not recover to cost
+  // basis, or drawdown doesn't meet a completed-comeback tier).
+  if (!matchedTier) {
+    const almostEscaped =
+      ddRatio <= -0.70 &&
+      recovered_loss_pct !== null &&
+      recovered_loss_pct >= 80 &&
+      final_return_pct < 0 &&
+      final_return_pct >= -20;
+    if (almostEscaped) {
+      qualifying.push(
+        `Max drawdown of ${max_drawdown_pct.toFixed(1)}% meets the -70% Almost Escaped threshold`
+      );
+      qualifying.push(
+        `Recovered ${recovered_loss_pct!.toFixed(1)}% of losses (≥ 80% required)`
+      );
+      qualifying.push(
+        `Final return of ${final_return_pct.toFixed(1)}% (between -20% and 0%)`
+      );
+      return {
+        archetype_id: ALMOST_ESCAPED.archetype_id,
+        archetype_name: ALMOST_ESCAPED.archetype_name,
+        archetype_tier: "recovery",
+        classification_reason: `Almost Escaped: drawdown ${max_drawdown_pct.toFixed(1)}%, recovered ${recovered_loss_pct!.toFixed(1)}% of losses, final return ${final_return_pct.toFixed(1)}%.`,
+        amount_invested_usd,
+        lowest_position_value_usd,
+        ending_value_usd,
+        max_drawdown_pct,
+        final_return_pct,
+        recovered_loss_pct,
+        recovery_multiple_from_bottom,
+        data_confidence: "high",
+        qualifying_evidence: qualifying,
+        disqualifying_evidence: [],
+      };
+    }
+  }
+
+  if (!matchedTier) {
     return {
       archetype_id: null,
       archetype_name: null,
@@ -300,6 +371,34 @@ export function buildComebackVerdict(tier: ComebackTier, result: ComebackResult)
   };
 }
 
+// ---- Build a TradeVerdict from the Almost Escaped archetype + result ----
+export function buildAlmostEscapedRoast(result: ComebackResult): string {
+  const invested = result.amount_invested_usd;
+  const lowest = result.lowest_position_value_usd;
+  const ending = result.ending_value_usd;
+  const drawdownPct = Math.round(Math.abs(result.max_drawdown_pct));
+  const shortfall = invested - ending;
+
+  const fmtMoney = (v: number) => {
+    if (Math.abs(v) >= 1000) return `$${Math.round(v).toLocaleString()}`;
+    return `$${Math.round(v)}`;
+  };
+
+  return `You turned ${fmtMoney(invested)} into roughly ${fmtMoney(lowest)}, clawed your way back to ${fmtMoney(ending)}, and then sold just ${fmtMoney(shortfall)} short of freedom. After surviving a ${drawdownPct}% collapse and recovering nearly everything, you completed one of crypto's greatest comebacks—except for the part where you actually came back.`;
+}
+
+export function buildAlmostEscapedVerdict(result: ComebackResult) {
+  return {
+    code: ALMOST_ESCAPED.archetype_id,
+    display_name: ALMOST_ESCAPED.archetype_name,
+    charge: ALMOST_ESCAPED.charge,
+    headline: ALMOST_ESCAPED.display_headline,
+    roast: buildAlmostEscapedRoast(result),
+    defense: ALMOST_ESCAPED.defense,
+    sentence: ALMOST_ESCAPED.sentence,
+  };
+}
+
 // ---- Extract comeback inputs from trade metrics ----
 //
 // Derives the comeback inputs from the computed trade metrics. The metrics
@@ -367,15 +466,18 @@ export function extractComebackInputs(metrics: Record<string, any>): ComebackInp
 // Combines extractComebackInputs + classifyComeback into one call. Returns
 // both the verdict (if a comeback was selected) and the full result record.
 export function classifyComebackFromMetrics(metrics: Record<string, any>): {
-  verdict: ReturnType<typeof buildComebackVerdict> | null;
+  verdict: ReturnType<typeof buildComebackVerdict> | ReturnType<typeof buildAlmostEscapedVerdict> | null;
   result: ComebackResult;
 } {
   const inputs = extractComebackInputs(metrics);
   const result = classifyComeback(inputs);
   if (!result.archetype_id) return { verdict: null, result };
   const tier = COMEBACK_TIERS.find((t) => t.archetype_id === result.archetype_id);
-  if (!tier) return { verdict: null, result };
-  return { verdict: buildComebackVerdict(tier, result), result };
+  if (tier) return { verdict: buildComebackVerdict(tier, result), result };
+  if (result.archetype_id === ALMOST_ESCAPED.archetype_id) {
+    return { verdict: buildAlmostEscapedVerdict(result), result };
+  }
+  return { verdict: null, result };
 }
 
 // ---- Whole-wallet archetype tier mapping ----
@@ -386,6 +488,8 @@ export function getArchetypeTier(verdictCode: string | null | undefined): Archet
   if (!verdictCode) return "neutral";
   // Comeback archetypes
   if (COMEBACK_TIERS.some((t) => t.archetype_id === verdictCode)) return "comeback";
+  // Recovery archetype (incomplete comeback)
+  if (verdictCode === ALMOST_ESCAPED.archetype_id) return "recovery";
   // Not-guilty (the only positive whole-wallet verdict)
   if (verdictCode === "suspiciously_competent") return "not_guilty";
   // Everything else with a verdict code is guilty

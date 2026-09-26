@@ -36,6 +36,7 @@ vi.mock("npm:@base44/sdk@0.8.44", () => ({
     asServiceRole: {
       entities: {
         WalletTrial: { filter: mockFilter },
+        SingleTradeTrial: { filter: mockFilter },
       },
     },
   }),

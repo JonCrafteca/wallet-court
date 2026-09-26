@@ -34,12 +34,14 @@
 
 import { getCaseOutcome } from "./evidenceGate.ts";
 import { isNotGuilty } from "./notGuiltyStamp.ts";
+import { isJourneyArchetype } from "./archetypes.ts";
 
 export const HALL_CATEGORIES = [
   "most_severe",
   "highest_confidence",
   "recent",
   "honor",
+  "recovery",
 ] as const;
 
 export type HallCategory = (typeof HALL_CATEGORIES)[number];
@@ -202,6 +204,47 @@ export function eligibleDump(records: any[]): any[] {
   return sortDump(dedupBest(eligible, (t) => num(t.severity_score) || 0));
 }
 
+// Recovery: live completed SingleTradeTrial verdicts with a journey archetype
+// (comeback or recovery tier). Sorted by confidence → recovered_loss_pct →
+// newest → slug.
+function recoveredLossOf(t: any): number {
+  try {
+    const m = JSON.parse(t.metrics_json || "{}");
+    const rl = num(m._archetype?.recovered_loss_pct);
+    if (rl !== null) return rl;
+    // Fallback: compute from raw metrics
+    const invested = num(m.purchase_cost_usd) ?? num(m.whole_position_cost_usd);
+    const dd = num(m.max_drawdown_pct);
+    const ending = num(m.realized_exit_value_usd) ?? num(m.current_value_usd);
+    if (invested !== null && dd !== null && ending !== null) {
+      const lowest = invested * (1 + dd);
+      const loss = invested - lowest;
+      return loss > 0 ? ((ending - lowest) / loss) * 100 : -Infinity;
+    }
+    return -Infinity;
+  } catch {
+    return -Infinity;
+  }
+}
+
+function sortRecovery(list: any[]) {
+  return list.sort((a, b) => {
+    const c = sortByConfidence(a, b);
+    if (c !== 0) return c;
+    const ra = recoveredLossOf(a), rb = recoveredLossOf(b);
+    if (ra !== rb) return rb - ra;
+    const n = sortByNewest(a, b);
+    if (n !== 0) return n;
+    return sortBySlug(a, b);
+  });
+}
+
+export function eligibleRecovery(records: any[]): any[] {
+  // Live completed verdicts with a journey archetype code (comeback or recovery).
+  const eligible = records.filter((t) => isLiveVerdict(t) && isJourneyArchetype(t.verdict_code));
+  return sortRecovery(dedupBest(eligible, (t) => num(t.confidence_score) || 0));
+}
+
 // ---- Category resolver ----
 
 export function getEligibleForCategory(records: any[], category: HallCategory): any[] {
@@ -210,6 +253,7 @@ export function getEligibleForCategory(records: any[], category: HallCategory): 
     case "highest_confidence": return eligibleHighestConfidence(records);
     case "recent": return eligibleRecent(records);
     case "honor": return eligibleHonor(records);
+    case "recovery": return eligibleRecovery(records);
     default: return [];
   }
 }
@@ -219,6 +263,7 @@ export const CATEGORY_TITLES: Record<HallCategory, string> = {
   highest_confidence: "Highest Confidence",
   recent: "Recent Cases",
   honor: "Hall of Honor",
+  recovery: "Recovery",
 };
 
 export const CATEGORY_SEE_ALL: Record<HallCategory, string> = {
@@ -226,6 +271,7 @@ export const CATEGORY_SEE_ALL: Record<HallCategory, string> = {
   highest_confidence: "SEE ALL HIGH CONFIDENCE",
   recent: "SEE ALL RECENT CASES",
   honor: "SEE ALL HONORED WALLETS",
+  recovery: "SEE ALL RECOVERY STORIES",
 };
 
 export const CATEGORY_ROUTES: Record<HallCategory, string> = {
@@ -233,6 +279,7 @@ export const CATEGORY_ROUTES: Record<HallCategory, string> = {
   highest_confidence: "/hall/highest-confidence",
   recent: "/hall/recent",
   honor: "/hall/honor",
+  recovery: "/hall/recovery",
 };
 
 // Reverse mapping: URL slug → category key. Shared so frontend and backend
@@ -242,6 +289,7 @@ export const CATEGORY_SLUG_TO_KEY: Record<string, HallCategory> = {
   "highest-confidence": "highest_confidence",
   "recent": "recent",
   "honor": "honor",
+  "recovery": "recovery",
 };
 
 // ---- Daily awards ----

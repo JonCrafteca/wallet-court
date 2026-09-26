@@ -79,6 +79,7 @@ export default function HallCategory() {
   }
 
   const isHonor = categoryKey === "honor";
+  const isRecovery = categoryKey === "recovery";
   const title = CATEGORY_TITLES[categoryKey];
 
   return (
@@ -100,6 +101,8 @@ export default function HallCategory() {
         <p className="mt-3 font-mono text-base text-court-mute max-w-2xl leading-relaxed">
           {isHonor
             ? "Live Nansen cases with a positive NOT GUILTY verdict. No demo, dismissed, or fabricated winners."
+            : isRecovery
+            ? "Journey archetypes: Escape Artist, Comeback Kid, Back From the Dead, and Almost Escaped. Trades that survived severe drawdowns and fought back."
             : "Public completed cases, ranked deterministically. Sanitized addresses only."}
         </p>
       </header>
@@ -120,11 +123,13 @@ export default function HallCategory() {
           {items.length === 0 ? (
             <div className="border-2 border-dashed border-court-mute bg-court-navy p-8 text-center">
               <p className="font-display uppercase tracking-[0.06em] text-court-mute text-xl mb-2">
-                {isHonor ? "No honored wallets yet" : "No cases in this category"}
+                {isHonor ? "No honored wallets yet" : isRecovery ? "No recovery stories yet" : "No cases in this category"}
               </p>
               <p className="font-mono text-base text-court-mute leading-relaxed max-w-xl mx-auto">
                 {isHonor
                   ? "Honors are awarded only from eligible live Nansen cases with a NOT GUILTY verdict. No winners are fabricated."
+                  : isRecovery
+                  ? "Journey archetypes appear here once live single-trade cases are completed with a comeback or recovery verdict."
                   : "Cases will appear here once they are completed and qualify for this category."}
               </p>
             </div>

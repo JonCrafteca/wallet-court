@@ -7,6 +7,8 @@ import {
   COMEBACK_TIERS,
   classifyComebackFromMetrics,
   getArchetypeTier,
+  isJourneyArchetype,
+  ALMOST_ESCAPED,
 } from "../base44/shared/archetypes.ts";
 
 // Helper: build inputs with sensible defaults.
@@ -331,6 +333,213 @@ describe("getArchetypeTier — whole-wallet mapping", () => {
     expect(getArchetypeTier(null)).toBe("neutral");
     expect(getArchetypeTier(undefined)).toBe("neutral");
     expect(getArchetypeTier("")).toBe("neutral");
+  });
+});
+
+describe("Almost Escaped — incomplete comeback archetype", () => {
+  it("qualifies: -85.1% drawdown, 84.8% recovered loss, -12.9% final return", () => {
+    // The actual TRADE-580FR5OT3D1I case values
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1048.08,
+        lowest_position_value_usd: 156.41,
+        ending_value_usd: 912.72,
+      })
+    );
+    expect(result.archetype_id).toBe("almost_escaped");
+    expect(result.archetype_name).toBe("Almost Escaped");
+    expect(result.archetype_tier).toBe("recovery");
+    expect(result.max_drawdown_pct).toBeCloseTo(-85.1, 0);
+    expect(result.final_return_pct).toBeCloseTo(-12.9, 0);
+    expect(result.recovered_loss_pct).toBeCloseTo(84.8, 0);
+    expect(result.data_confidence).toBe("high");
+    expect(result.disqualifying_evidence).toHaveLength(0);
+  });
+
+  it("qualifies at boundary: -70% drawdown, 80% recovered loss, -20% final return", () => {
+    // invested=1000, low=300 → dd=-70%, ending=840
+    // loss = 700, recovered = 540, recovered_loss = 540/700 = 77.1% → NOT enough
+    // Need recovered_loss >= 80%: ending must be >= 300 + 0.80*700 = 860
+    // final_return = (860-1000)/1000 = -14% → qualifies
+    // But let's test the exact boundary: -20% final return means ending=800
+    // recovered_loss = (800-300)/(1000-300) = 500/700 = 71.4% → NOT enough
+    // So -20% final return with -70% drawdown gives 71.4% recovered loss → NOT enough
+    // Need: dd=-70%, recovered_loss=80%, final_return=-20% is impossible simultaneously
+    // Let's find the boundary: dd=-70%, recovered_loss=80% → ending = 300 + 0.8*700 = 860
+    // final_return = (860-1000)/1000 = -14% → qualifies
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: 300,
+        ending_value_usd: 860,
+      })
+    );
+    expect(result.archetype_id).toBe("almost_escaped");
+    expect(result.recovered_loss_pct).toBeCloseTo(80, 0);
+    expect(result.final_return_pct).toBeCloseTo(-14, 0);
+  });
+
+  it("does NOT qualify: severe drawdown but less than 80% loss recovery", () => {
+    // invested=1000, low=100 → dd=-90%, ending=500
+    // recovered_loss = (500-100)/(1000-100) = 400/900 = 44.4% → NOT enough
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: 100,
+        ending_value_usd: 500,
+      })
+    );
+    expect(result.archetype_id).toBeNull();
+  });
+
+  it("does NOT qualify: -85% drawdown but final return below -20%", () => {
+    // invested=1000, low=150 → dd=-85%, ending=700
+    // recovered_loss = (700-150)/(1000-150) = 550/850 = 64.7% → NOT enough
+    // Need to go lower: ending=750 → recovered_loss = 600/850 = 70.6% → still not enough
+    // ending=830 → recovered_loss = 680/850 = 80% → qualifies, final_return=-17%
+    // ending=799 → final_return=-20.1% → below -20% → does NOT qualify
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: 150,
+        ending_value_usd: 799,
+      })
+    );
+    expect(result.archetype_id).toBeNull();
+  });
+
+  it("does NOT qualify: drawdown above -70% (Escape Artist range)", () => {
+    // invested=1000, low=400 → dd=-60%, ending=900
+    // recovered_loss = (900-400)/(1000-400) = 500/600 = 83.3% → enough
+    // BUT dd=-60% > -70% → does NOT meet the -70% Almost Escaped threshold
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: 400,
+        ending_value_usd: 900,
+      })
+    );
+    expect(result.archetype_id).toBeNull();
+  });
+
+  it("ending at break-even routes to completed comeback, not Almost Escaped", () => {
+    // invested=1000, low=150 → dd=-85%, ending=1000 (break-even)
+    // recovered = true → completed comeback tier (comeback_kid)
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: 150,
+        ending_value_usd: 1000,
+      })
+    );
+    expect(result.archetype_id).toBe("comeback_kid");
+    expect(result.archetype_tier).toBe("comeback");
+  });
+
+  it("ending at profit routes to completed comeback, not Almost Escaped", () => {
+    // invested=1000, low=150 → dd=-85%, ending=1100 (profit)
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: 150,
+        ending_value_usd: 1100,
+      })
+    );
+    expect(result.archetype_id).toBe("comeback_kid");
+    expect(result.archetype_tier).toBe("comeback");
+  });
+
+  it("missing/unreliable path data does not qualify", () => {
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1000,
+        lowest_position_value_usd: null,
+        ending_value_usd: 900,
+      })
+    );
+    expect(result.archetype_id).toBeNull();
+    expect(result.data_confidence).toBe("low");
+  });
+
+  it("Almost Escaped overrides Stuck in the Middle (not a generic classification)", () => {
+    const result = classifyComeback(
+      inputs({
+        amount_invested_usd: 1048.08,
+        lowest_position_value_usd: 156.41,
+        ending_value_usd: 912.72,
+      })
+    );
+    expect(result.archetype_id).toBe("almost_escaped");
+    expect(result.archetype_id).not.toBe("stuck_in_the_middle");
+  });
+
+  it("classifyComebackFromMetrics produces Almost Escaped verdict with correct copy", () => {
+    const metrics = {
+      purchase_cost_usd: 1048.08,
+      max_drawdown_pct: -0.851,
+      realized_exit_value_usd: 912.72,
+      conviction: "full_exit",
+      lowest_market_cap_timestamp: "2026-09-21T16:00:00Z",
+      last_sell_timestamp: "2026-09-25T13:36:54Z",
+    };
+    const { verdict, result } = classifyComebackFromMetrics(metrics);
+    expect(result.archetype_id).toBe("almost_escaped");
+    expect(verdict).not.toBeNull();
+    expect(verdict!.code).toBe("almost_escaped");
+    expect(verdict!.display_name).toBe("Almost Escaped");
+    expect(verdict!.charge).toBe("SELLING AT THE FINISH LINE");
+    expect(verdict!.headline).toBe("FUMBLED THE COMEBACK");
+    expect(verdict!.roast).toContain("$1,048");
+    expect(verdict!.roast).toContain("85%");
+    expect(verdict!.roast).toContain("short of freedom");
+    expect(verdict!.sentence).toContain("watching the chart continue without you");
+  });
+});
+
+describe("isJourneyArchetype — journey archetype check", () => {
+  it("returns true for all comeback archetype IDs", () => {
+    expect(isJourneyArchetype("escape_artist")).toBe(true);
+    expect(isJourneyArchetype("comeback_kid")).toBe(true);
+    expect(isJourneyArchetype("back_from_the_dead")).toBe(true);
+  });
+
+  it("returns true for almost_escaped", () => {
+    expect(isJourneyArchetype("almost_escaped")).toBe(true);
+  });
+
+  it("returns false for generic verdict codes", () => {
+    expect(isJourneyArchetype("stuck_in_the_middle")).toBe(false);
+    expect(isJourneyArchetype("one_pump_chump")).toBe(false);
+    expect(isJourneyArchetype("suspiciously_competent")).toBe(false);
+  });
+
+  it("returns false for null/undefined/empty", () => {
+    expect(isJourneyArchetype(null)).toBe(false);
+    expect(isJourneyArchetype(undefined)).toBe(false);
+    expect(isJourneyArchetype("")).toBe(false);
+  });
+});
+
+describe("getArchetypeTier — recovery tier mapping", () => {
+  it("maps almost_escaped to 'recovery' tier", () => {
+    expect(getArchetypeTier("almost_escaped")).toBe("recovery");
+  });
+});
+
+describe("ALMOST_ESCAPED — definition", () => {
+  it("has the correct archetype_id and name", () => {
+    expect(ALMOST_ESCAPED.archetype_id).toBe("almost_escaped");
+    expect(ALMOST_ESCAPED.archetype_name).toBe("Almost Escaped");
+  });
+
+  it("has the correct display_headline and charge", () => {
+    expect(ALMOST_ESCAPED.display_headline).toBe("FUMBLED THE COMEBACK");
+    expect(ALMOST_ESCAPED.charge).toBe("SELLING AT THE FINISH LINE");
+  });
+
+  it("has tier 'recovery' and hall_eligible true", () => {
+    expect(ALMOST_ESCAPED.tier).toBe("recovery");
+    expect(ALMOST_ESCAPED.hall_eligible).toBe(true);
   });
 });
 

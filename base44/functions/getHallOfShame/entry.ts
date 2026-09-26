@@ -49,8 +49,16 @@ export default async function (req) {
 
     const { view, category, offset, limit } = parsed;
 
-    // Fetch completed cases (capped at 500 for safety; never the full collection).
+    // Fetch completed WalletTrial cases (capped at 500 for safety).
     const records = await base44.asServiceRole.entities.WalletTrial.filter(
+      { status: "completed" },
+      "-created_date",
+      500
+    );
+
+    // Fetch completed SingleTradeTrial cases for the Recovery category
+    // (journey archetypes are single-trade verdict codes).
+    const tradeRecords = await base44.asServiceRole.entities.SingleTradeTrial.filter(
       { status: "completed" },
       "-created_date",
       500
@@ -64,7 +72,9 @@ export default async function (req) {
     }
 
     if (view === "category") {
-      const eligible = getEligibleForCategory(records || [], category);
+      // Recovery category uses SingleTradeTrial records; others use WalletTrial.
+      const sourceRecords = category === "recovery" ? (tradeRecords || []) : (records || []);
+      const eligible = getEligibleForCategory(sourceRecords, category);
       const page = eligible.slice(offset, offset + limit);
       return Response.json({
         view: "category",
@@ -84,7 +94,8 @@ export default async function (req) {
     // Summary view: max 3 per section + honor + daily awards
     const sections: Record<string, any[]> = {};
     for (const cat of HALL_CATEGORIES) {
-      const eligible = getEligibleForCategory(records || [], cat);
+      const sourceRecords = cat === "recovery" ? (tradeRecords || []) : (records || []);
+      const eligible = getEligibleForCategory(sourceRecords, cat);
       sections[cat] = eligible.slice(0, SUMMARY_LIMIT).map((t: any) =>
         cat === "honor" ? sanitizeForHonor(t) : sanitizeForHall(t, countMap)
       );

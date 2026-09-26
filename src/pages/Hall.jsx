@@ -13,6 +13,7 @@ const SUMMARY_SECTIONS = [
   { key: "most_severe", title: "Most Severe" },
   { key: "highest_confidence", title: "Highest Confidence" },
   { key: "recent", title: "Recent Cases" },
+  { key: "recovery", title: "Recovery" },
   { key: "honor", title: "Hall of Honor" },
 ];
 
@@ -100,6 +101,8 @@ export default function Hall() {
                   <p className="font-mono text-base text-court-mute">
                     {s.key === "honor"
                       ? "No eligible live NOT GUILTY cases yet. Honors are awarded only from real Nansen evidence — no fabricated winners."
+                      : s.key === "recovery"
+                      ? "No recovery stories yet. Journey archetypes (Escape Artist, Comeback Kid, Back From the Dead, Almost Escaped) appear here once live cases are completed."
                       : "No cases in this category yet."}
                   </p>
                 ) : (
