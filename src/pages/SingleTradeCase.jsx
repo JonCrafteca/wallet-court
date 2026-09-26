@@ -4,9 +4,23 @@ import { base44 } from "@/api/base44Client";
 import SingleTradeVerdict from "@/components/walletcourt/SingleTradeVerdict";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
+import { extractApiError } from "@/lib/apiError";
 import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
 import { getSingleTradeErrorMessage } from "@/lib/singleTradeErrors";
 import { RefreshCw, Loader2, RotateCcw, AlertTriangle } from "lucide-react";
+
+// Extract the HTTP status and backend error message from any Base44 SDK
+// error shape (axios AxiosError, bare Error, or response-with-error-body).
+// Classifies the result so a backend 404 (non-renderable trial) enters the
+// "notfound" state — NOT the transient "error" state. Only network errors,
+// timeouts, and 5xx responses enter "error" (which shows Reload Case).
+function classifyFetchError(e) {
+  const apiErr = extractApiError(e, "The court couldn't load this case. Try again.");
+  const rawStatus = apiErr.status ?? e?.status ?? e?.data?.status ?? e?.response?.status ?? null;
+  const status = rawStatus != null ? Number(rawStatus) : null;
+  const classified = classifyCaseFetchResult({ error: apiErr.message }, status);
+  return { message: apiErr.message, status, classified };
+}
 
 export default function SingleTradeCase() {
   const { slug } = useParams();
@@ -56,8 +70,14 @@ export default function SingleTradeCase() {
         }
       } catch (e) {
         if (!alive) return;
-        setError(e?.message || "The court couldn't load this case. Try again.");
-        setStatus("error");
+        const { message, classified } = classifyFetchError(e);
+        if (classified === "notfound") {
+          setError(message || "This trade case was not completed and is unavailable.");
+          setStatus("notfound");
+        } else {
+          setError(message);
+          setStatus("error");
+        }
       }
     })();
     return () => { alive = false; };
@@ -86,8 +106,14 @@ export default function SingleTradeCase() {
         setStatus("error");
       }
     } catch (e) {
-      setError(e?.message || "The court couldn't load this case. Try again.");
-      setStatus("error");
+      const { message, classified } = classifyFetchError(e);
+      if (classified === "notfound") {
+        setError(message || "This trade case was not completed and is unavailable.");
+        setStatus("notfound");
+      } else {
+        setError(message);
+        setStatus("error");
+      }
     }
   }
 
@@ -166,12 +192,14 @@ export default function SingleTradeCase() {
   }
   return (
     <UnavailableCase
-      message={error || "This trade case never made it to the docket."}
+      message={error || "This trade case was not completed and is unavailable."}
       showRetry={status === "error"}
       onRetry={handleRetryLoad}
       onBack={() => navigate("/")}
-      // Admin-only retry: re-analyzes the failed trade without a discovery call.
-      showAdminRetry={isAdmin && (status === "notfound" || status === "error")}
+      // Admin-only retry: shown ONLY for the unavailable-case state (notfound),
+      // never for transient errors. Uses the server-authoritative
+      // retrySingleTradeTrial function — no client-supplied purchase facts.
+      showAdminRetry={isAdmin && status === "notfound"}
       adminRetrying={retrying}
       adminRetryError={retryError}
       onAdminRetry={handleAdminRetry}
@@ -196,13 +224,13 @@ function UnavailableCase({ message, showRetry, onRetry, onBack, showAdminRetry, 
           Case Unavailable
         </p>
         <p className="font-mono text-base text-court-ice mb-6 leading-relaxed">
-          {message || "This trade case is not available for public viewing."}
+          {message || "This trade case was not completed and is unavailable."}
         </p>
 
         {showAdminRetry && (
           <div className="mb-6 border-2 border-court-chart/60 bg-court-uv/30 p-4">
             <p className="font-mono text-sm text-court-chart mb-3 leading-relaxed">
-              Admin: retry the analysis using the original purchase details — no new discovery call needed.
+              Retry using the original verified purchase details. No new discovery call required.
             </p>
             <button
               onClick={onAdminRetry}
