@@ -35,8 +35,7 @@ import {
 } from "../../shared/singleTradeEvidence.ts";
 import { selectTradeVerdict, computeTradeSeverityConfidence } from "../../shared/singleTradeVerdicts.ts";
 import {
-  findOrCreateTrial, completeTrial, failTrial, findActiveOrCompletedByFingerprint,
-  findByFingerprint
+  findOrCreateTrial, completeTrial, failTrial, findActiveOrCompletedByFingerprint
 } from "../../shared/singleTradeStore.ts";
 import { consumeSelection, linkSelectionToTrial, findSelection } from "../../shared/singleTradeSelectionStore.ts";
 import { checkAnalysisRateLimit } from "../../shared/singleTradeUsageStore.ts";
@@ -138,29 +137,48 @@ export default async function (req) {
       });
     }
 
-    // ---- Determine if this is a retry of a failed trial ----
-    // If a failed trial exists for this fingerprint, this is a retry. We do
-    // NOT consume the selection again (it was consumed on the first attempt).
-    const existingFailed = await findByFingerprint(base44, fingerprint);
-    const isRetry = !!(existingFailed && existingFailed.status === "failed");
-
-    // ---- Consume the selection (first attempt only) ----
-    // For a retry, the selection was already consumed on the first attempt.
-    // We skip consumption and use the selection's stored purchase details.
-    if (!isRetry) {
-      const consumption = await consumeSelection(base44, selection_token, normalized, token_mint);
-      if (!consumption.consumed) {
-        // Determine the specific error code.
-        let code = "SELECTION_INVALID";
-        let msg = consumption.reason;
-        if (consumption.selection && consumption.selection.consumed_at) {
-          code = "SELECTION_CONSUMED";
-          msg = "This purchase selection has already been used for an analysis.";
-        } else if (consumption.reason && consumption.reason.includes("expired")) {
-          code = "SELECTION_EXPIRED";
+    // ---- Consume the selection (always — single-use authorization) ----
+    // Every analysis request must atomically consume the selection via CAS.
+    // This includes retries: retrySingleTradeTrial creates a NEW unconsumed
+    // selection, which must be consumed here. A consumed selection can never
+    // be replayed. This is the core authorization gate — no Nansen calls
+    // happen until the selection is claimed.
+    const consumption = await consumeSelection(base44, selection_token, normalized, token_mint);
+    if (!consumption.consumed) {
+      // Selection was already consumed by a concurrent winner, or is
+      // expired/invalid. Check whether the winner already created a trial
+      // and return it (zero calls) instead of a bare error.
+      if (consumption.selection && consumption.selection.consumed_by_trial_id) {
+        const linkedTrial = await base44.asServiceRole.entities.SingleTradeTrial.get(
+          consumption.selection.consumed_by_trial_id
+        ).catch(() => null);
+        if (linkedTrial && (linkedTrial.status === "completed" || linkedTrial.status === "analyzing" || linkedTrial.status === "pending")) {
+          return Response.json({
+            trial: sanitizeSingleTrialForPublicCase(linkedTrial),
+            analysis: { outcome: linkedTrial.status === "completed" ? "existing" : "in_progress", nansen_calls: 0, physical_calls_made: 0, correlation_id: null }
+          });
         }
-        return Response.json({ error: msg, code }, { status: 400 });
       }
+      // Re-check by fingerprint — the winner may have created the trial
+      // after our earlier fast-path check.
+      const existingAfterConsume = await findActiveOrCompletedByFingerprint(base44, fingerprint);
+      if (existingAfterConsume) {
+        return Response.json({
+          trial: sanitizeSingleTrialForPublicCase(existingAfterConsume),
+          analysis: { outcome: existingAfterConsume.status === "completed" ? "existing" : "in_progress", nansen_calls: 0, physical_calls_made: 0, correlation_id: null }
+        });
+      }
+      // No trial found — the winner is still processing or the selection is
+      // genuinely invalid/expired. Return the appropriate error.
+      let code = "SELECTION_INVALID";
+      let msg = consumption.reason;
+      if (consumption.selection && consumption.selection.consumed_at) {
+        code = "SELECTION_CONSUMED";
+        msg = "This purchase selection has already been used for an analysis.";
+      } else if (consumption.reason && consumption.reason.includes("expired")) {
+        code = "SELECTION_EXPIRED";
+      }
+      return Response.json({ error: msg, code }, { status: 400 });
     }
 
     const apiKey = getNansenApiKey();
@@ -218,9 +236,17 @@ export default async function (req) {
       return Response.json({ error: "The court is busy processing this trade. Please try again in a moment.", code: "LOCK_CONTENTION" }, { status: 503 });
     }
 
-    // ---- Winner: this caller owns the trial. Do the Nansen calls. ----
+    // ---- Winner: this caller owns the trial. Link the selection, then do the Nansen calls. ----
     const trial = findOrCreate.trial;
-    await linkSelectionToTrial(base44, selection_token, trial.id).catch(() => {});
+    // Link the selection to the trial. This must succeed — a failure leaves
+    // the selection ambiguously consumed with consumed_by_trial_id=null.
+    // If the link fails, fail the trial rather than leaving an ambiguous state.
+    try {
+      await linkSelectionToTrial(base44, selection_token, trial.id);
+    } catch (linkError) {
+      await failTrial(base44, trial.id, "LINK_ERROR", "Failed to link selection to trial.").catch(() => {});
+      return Response.json({ error: "Analysis failed during selection linking. Please try again.", code: "LINK_ERROR" }, { status: 500 });
+    }
 
     const { telemetryCtx, budgetGuard, correlationId, getPhysicalCallCount } = buildSingleTradeTelemetryContext(base44, {
       workflow: "single_trade_analysis", network, caseSlug: public_slug

@@ -122,12 +122,14 @@ export async function consumeSelection(base44, selectionId: string, expectedWall
   return { consumed: true, selection: updated, reason: "" };
 }
 
-// Mark a selection as consumed by a specific trial. Called after the trial
-// is created, to link the selection to the trial.
+// Link a consumed selection to the trial that won the analysis. Called
+// after the trial is created. Does NOT swallow errors — a failure here
+// leaves the selection ambiguously consumed with consumed_by_trial_id=null,
+// which the caller must handle (retry the link or fail the trial).
 export async function linkSelectionToTrial(base44, selectionId: string, trialId: string): Promise<void> {
   const selection = await findSelection(base44, selectionId);
   if (!selection) return;
   await base44.asServiceRole.entities[ENTITY].update(selection.id, {
     consumed_by_trial_id: trialId
-  }).catch(() => {});
+  });
 }
