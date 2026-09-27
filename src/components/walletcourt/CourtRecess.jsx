@@ -54,7 +54,9 @@ export default function CourtRecess({ recessType, retryAfter, reason, onRetry, o
         </p>
         <p className="mt-4 font-mono text-court-mute leading-relaxed text-base">
           {recessType === "court_recess_ceiling"
-            ? "This is a budget limit on the court\u2019s side, not something the wallet did. No further analyses are available until the court administrator restores capacity."
+            ? "This is a calibration budget limit on the court\u2019s side, not something the wallet did. No further calibration analyses are available."
+            : recessType === "court_recess_production_budget"
+            ? "This is a daily budget limit on the court\u2019s side, not something the wallet did. The court will have capacity again tomorrow."
             : "This is an operational issue on the court\u2019s side, not something the wallet did. Try the case again shortly."}
         </p>
       </div>

@@ -173,22 +173,66 @@ export default async function (req) {
       return courtRecessResponse(circuit, now);
     }
 
-    // ---- Ceiling pre-flight check ----
-    // The verified NansenApiCallAudit total vs the absolute safety ceiling
-    // (1,020). When the ceiling is reached, NO physical Nansen call is made
-    // and NO circuit mutation occurs — the ceiling is a permanent budget
-    // limit, not a transient provider failure. Returns a specific Court
-    // Recess so the visitor sees "evidence limit reached," not "provider
-    // error." The ceiling itself is not modified.
-    const verifiedTotal = await getVerifiedTotal(base44);
-    const ceilingBudget = checkCeilingBudgetWithLimit(verifiedTotal, CALIBRATION_CEILING);
-    if (!ceilingBudget.allowed) {
-      return courtRecessResponse({
-        recess_type: RECESS_TYPES.CEILING,
-        retry_after: new Date(computeRetryAfterForRecess(RECESS_TYPES.CEILING, now)).toISOString(),
-        sanitized_reason: sanitizeReason(RECESS_TYPES.CEILING),
-        last_request_id: null
-      }, now);
+    // ---- Budget pre-flight check ----
+    // The budget workflow is determined server-side from durable_telemetry:
+    //   durable_telemetry === true  → calibration campaign traffic → legacy
+    //                                 1,020 calibration ceiling (exhausted).
+    //   durable_telemetry === false → ordinary public/admin production trial →
+    //                                 new WalletTrialUsagePolicy daily budget.
+    //
+    // A public client cannot forge the calibration workflow to bypass the
+    // production budget: forging durable_telemetry=true routes to the EXHAUSTED
+    // legacy ceiling, which blocks them. The production budget (with capacity)
+    // is the DEFAULT — visitors get it by NOT setting durable_telemetry.
+    const budgetWorkflow = durableTelemetry ? "calibration_ceiling" : "production_daily";
+
+    if (budgetWorkflow === "production_daily") {
+      // ---- Production daily budget pre-flight ----
+      // Check the WalletTrialUsagePolicy daily limit BEFORE any circuit check
+      // or Nansen call. Budget exhaustion does NOT open the provider circuit —
+      // it is a budget limit, not a provider failure. Returns a specific Court
+      // Recess so the visitor sees "daily budget exhausted," not "provider
+      // error."
+      try {
+        await resetDailyUsageIfNeeded(base44);
+        const policy = await getPolicyOrDefault(base44);
+        const budgetCheck = canReserveCall(policy, todayUtcStr());
+        if (!budgetCheck.allowed) {
+          return courtRecessResponse({
+            recess_type: RECESS_TYPES.PRODUCTION_BUDGET,
+            retry_after: new Date(computeRetryAfterForRecess(RECESS_TYPES.PRODUCTION_BUDGET, now)).toISOString(),
+            sanitized_reason: sanitizeReason(RECESS_TYPES.PRODUCTION_BUDGET),
+            last_request_id: null
+          }, now);
+        }
+      } catch {
+        // Budget check failed — be conservative and block. Do NOT open the
+        // circuit; this is a budget infrastructure issue, not a provider failure.
+        return courtRecessResponse({
+          recess_type: RECESS_TYPES.PRODUCTION_BUDGET,
+          retry_after: new Date(computeRetryAfterForRecess(RECESS_TYPES.PRODUCTION_BUDGET, now)).toISOString(),
+          sanitized_reason: sanitizeReason(RECESS_TYPES.PRODUCTION_BUDGET),
+          last_request_id: null
+        }, now);
+      }
+    } else {
+      // ---- Legacy calibration ceiling pre-flight ----
+      // The capped NansenApiCallAudit count vs the absolute safety ceiling
+      // (1,020). When the ceiling is reached, NO physical Nansen call is made
+      // and NO circuit mutation occurs — the ceiling is a permanent budget
+      // limit, not a transient provider failure. Returns a specific Court
+      // Recess so the visitor sees "calibration limit reached." The ceiling
+      // itself is not modified.
+      const verifiedTotal = await getCountForCeilingCheck(base44);
+      const ceilingBudget = checkCeilingBudgetWithLimit(verifiedTotal, CALIBRATION_CEILING);
+      if (!ceilingBudget.allowed) {
+        return courtRecessResponse({
+          recess_type: RECESS_TYPES.CEILING,
+          retry_after: new Date(computeRetryAfterForRecess(RECESS_TYPES.CEILING, now)).toISOString(),
+          sanitized_reason: sanitizeReason(RECESS_TYPES.CEILING),
+          last_request_id: null
+        }, now);
+      }
     }
 
     // ---- Half-open probe lease (exactly one probe after cooldown) ----
@@ -217,8 +261,28 @@ export default async function (req) {
       caseSlug: public_slug,
       base44,
       timeoutMs: 20000,
-      durableTelemetry
+      durableTelemetry,
+      budgetWorkflow
     });
+
+    // ---- Production budget accounting ----
+    // Complete reservations that resulted in physical calls (audit records
+    // were written). Release reservations that did NOT result in physical
+    // calls (e.g., a higher-level guard blocked after the reservation, or a
+    // pre-HTTP error). Never refund a reservation after a physical request
+    // occurred, regardless of HTTP result — the audit record is the source of
+    // truth. Best-effort: if the CAS fails, the daily reset cleans up.
+    if (budgetWorkflow === "production_daily") {
+      const completed = nansen.physicalCallCount || 0;
+      const reserved = nansen.productionReservedCount || 0;
+      const toRelease = Math.max(0, reserved - completed);
+      try {
+        if (completed > 0) await completeProductionCalls(base44, completed);
+        if (toRelease > 0) await releaseProductionCalls(base44, toRelease);
+      } catch {
+        // Best-effort: daily reset will clean up any leaked reservations.
+      }
+    }
 
     // Defensive: if the provider reported an unsupported chain (should be caught
     // by the pre-flight), return a 400 — never a Court Recess, never a trial.
@@ -232,18 +296,22 @@ export default async function (req) {
     // Operational-failure assessment (N2.4). A blocking failure → Court Recess.
     const recess = assessRecess(nansen, gateOutcome);
     if (recess) {
-      // Open/reopen the circuit and return Court Recess. NO WalletTrial is created.
-      if (probeLease) {
-        await reopenCircuitWithLease(base44, PROVIDER, probeLease.newVersion, probeLease.leaseId, {
-          recessType: recess.recessType,
-          requestId: recess.requestId,
-          consecutiveFailures: circuit?.consecutive_failures || 0
-        }).catch(() => {});
-      } else {
-        await openCircuit(base44, PROVIDER, {
-          recessType: recess.recessType,
-          requestId: recess.requestId
-        });
+      // Budget exhaustion (calibration ceiling or production daily budget) must
+      // NOT open the provider circuit — it is a budget limit, not a provider
+      // failure. Only provider/network/schema failures open the circuit.
+      if (!isBudgetExhaustion(recess.recessType)) {
+        if (probeLease) {
+          await reopenCircuitWithLease(base44, PROVIDER, probeLease.newVersion, probeLease.leaseId, {
+            recessType: recess.recessType,
+            requestId: recess.requestId,
+            consecutiveFailures: circuit?.consecutive_failures || 0
+          }).catch(() => {});
+        } else {
+          await openCircuit(base44, PROVIDER, {
+            recessType: recess.recessType,
+            requestId: recess.requestId
+          });
+        }
       }
       return courtRecessResponse({
         recess_type: recess.recessType,
@@ -395,6 +463,7 @@ function computeRetryAfterForRecess(recessType, nowMs) {
     court_recess_auth: 900,
     court_recess_rate_limit: 60,
     court_recess_ceiling: 3600,
+    court_recess_production_budget: 3600,
     court_recess_provider: 30,
     court_recess_schema: 30,
     court_recess_unknown: 20
