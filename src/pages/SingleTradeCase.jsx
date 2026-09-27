@@ -6,6 +6,7 @@ import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
 import { extractApiError } from "@/lib/apiError";
 import { isSingleTradeRenderable } from "@/lib/singleTradeRenderable";
+import { useVerdictScrollReset } from "@/hooks/useVerdictScrollReset";
 import { RefreshCw, Loader2 } from "lucide-react";
 
 // Extract the HTTP status and backend error message from any Base44 SDK
@@ -65,6 +66,11 @@ export default function SingleTradeCase() {
     })();
     return () => { alive = false; };
   }, [slug]);
+
+  // Scroll to top when the verdict is first displayed (loading → done), and
+  // when navigating between different case slugs. Does not scroll on rerenders
+  // of the same case (e.g. refresh), so the user can read/scroll freely.
+  useVerdictScrollReset(status === "done" && trial ? trial.public_slug : null);
 
   if (status === "loading") return <LoadingStage visible />;
   if (status === "done" && trial) {

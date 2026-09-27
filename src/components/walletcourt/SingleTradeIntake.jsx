@@ -9,6 +9,7 @@ import { getSingleTradeErrorMessage, getSingleTradeErrorCode } from "@/lib/singl
 import SingleTradeVerdict from "./SingleTradeVerdict";
 import LoadingStage from "./LoadingStage";
 import CourtRecess from "./CourtRecess";
+import { useVerdictScrollReset } from "@/hooks/useVerdictScrollReset";
 
 export default function SingleTradeIntake({ onReset }) {
   const supportedNetworks = SINGLE_TRADE_CAPABILITIES.filter((c) => isSingleTradeSupported(c.network));
@@ -97,6 +98,11 @@ export default function SingleTradeIntake({ onReset }) {
     setError("");
     if (onReset) onReset();
   }
+
+  // Scroll to top when a Single Trade verdict is first displayed via an in-page
+  // state transition (analyzing → done). Does not scroll on rerenders of the
+  // same verdict, so the user can read/scroll freely without being reset.
+  useVerdictScrollReset(phase === "done" && trial ? trial.public_slug : null);
 
   if (phase === "done" && trial) {
     if (!isSingleTradeRenderable(trial)) {

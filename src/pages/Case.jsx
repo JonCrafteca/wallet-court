@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import LoadingStage from "@/components/walletcourt/LoadingStage";
 import { classifyCaseFetchResult } from "@/lib/routeState";
+import { useVerdictScrollReset } from "@/hooks/useVerdictScrollReset";
 
 export default function Case() {
   const { slug } = useParams();
@@ -66,6 +67,11 @@ export default function Case() {
       setStatus("error");
     }
   }
+
+  // Scroll to top when the verdict is first displayed (loading → done), and
+  // when navigating between different case slugs. Does not scroll on rerenders
+  // of the same case, so the user can read/scroll freely without being reset.
+  useVerdictScrollReset(status === "done" && trial ? trial.public_slug : null);
 
   if (status === "loading") return <LoadingStage visible />;
   if (status === "done" && trial) {

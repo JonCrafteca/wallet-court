@@ -12,6 +12,7 @@ import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
 import { getPublicFeatureFlags } from "@/lib/featureFlags";
 import { getSingleTradeAccess } from "@/lib/singleTradeAccess";
 import { cn } from "@/lib/utils";
+import { useVerdictScrollReset } from "@/hooks/useVerdictScrollReset";
 import { Wallet, Coins, Clock, ShieldAlert, OctagonAlert } from "lucide-react";
 
 export default function Home() {
@@ -138,6 +139,11 @@ export default function Home() {
     setAddress("");
     setError("");
   }
+
+  // Scroll to top when a Whole Wallet verdict is first displayed via an in-page
+  // state transition (loading → done). Does not scroll on rerenders of the
+  // same verdict, so the user can read/scroll freely without being reset.
+  useVerdictScrollReset(status === "done" && trial ? trial.public_slug : null);
 
   if (status === "done" && trial) {
     return <VerdictReveal trial={trial} onReset={handleReset} subjectType={subjectType} proposedHandle={proposedHandle} />;
