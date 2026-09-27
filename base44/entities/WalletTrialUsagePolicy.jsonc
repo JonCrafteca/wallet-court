@@ -1,0 +1,85 @@
+{
+  "name": "WalletTrialUsagePolicy",
+  "type": "object",
+  "properties": {
+    "control_key": {
+      "type": "string",
+      "description": "Singleton key. Always 'main'."
+    },
+    "version": {
+      "type": "number",
+      "default": 0,
+      "description": "CAS version. Incremented on every save, budget reservation, completion, release, and daily reset."
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Master switch for ordinary whole-wallet production trials. When false, no production Nansen calls are permitted. This is separate from the legacy 1,020 calibration ceiling and the Single Trade usage policy."
+    },
+    "emergency_stop": {
+      "type": "boolean",
+      "default": false,
+      "description": "Emergency kill switch. When true, all production whole-wallet Nansen calls are immediately blocked, regardless of enabled state or daily budget. Use to halt all production activity in an incident."
+    },
+    "daily_call_limit": {
+      "type": "number",
+      "default": 500,
+      "description": "Maximum physical Nansen calls per UTC day across all ordinary whole-wallet production trials. Independent of the legacy 1,020 calibration ceiling and the Single Trade daily policy."
+    },
+    "usage_date": {
+      "type": "string",
+      "description": "UTC date string (YYYY-MM-DD) for the current usage period. When this differs from today's UTC date, the counters are reset."
+    },
+    "calls_reserved": {
+      "type": "number",
+      "default": 0,
+      "description": "Physical calls reserved today (UTC date). Incremented atomically via CAS before each physical Nansen request. Reset to 0 when usage_date changes. A reservation is converted to calls_completed after the request, or released if no request was made."
+    },
+    "calls_completed": {
+      "type": "number",
+      "default": 0,
+      "description": "Physical calls completed today (UTC date). Incremented after a physical Nansen request occurred (regardless of HTTP result). Never refunded. Reset to 0 when usage_date changes. The difference (calls_reserved - calls_completed) represents in-flight or leaked reservations."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_by_user_id": {
+      "type": "string",
+      "description": "Admin user id who last saved settings. Set server-side from session. NEVER exposed in dashboard responses."
+    }
+  },
+  "required": [
+    "control_key",
+    "version",
+    "enabled",
+    "emergency_stop",
+    "daily_call_limit",
+    "usage_date",
+    "calls_reserved",
+    "calls_completed",
+    "updated_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "__service_role_only__"
+      }
+    }
+  }
+}

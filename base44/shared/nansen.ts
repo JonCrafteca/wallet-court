@@ -94,6 +94,7 @@ export const ERR = {
   PLAN_CREDIT: "plan_credit",
   RATE_LIMIT: "rate_limit",
   CEILING_REACHED: "ceiling_reached",
+  PRODUCTION_BUDGET: "production_budget_exhausted",
   PROVIDER: "provider",
   TIMEOUT: "timeout",
   MALFORMED: "malformed",
@@ -402,7 +403,7 @@ export function buildSingleTradeTelemetryContext(base44, opts) {
 // awaited before returning so the campaign cannot advance until telemetry
 // health is confirmed.
 export async function fetchNansenEvidence(apiKey, network, address, opts) {
-  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false, extraBudgetGuard = null, onPhysicalCall = null, ceilingException = null } = opts || {};
+  const { windowDays = 180, caseSlug = "", base44, timeoutMs = 20000, durableTelemetry = false, extraBudgetGuard = null, onPhysicalCall = null, ceilingException = null, budgetWorkflow = "calibration_ceiling" } = opts || {};
 
   if (!apiKey || !apiKey.trim()) {
     return { outcome: "demo", errorCategory: ERR.MISSING_KEY, partial: false, failedSources: NANSEN_ENDPOINTS.map((e) => e.key), evidence: [], metrics: {}, sources: [], meta: null, nansenCalls: 0 };
@@ -438,21 +439,43 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
   // wallets.
   let physicalCallCount = 0;
 
-  // Per-physical-attempt ceiling guard. Injected into the transport so every
-  // physical request checks the verified total before leaving the process.
-  // This is the last line of defense: even if the campaign-level check passed,
-  // a concurrent request from another workflow could have pushed the total to
-  // the ceiling between the campaign check and this physical attempt.
-  // Per-physical-attempt ceiling guard. Uses checkCeilingBudget (blocks only at
-  // 1,020), NOT checkBudget (which blocks at 1,000). This allows a wallet
-  // already in progress to finish its remaining physical requests even after
-  // the verified total crosses 1,000, as long as it stays below 1,020. New
-  // wallets are blocked at 1,000 by the campaign-level shouldCampaignContinue
-  // check, not by this per-attempt guard.
+  // Per-physical-attempt budget guard. The guard selected depends on the
+  // budgetWorkflow:
+  //   "calibration_ceiling" (default) — legacy 1,020 ceiling. Used by the
+  //     completed calibration campaign, calibration docket traffic, label
+  //     enrichment, and admin health checks. When ceilingException is present
+  //     (authenticated robinhood_validation context only), uses the per-
+  //     validation ceiling instead.
+  //   "production_daily" — new WalletTrialUsagePolicy daily budget. Used by
+  //     ordinary public/admin whole-wallet production trials. Does NOT consult
+  //     the legacy 1,020 ceiling. Each physical call is atomically reserved
+  //     via CAS (calls_reserved++). The caller completes or releases the
+  //     reservations after the pipeline (see productionReservedCount in the
+  //     return value).
+  let productionReservedCount = 0;
   const budgetGuard = base44
     ? async () => {
-        // 1. Global ceiling check. Uses the legacy 1,020 ceiling for all ordinary
-        //    traffic. When ceilingException is present (authenticated
+        if (budgetWorkflow === "production_daily") {
+          // ---- Production daily budget (WalletTrialUsagePolicy) ----
+          // Reserve one physical call via CAS. If the daily limit is reached
+          // or emergency stop is active, block with a production-budget
+          // error category (NOT ceiling_reached) so the circuit is not opened.
+          try {
+            const { reserveProductionCall } = await import("./walletTrialUsageStore.ts");
+            const reservation = await reserveProductionCall(base44);
+            if (!reservation.allowed) {
+              return { allowed: false, verifiedTotal: 0, reason: reservation.reason, errorCategory: ERR.PRODUCTION_BUDGET };
+            }
+            productionReservedCount++;
+          } catch (e) {
+            // Usage store failed — be conservative and block the request.
+            return { allowed: false, verifiedTotal: 0, reason: "Production budget check failed.", errorCategory: ERR.PRODUCTION_BUDGET };
+          }
+          return { allowed: true, verifiedTotal: 0, reason: "" };
+        }
+        // ---- Legacy calibration ceiling (default) ----
+        // 1. Global ceiling check. Uses the legacy 1,020 ceiling for all
+        //    ordinary traffic. When ceilingException is present (authenticated
         //    robinhood_validation context only), uses the per-validation ceiling
         //    of (starting_global_total + max_attempts) instead, allowing the
         //    Robinhood validation to exceed 1,020 up to a maximum of 1,022.
@@ -607,7 +630,9 @@ export async function fetchNansenEvidence(apiKey, network, address, opts) {
     rawLabels,
     nansenCalls: NANSEN_ENDPOINTS.length,
     physicalCallCount,
-    correlationId
+    correlationId,
+    productionReservedCount,
+    budgetWorkflow
   };
 }
 

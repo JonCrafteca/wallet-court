@@ -390,6 +390,7 @@ export interface BudgetGuardResult {
   allowed: boolean;
   verifiedTotal: number;
   reason: string;
+  errorCategory?: string;
 }
 
 // A budget guard is injected by the caller (nansen.ts wires it to
@@ -461,7 +462,7 @@ export async function callEndpointWithRetry(args: {
             key: ep.key,
             ok: false,
             status: 0,
-            errorCategory: CEILING_GUARD_OUTCOME,
+            errorCategory: guard.errorCategory || CEILING_GUARD_OUTCOME,
             calledAt,
             json: null,
             requestId: null,

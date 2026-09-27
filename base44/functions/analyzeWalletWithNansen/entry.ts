@@ -36,11 +36,14 @@ import {
   RECESS_TYPES,
   CIRCUIT_STATUS,
   hasActiveProbeLease,
-  isProbeLeaseExpired
+  isProbeLeaseExpired,
+  isBudgetExhaustion
 } from "../../shared/circuitBreaker.ts";
 import { getCircuit, openCircuit, closeCircuitWithVersion, acquireProbeLease, reclaimProbeLease, reopenCircuitWithLease } from "../../shared/circuitStore.ts";
 import { checkCeilingBudgetWithLimit, CALIBRATION_CEILING } from "../../shared/calibration.ts";
-import { getVerifiedTotal } from "../../shared/calibrationStore.ts";
+import { getCountForCeilingCheck } from "../../shared/calibrationStore.ts";
+import { canReserveCall, todayUtcStr } from "../../shared/walletTrialUsagePolicy.ts";
+import { getPolicyOrDefault, completeProductionCalls, releaseProductionCalls, resetDailyUsageIfNeeded } from "../../shared/walletTrialUsageStore.ts";
 import { waitUntil } from "base44:runtime";
 import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
 import { enqueueNotification } from "../../shared/ownerNotificationStore.ts";

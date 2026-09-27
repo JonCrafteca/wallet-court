@@ -14,6 +14,7 @@ export const RECESS_TYPES = {
   AUTH: "court_recess_auth",
   RATE_LIMIT: "court_recess_rate_limit",
   CEILING: "court_recess_ceiling",
+  PRODUCTION_BUDGET: "court_recess_production_budget",
   PROVIDER: "court_recess_provider",
   SCHEMA: "court_recess_schema",
   UNKNOWN: "court_recess_unknown"
@@ -35,7 +36,8 @@ export const COOLDOWN_SECONDS = {
   court_recess_credits: 900,      // 15 minutes
   court_recess_auth: 900,         // 15 minutes
   court_recess_rate_limit: 60,   // bounded default when no Retry-After
-  court_recess_ceiling: 3600,    // 1 hour — budget ceiling does not self-heal
+  court_recess_ceiling: 3600,    // 1 hour — calibration ceiling does not self-heal
+  court_recess_production_budget: 3600, // 1 hour — daily budget resets at UTC midnight
   court_recess_provider: 30,      // shorter than auth/credits
   court_recess_schema: 30,        // parse/schema failure — possibly transient
   court_recess_unknown: 20       // short, for unclassified failures
@@ -59,6 +61,7 @@ export function classifyRecessType(errorCategory) {
     case "missing_key": return RECESS_TYPES.AUTH;
     case "rate_limit": return RECESS_TYPES.RATE_LIMIT;
     case "ceiling_reached": return RECESS_TYPES.CEILING;
+    case "production_budget_exhausted": return RECESS_TYPES.PRODUCTION_BUDGET;
     case "provider":
     case "timeout":
     case "network": return RECESS_TYPES.PROVIDER;
@@ -128,7 +131,8 @@ export function sanitizeReason(recessType) {
     court_recess_credits: "Provider credit quota exhausted.",
     court_recess_auth: "Provider credentials rejected.",
     court_recess_rate_limit: "Provider rate limit reached.",
-    court_recess_ceiling: "The court has reached its evidence limit. No further analyses are available.",
+    court_recess_ceiling: "The court has reached its calibration evidence limit. No further calibration analyses are available.",
+    court_recess_production_budget: "The court's daily evidence budget is exhausted. Please try again tomorrow.",
     court_recess_provider: "Nansen is temporarily unavailable. No evidence call was made.",
     court_recess_schema: "The evidence response could not be parsed. The wallet was not judged.",
     court_recess_unknown: "Nansen returned an unexpected response. No verdict was created."
@@ -147,8 +151,8 @@ export function sanitizeAddressForLog(address) {
 // credits > auth > rate_limit > provider > unknown.
 const PRECEDENCE = [
   RECESS_TYPES.CREDITS, RECESS_TYPES.AUTH, RECESS_TYPES.RATE_LIMIT,
-  RECESS_TYPES.CEILING, RECESS_TYPES.PROVIDER, RECESS_TYPES.SCHEMA,
-  RECESS_TYPES.UNKNOWN
+  RECESS_TYPES.CEILING, RECESS_TYPES.PRODUCTION_BUDGET,
+  RECESS_TYPES.PROVIDER, RECESS_TYPES.SCHEMA, RECESS_TYPES.UNKNOWN
 ];
 export function highestPrecedenceRecess(types) {
   for (const t of PRECEDENCE) {
@@ -160,7 +164,15 @@ export function highestPrecedenceRecess(types) {
 // Hard operational errors are account-level: if any endpoint fails with one,
 // every endpoint will, so the whole pipeline is blocked immediately.
 export function isHardOperationalError(errorCategory) {
-  return ["missing_key", "auth", "plan_credit", "rate_limit", "ceiling_reached"].includes(errorCategory);
+  return ["missing_key", "auth", "plan_credit", "rate_limit", "ceiling_reached", "production_budget_exhausted"].includes(errorCategory);
+}
+
+// Budget-exhaustion recess types (calibration ceiling or production daily
+// budget). These must NOT open the provider circuit — they are budget limits,
+// not provider failures. The circuit is only for provider/network/schema
+// failures.
+export function isBudgetExhaustion(recessType) {
+  return recessType === RECESS_TYPES.CEILING || recessType === RECESS_TYPES.PRODUCTION_BUDGET;
 }
 
 // HTTP status to return for a Court Recess response. 429 for rate-limit, 503 for

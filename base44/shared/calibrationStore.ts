@@ -58,14 +58,42 @@ export async function updateControl(base44, fields): Promise<any> {
   });
 }
 
-// Read the verified NansenApiCallAudit total. Caps at AUDIT_QUERY_LIMIT (1021);
-// if the returned length equals the cap, the true total is at least that many.
-export async function getVerifiedTotal(base44): Promise<number> {
+// Read a CAPPED count of NansenApiCallAudit records for the ceiling check.
+// Caps at AUDIT_QUERY_LIMIT (1021). This is NOT an exact global total — if the
+// returned length equals the cap, the true total is at least that many (and
+// the ceiling is certainly exceeded). Use getExactAuditTotal when you need the
+// authoritative count for reporting. This function is safe for ceiling checks
+// because the ceiling (1,020) is below the cap (1,021), so a capped count of
+// 1,021 correctly indicates ceiling_exceeded = true.
+export async function getCountForCeilingCheck(base44): Promise<number> {
   const records = await base44.asServiceRole.entities.NansenApiCallAudit.list(
     "-occurred_at", AUDIT_QUERY_LIMIT
   );
   return records?.length || 0;
 }
+
+// Read the EXACT authoritative NansenApiCallAudit total via real pagination.
+// Fetches until an empty or short page. Use this for reporting and dashboards
+// — never use getCountForCeilingCheck as an exact total (it caps at 1,021).
+export async function getExactAuditTotal(base44): Promise<number> {
+  let total = 0;
+  let skip = 0;
+  const pageSize = 500;
+  while (true) {
+    const batch = await base44.asServiceRole.entities.NansenApiCallAudit.list(
+      "-occurred_at", pageSize, skip
+    );
+    const count = Array.isArray(batch) ? batch.length : 0;
+    total += count;
+    if (count < pageSize) break;
+    skip += pageSize;
+  }
+  return total;
+}
+
+// Deprecated alias — use getCountForCeilingCheck instead. Kept for backward
+// compatibility with existing callers that haven't been updated yet.
+export { getCountForCeilingCheck as getVerifiedTotal };
 
 // Collect wallet_fingerprint values from all existing queue items.
 export async function getExistingQueueFingerprints(base44): Promise<Set<string>> {
