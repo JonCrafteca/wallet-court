@@ -5,6 +5,17 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { isMobileDevice, canShareFiles } from "../src/lib/shareDevice.js";
 
+// Node 18+ defines globalThis.navigator as a read-only, non-configurable
+// getter. Redefine it once as a writable, configurable data property so the
+// tests below can freely assign and delete it (the production code only reads
+// navigator, never writes it). vitest isolates globals per test file, so
+// this redefinition does not leak into other test files.
+Object.defineProperty(globalThis, "navigator", {
+  value: globalThis.navigator,
+  writable: true,
+  configurable: true,
+});
+
 describe("share behavior — device detection", () => {
   const originalNavigator = global.navigator;
   const originalWindow = global.window;

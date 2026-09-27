@@ -126,6 +126,32 @@ export async function acquireProbeLease(base44, provider, expectedVersion, nowMs
   return null;
 }
 
+// Reclaim an expired probe lease from the HALF_OPEN state. Used when a
+// previous probe crashed (lease expired) and the circuit is stuck in
+// HALF_OPEN. Atomically grants a fresh lease via CAS on { HALF_OPEN, version }
+// so two concurrent reclaims cannot both succeed. Returns { leaseId, newVersion }
+// on success, or null if another caller holds the transition.
+export async function reclaimProbeLease(base44, provider, expectedVersion, nowMs) {
+  const leaseId = generateLeaseId();
+  const newVersion = expectedVersion + 1;
+  const filter = {
+    provider: provider || DEFAULT_PROVIDER,
+    circuit_status: CIRCUIT_STATUS.HALF_OPEN,
+    circuit_version: expectedVersion
+  };
+  const result = await base44.asServiceRole.entities.ProviderCircuit.updateMany(filter, {
+    $set: {
+      circuit_version: newVersion,
+      probe_lease_id: leaseId,
+      probe_started_at: new Date(nowMs).toISOString(),
+      probe_expires_at: new Date(nowMs + PROBE_LEASE_DURATION_MS).toISOString(),
+      updated_at: new Date(nowMs).toISOString()
+    }
+  });
+  if (result && result.updated === 1) return { leaseId, newVersion };
+  return null;
+}
+
 // Atomically close the circuit, guarded by a captured circuit_version. Used by
 // the analysis pipeline: only the request that captured the matching version
 // may close the circuit. A stale request (whose version was bumped by a newer

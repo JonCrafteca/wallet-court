@@ -13,7 +13,9 @@ export const RECESS_TYPES = {
   CREDITS: "court_recess_credits",
   AUTH: "court_recess_auth",
   RATE_LIMIT: "court_recess_rate_limit",
+  CEILING: "court_recess_ceiling",
   PROVIDER: "court_recess_provider",
+  SCHEMA: "court_recess_schema",
   UNKNOWN: "court_recess_unknown"
 };
 export const RECESS_TYPE_LIST = Object.values(RECESS_TYPES);
@@ -33,27 +35,34 @@ export const COOLDOWN_SECONDS = {
   court_recess_credits: 900,      // 15 minutes
   court_recess_auth: 900,         // 15 minutes
   court_recess_rate_limit: 60,   // bounded default when no Retry-After
+  court_recess_ceiling: 3600,    // 1 hour — budget ceiling does not self-heal
   court_recess_provider: 30,      // shorter than auth/credits
+  court_recess_schema: 30,        // parse/schema failure — possibly transient
   court_recess_unknown: 20       // short, for unclassified failures
 };
 export const MAX_RATE_LIMIT_COOLDOWN_SECONDS = 300;  // 5-minute cap
 export const DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 60;
 
-// Map a Nansen error category (from nansen.ts ERR) to a recess type.
+// Map a Nansen error category (from nansen.ts ERR / nansenTelemetry) to a
+// recess type.
 //   exhausted plan/quota/credits → court_recess_credits
 //   invalid/expired credentials or unauthorized → court_recess_auth
 //   HTTP 429 / provider rate-limit code → court_recess_rate_limit
-//   provider 5xx, timeout, unavailable → court_recess_provider
-//   malformed / unclassified → court_recess_unknown
+//   budget ceiling reached (no physical call made) → court_recess_ceiling
+//   provider 5xx, timeout, network failure → court_recess_provider
+//   malformed/unexpected response schema → court_recess_schema
+//   unsupported_chain / unclassified → court_recess_unknown
 export function classifyRecessType(errorCategory) {
   switch (errorCategory) {
     case "plan_credit": return RECESS_TYPES.CREDITS;
     case "auth":
     case "missing_key": return RECESS_TYPES.AUTH;
     case "rate_limit": return RECESS_TYPES.RATE_LIMIT;
+    case "ceiling_reached": return RECESS_TYPES.CEILING;
+    case "provider":
     case "timeout":
     case "network": return RECESS_TYPES.PROVIDER;
-    case "malformed":
+    case "malformed": return RECESS_TYPES.SCHEMA;
     case "unsupported_chain":
     case "unknown":
     default: return RECESS_TYPES.UNKNOWN;
@@ -119,8 +128,10 @@ export function sanitizeReason(recessType) {
     court_recess_credits: "Provider credit quota exhausted.",
     court_recess_auth: "Provider credentials rejected.",
     court_recess_rate_limit: "Provider rate limit reached.",
-    court_recess_provider: "Provider temporarily unavailable.",
-    court_recess_unknown: "Provider returned an unexpected response."
+    court_recess_ceiling: "The court has reached its evidence limit. No further analyses are available.",
+    court_recess_provider: "Nansen is temporarily unavailable. No evidence call was made.",
+    court_recess_schema: "The evidence response could not be parsed. The wallet was not judged.",
+    court_recess_unknown: "Nansen returned an unexpected response. No verdict was created."
   };
   return map[recessType] || map.court_recess_unknown;
 }
@@ -136,7 +147,8 @@ export function sanitizeAddressForLog(address) {
 // credits > auth > rate_limit > provider > unknown.
 const PRECEDENCE = [
   RECESS_TYPES.CREDITS, RECESS_TYPES.AUTH, RECESS_TYPES.RATE_LIMIT,
-  RECESS_TYPES.PROVIDER, RECESS_TYPES.UNKNOWN
+  RECESS_TYPES.CEILING, RECESS_TYPES.PROVIDER, RECESS_TYPES.SCHEMA,
+  RECESS_TYPES.UNKNOWN
 ];
 export function highestPrecedenceRecess(types) {
   for (const t of PRECEDENCE) {
@@ -148,7 +160,7 @@ export function highestPrecedenceRecess(types) {
 // Hard operational errors are account-level: if any endpoint fails with one,
 // every endpoint will, so the whole pipeline is blocked immediately.
 export function isHardOperationalError(errorCategory) {
-  return ["missing_key", "auth", "plan_credit", "rate_limit"].includes(errorCategory);
+  return ["missing_key", "auth", "plan_credit", "rate_limit", "ceiling_reached"].includes(errorCategory);
 }
 
 // HTTP status to return for a Court Recess response. 429 for rate-limit, 503 for

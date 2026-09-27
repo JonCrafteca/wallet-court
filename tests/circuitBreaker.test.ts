@@ -39,8 +39,16 @@ describe("classifyRecessType — error category → recess type", () => {
     expect(classifyRecessType("timeout")).toBe(RECESS_TYPES.PROVIDER);
     expect(classifyRecessType("network")).toBe(RECESS_TYPES.PROVIDER);
   });
-  it("malformed / unsupported_chain / unknown / undefined → unknown recess", () => {
-    expect(classifyRecessType("malformed")).toBe(RECESS_TYPES.UNKNOWN);
+  it("malformed → schema recess (parse failure is not unknown)", () => {
+    expect(classifyRecessType("malformed")).toBe(RECESS_TYPES.SCHEMA);
+  });
+  it("ceiling_reached → ceiling recess (budget limit, not provider error)", () => {
+    expect(classifyRecessType("ceiling_reached")).toBe(RECESS_TYPES.CEILING);
+  });
+  it("provider (5xx) → provider recess", () => {
+    expect(classifyRecessType("provider")).toBe(RECESS_TYPES.PROVIDER);
+  });
+  it("unsupported_chain / unknown / undefined → unknown recess", () => {
     expect(classifyRecessType("unsupported_chain")).toBe(RECESS_TYPES.UNKNOWN);
     expect(classifyRecessType("unknown")).toBe(RECESS_TYPES.UNKNOWN);
     expect(classifyRecessType(undefined)).toBe(RECESS_TYPES.UNKNOWN);
@@ -50,13 +58,15 @@ describe("classifyRecessType — error category → recess type", () => {
 // ---- Hard operational errors (account-level) ----
 
 describe("isHardOperationalError — account-level failures", () => {
-  it("missing_key, auth, plan_credit, rate_limit are hard (block every endpoint)", () => {
+  it("missing_key, auth, plan_credit, rate_limit, ceiling_reached are hard (block every endpoint)", () => {
     expect(isHardOperationalError("missing_key")).toBe(true);
     expect(isHardOperationalError("auth")).toBe(true);
     expect(isHardOperationalError("plan_credit")).toBe(true);
     expect(isHardOperationalError("rate_limit")).toBe(true);
+    expect(isHardOperationalError("ceiling_reached")).toBe(true);
   });
-  it("timeout, network, malformed, unknown are NOT hard (transient/per-endpoint)", () => {
+  it("provider, timeout, network, malformed, unknown are NOT hard (transient/per-endpoint)", () => {
+    expect(isHardOperationalError("provider")).toBe(false);
     expect(isHardOperationalError("timeout")).toBe(false);
     expect(isHardOperationalError("network")).toBe(false);
     expect(isHardOperationalError("malformed")).toBe(false);
@@ -249,10 +259,12 @@ describe("recessHttpStatus — response status codes", () => {
   it("rate-limit → 429", () => {
     expect(recessHttpStatus(RECESS_TYPES.RATE_LIMIT)).toBe(429);
   });
-  it("provider/auth/credit/unknown → 503", () => {
+  it("provider/auth/credit/ceiling/schema/unknown → 503", () => {
     expect(recessHttpStatus(RECESS_TYPES.PROVIDER)).toBe(503);
     expect(recessHttpStatus(RECESS_TYPES.AUTH)).toBe(503);
     expect(recessHttpStatus(RECESS_TYPES.CREDITS)).toBe(503);
+    expect(recessHttpStatus(RECESS_TYPES.CEILING)).toBe(503);
+    expect(recessHttpStatus(RECESS_TYPES.SCHEMA)).toBe(503);
     expect(recessHttpStatus(RECESS_TYPES.UNKNOWN)).toBe(503);
   });
 });

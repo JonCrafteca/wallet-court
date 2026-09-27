@@ -60,6 +60,12 @@ describe("rule 1 — hard operational error anywhere blocks the case", () => {
     const r = assessRecess(result([call("transactions", "auth", { requestId: "req-123" })]), "verdict");
     expect(r.requestId).toBe("req-123");
   });
+  it("ceiling_reached on any endpoint → ceiling recess (budget limit, not provider error)", () => {
+    const r = assessRecess(result([call("pnl_summary", "ceiling_reached")]), "verdict");
+    expect(r).not.toBeNull();
+    expect(r.recessType).toBe(RECESS_TYPES.CEILING);
+    expect(r.errorCategory).toBe("ceiling_reached");
+  });
 });
 
 // ---- Rule 2: required endpoint (pnl/dex) failed → block ----
@@ -80,7 +86,7 @@ describe("rule 2 — required endpoint failure blocks (no defensible verdict wit
     // is the more specific cause and should be reported.
     const r = assessRecess(result([call("pnl_summary", "malformed")]), OPERATIONAL_FAILURE);
     expect(r.errorCategory).toBe("malformed");
-    expect(r.recessType).toBe(RECESS_TYPES.UNKNOWN);
+    expect(r.recessType).toBe(RECESS_TYPES.SCHEMA);
   });
 });
 

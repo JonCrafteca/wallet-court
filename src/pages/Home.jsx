@@ -148,6 +148,7 @@ export default function Home() {
       <CourtRecess
         recessType={recess.recess_type}
         retryAfter={recess.retry_after}
+        reason={recess.sanitized_reason}
         onRetry={handleRetry}
         onReset={handleReset}
       />

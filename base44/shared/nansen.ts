@@ -93,6 +93,8 @@ export const ERR = {
   AUTH: "auth",
   PLAN_CREDIT: "plan_credit",
   RATE_LIMIT: "rate_limit",
+  CEILING_REACHED: "ceiling_reached",
+  PROVIDER: "provider",
   TIMEOUT: "timeout",
   MALFORMED: "malformed",
   UNSUPPORTED_CHAIN: "unsupported_chain",

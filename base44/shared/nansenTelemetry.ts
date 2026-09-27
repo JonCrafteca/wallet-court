@@ -104,7 +104,7 @@ export function categorizeStatus(status: number, err: Error | null): string {
   if (status === 402 || status === 403) return "plan_credit";
   if (status === 429) return "rate_limit";
   if (status === 0) return err && /timeout|abort/i.test(err.message || "") ? "timeout" : "network";
-  if (status >= 500) return "unknown";
+  if (status >= 500) return "provider";
   return "unknown";
 }
 

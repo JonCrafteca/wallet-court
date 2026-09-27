@@ -13,7 +13,7 @@ import { Gavel, RotateCw, Scale } from "lucide-react";
 //   retryAfter   — ISO timestamp when the court may reconvene (optional)
 //   onRetry      — re-submit the same wallet (enabled once the window elapses)
 //   onReset      — return to the intake form
-export default function CourtRecess({ recessType, retryAfter, onRetry, onReset }) {
+export default function CourtRecess({ recessType, retryAfter, reason, onRetry, onReset }) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -50,10 +50,12 @@ export default function CourtRecess({ recessType, retryAfter, onRetry, onReset }
           <p className="font-mono text-xs uppercase tracking-[0.18em] text-court-chart">Notice · For the Record</p>
         </div>
         <p className="font-mono text-court-ice leading-relaxed text-base">
-          No verdict has been entered and this wallet has not been judged. The court could not obtain enough reliable evidence to convene.
+          {reason || "No verdict has been entered and this wallet has not been judged. The court could not obtain enough reliable evidence to convene."}
         </p>
         <p className="mt-4 font-mono text-court-mute leading-relaxed text-base">
-          This is an operational issue on the court&rsquo;s side, not something the wallet did. Try the case again shortly.
+          {recessType === "court_recess_ceiling"
+            ? "This is a budget limit on the court\u2019s side, not something the wallet did. No further analyses are available until the court administrator restores capacity."
+            : "This is an operational issue on the court\u2019s side, not something the wallet did. Try the case again shortly."}
         </p>
       </div>
 

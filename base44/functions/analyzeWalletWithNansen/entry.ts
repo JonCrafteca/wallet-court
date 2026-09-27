@@ -33,9 +33,14 @@ import {
   sanitizeReason,
   recessHttpStatus,
   readCircuitVersion,
-  RECESS_TYPES
+  RECESS_TYPES,
+  CIRCUIT_STATUS,
+  hasActiveProbeLease,
+  isProbeLeaseExpired
 } from "../../shared/circuitBreaker.ts";
-import { getCircuit, openCircuit, closeCircuitWithVersion } from "../../shared/circuitStore.ts";
+import { getCircuit, openCircuit, closeCircuitWithVersion, acquireProbeLease, reclaimProbeLease, reopenCircuitWithLease } from "../../shared/circuitStore.ts";
+import { checkCeilingBudgetWithLimit, CALIBRATION_CEILING } from "../../shared/calibration.ts";
+import { getVerifiedTotal } from "../../shared/calibrationStore.ts";
 import { waitUntil } from "base44:runtime";
 import { enqueueAttributionEvent } from "../../shared/attributionStore.ts";
 import { enqueueNotification } from "../../shared/ownerNotificationStore.ts";
@@ -151,8 +156,55 @@ export default async function (req) {
     const circuit = await getCircuit(base44, PROVIDER);
     const circuitVersionAtStart = readCircuitVersion(circuit);
     const now = Date.now();
-    if (isCircuitOpen(circuit, now)) {
+
+    // HALF_OPEN with an active probe lease → another request is already
+    // probing. Block immediately — zero Nansen calls.
+    if (circuit && circuit.circuit_status === CIRCUIT_STATUS.HALF_OPEN && hasActiveProbeLease(circuit, now)) {
       return courtRecessResponse(circuit, now);
+    }
+    // OPEN within cooldown → block. A HALF_OPEN circuit with an EXPIRED lease
+    // (crashed probe) falls through to the probe-lease acquisition below so the
+    // stuck lease can be reclaimed.
+    const expiredLease = circuit && circuit.circuit_status === CIRCUIT_STATUS.HALF_OPEN && isProbeLeaseExpired(circuit, now);
+    if (isCircuitOpen(circuit, now) && !expiredLease) {
+      return courtRecessResponse(circuit, now);
+    }
+
+    // ---- Ceiling pre-flight check ----
+    // The verified NansenApiCallAudit total vs the absolute safety ceiling
+    // (1,020). When the ceiling is reached, NO physical Nansen call is made
+    // and NO circuit mutation occurs — the ceiling is a permanent budget
+    // limit, not a transient provider failure. Returns a specific Court
+    // Recess so the visitor sees "evidence limit reached," not "provider
+    // error." The ceiling itself is not modified.
+    const verifiedTotal = await getVerifiedTotal(base44);
+    const ceilingBudget = checkCeilingBudgetWithLimit(verifiedTotal, CALIBRATION_CEILING);
+    if (!ceilingBudget.allowed) {
+      return courtRecessResponse({
+        recess_type: RECESS_TYPES.CEILING,
+        retry_after: new Date(computeRetryAfterForRecess(RECESS_TYPES.CEILING, now)).toISOString(),
+        sanitized_reason: sanitizeReason(RECESS_TYPES.CEILING),
+        last_request_id: null
+      }, now);
+    }
+
+    // ---- Half-open probe lease (exactly one probe after cooldown) ----
+    // When the circuit is OPEN and the cooldown has elapsed, atomically
+    // acquire a probe lease (OPEN → HALF_OPEN) so only ONE request makes
+    // Nansen calls. Concurrent requests lose the CAS and are blocked with
+    // zero Nansen calls. A stuck HALF_OPEN with an expired lease is reclaimed
+    // the same way.
+    let probeLease = null;
+    if (expiredLease) {
+      probeLease = await reclaimProbeLease(base44, PROVIDER, circuitVersionAtStart, now);
+      if (!probeLease) {
+        return courtRecessResponse({ ...circuit, circuit_status: CIRCUIT_STATUS.HALF_OPEN }, now);
+      }
+    } else if (circuit && circuit.circuit_status === CIRCUIT_STATUS.OPEN) {
+      probeLease = await acquireProbeLease(base44, PROVIDER, circuitVersionAtStart, now);
+      if (!probeLease) {
+        return courtRecessResponse({ ...circuit, circuit_status: CIRCUIT_STATUS.HALF_OPEN }, now);
+      }
     }
 
     // ---- Paid Nansen pipeline ----
@@ -177,11 +229,19 @@ export default async function (req) {
     // Operational-failure assessment (N2.4). A blocking failure → Court Recess.
     const recess = assessRecess(nansen, gateOutcome);
     if (recess) {
-      // Open the circuit and return Court Recess. NO WalletTrial is created.
-      await openCircuit(base44, PROVIDER, {
-        recessType: recess.recessType,
-        requestId: recess.requestId
-      });
+      // Open/reopen the circuit and return Court Recess. NO WalletTrial is created.
+      if (probeLease) {
+        await reopenCircuitWithLease(base44, PROVIDER, probeLease.newVersion, probeLease.leaseId, {
+          recessType: recess.recessType,
+          requestId: recess.requestId,
+          consecutiveFailures: circuit?.consecutive_failures || 0
+        }).catch(() => {});
+      } else {
+        await openCircuit(base44, PROVIDER, {
+          recessType: recess.recessType,
+          requestId: recess.requestId
+        });
+      }
       return courtRecessResponse({
         recess_type: recess.recessType,
         retry_after: new Date(computeRetryAfterForRecess(recess.recessType, now)).toISOString(),
@@ -191,12 +251,12 @@ export default async function (req) {
     }
 
     // No blocking failure. On a successful live/partial result, close the
-    // circuit ONLY if this request still owns the recovery generation (its
-    // captured circuit_version matches the current record). A request that
-    // began before another request opened the circuit must NOT close that
-    // newer circuit — the CAS updateMany matches 0 documents and the circuit
-    // stays open. (Stale-success protection, N2.4.)
-    if (circuit && circuit.circuit_status !== "closed") {
+    // circuit. If this request held a probe lease, close with the probe's
+    // version (stale-success protection via CAS). Otherwise close with the
+    // original version only if the circuit was not already closed.
+    if (probeLease) {
+      await closeCircuitWithVersion(base44, PROVIDER, probeLease.newVersion, Date.now(), { requestId: null }).catch(() => {});
+    } else if (circuit && circuit.circuit_status !== "closed") {
       await closeCircuitWithVersion(base44, PROVIDER, circuitVersionAtStart, Date.now(), { requestId: null }).catch(() => {});
     }
 
@@ -331,7 +391,9 @@ function computeRetryAfterForRecess(recessType, nowMs) {
     court_recess_credits: 900,
     court_recess_auth: 900,
     court_recess_rate_limit: 60,
+    court_recess_ceiling: 3600,
     court_recess_provider: 30,
+    court_recess_schema: 30,
     court_recess_unknown: 20
   };
   const secs = COOLDOWN[recessType] ?? COOLDOWN.court_recess_unknown;
