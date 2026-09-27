@@ -7,6 +7,7 @@ import LoadingStage from "@/components/walletcourt/LoadingStage";
 import VerdictReveal from "@/components/walletcourt/VerdictReveal";
 import CourtRecess from "@/components/walletcourt/CourtRecess";
 import { validateWalletForChain } from "@/lib/walletValidation";
+import { extractAnalysisError } from "@/lib/apiError";
 import { NETWORK_OPTIONS as ALL_NETWORKS } from "@/lib/chains";
 import { getPublicFeatureFlags } from "@/lib/featureFlags";
 import { getSingleTradeAccess } from "@/lib/singleTradeAccess";
@@ -55,8 +56,13 @@ export default function Home() {
       }),
       new Promise((r) => setTimeout(r, 2800)),
     ]);
-    if (res?.data?.error) {
-      throw new Error(res.data.error);
+    // On a 2xx body that still carries an error/court_recess, throw a synthetic
+    // error that mirrors the axios shape so the catch block's extractAnalysisError
+    // can read the structured payload (court_recess, error, code) uniformly.
+    if (res?.data?.error || res?.data?.court_recess) {
+      const synth = new Error(res.data.error || "The court failed to convene.");
+      synth.response = { data: res.data, status: res?.status ?? null };
+      throw synth;
     }
     return res;
   }
@@ -85,7 +91,13 @@ export default function Home() {
       setTrial(res.data.trial);
       setStatus("done");
     } catch (err) {
-      setError(err?.message || "The court failed to convene. Try again.");
+      const result = extractAnalysisError(err);
+      if (result.kind === "recess") {
+        setRecess(result.recess);
+        setStatus("recess");
+        return;
+      }
+      setError(result.message);
       setStatus("idle");
     }
   }
@@ -108,7 +120,13 @@ export default function Home() {
       setTrial(res.data.trial);
       setStatus("done");
     } catch (err) {
-      setError(err?.message || "The court failed to convene. Try again.");
+      const result = extractAnalysisError(err);
+      if (result.kind === "recess") {
+        setRecess(result.recess);
+        setStatus("recess");
+        return;
+      }
+      setError(result.message);
       setStatus("idle");
     }
   }
