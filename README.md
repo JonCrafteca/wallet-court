@@ -14,7 +14,7 @@ To follow the build locally, use the Base44 setup below, link the app, and confi
 
 ## Submission status
 
-Nansen requires a public GitHub repository, a 30–60 second X recording showing a working live Nansen flow with `@nansen_ai` and the GitHub link, and the [Meridian entry form](https://nansen-ai.typeform.com/meridian-submit) with email, X URL and GitHub URL. The public GitHub URL and the X post URL must be supplied when available; the Base44 internal sandbox remote is not a public repository.
+Nansen requires a public GitHub repository, a short X recording showing a working live Nansen flow with `@nansen_ai` and the GitHub link, and the [Meridian entry form](https://nansen-ai.typeform.com/meridian-submit) with email, X URL and GitHub URL. The public GitHub URL and the X post URL must be supplied when available; the Base44 internal sandbox remote is not a public repository.
 
 ## Base44 Project
 
